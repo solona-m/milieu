@@ -10,17 +10,24 @@ Type `/milieu` in game to open the window, and `/milieu off` to hide the backdro
 Milieu needs [Penumbra](https://github.com/xivdev/Penumbra), with mods enabled and a Base collection assigned
 (Milieu hands the game its files through a Penumbra temporary mod).
 
+### Add the plugin repository
+
+**Already have Proteus installed? Skip this:** Milieu comes from the same repository.
+
 1. In game, type `/xlsettings` and open **Experimental**.
 2. Under **Custom Plugin Repositories** (the first time, read the warning and click **Ok, I have read and
    understood this warning** once it unlocks), paste `https://dl.solona.info/repo.json` into the empty row and
    click **+**. Check that **Enabled** is ticked, then click **Save**.
-3. While Milieu is in testing, also turn on **Get plugin testing builds** on the same tab.
-4. Type `/xlplugins`, search for **Milieu**, and install it.
+
+### Install Milieu
+
+1. While Milieu is in testing, turn on **Get plugin testing builds** in `/xlsettings` → **Experimental**.
+2. Type `/xlplugins`, search for **Milieu**, and install it.
 
 Only you see the backdrop; other players see the normal game world.
 
-> Milieu isn't listed in the repository just yet. The first testing build is on its way; until then step 4 won't
-> find it.
+> Milieu isn't listed in the repository just yet. The first testing build is on its way; until then
+> `/xlplugins` won't find it.
 
 ## Using it
 
