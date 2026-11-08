@@ -10,5 +10,6 @@ public sealed record BackdropRequest(string ImagePath, int MaxWidth, float Expos
 }
 
 /// <summary>A converted texture in the cache, plus the warnings found on the way.</summary>
+/// <param name="Preconverted">A bundled scene: the downloaded .atex is used as-is (no decode, no encode).</param>
 public sealed record PreparedTexture(string Key, string DiskPath, string GamePath, int Width, int Height, ImageKind Kind,
-                                     IReadOnlyList<StatusMessage> Warnings);
+                                     IReadOnlyList<StatusMessage> Warnings, bool Preconverted = false);

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
@@ -27,9 +29,10 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IObjectTable ObjectTable { get; private set; } = null!;
     [PluginService] public static IGameInteropProvider Hooks { get; private set; } = null!;
     [PluginService] public static ISigScanner SigScanner { get; private set; } = null!;
+    [PluginService] public static ITextureProvider TextureProvider { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 7;
+    public const int BuildNumber = 8;
 
     private const string CommandName = "/milieu";
 
@@ -42,6 +45,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly PenumbraIpc penumbra;
     private readonly BackdropController controller;
     private readonly DefaultBackdropsDownloadService downloads;
+    private readonly SceneGridViewModel grid;
 
     public Plugin()
     {
@@ -51,14 +55,23 @@ public sealed class Plugin : IDalamudPlugin
         config.Migrate(configDir);
         config.Clamp();
         var cache = new CacheStore(Path.Combine(configDir, "cache"));
+        var thumbStore = new ThumbStore(Path.Combine(configDir, "cache", "thumbs"));
         try { cache.Cleanup(new HashSet<string>()); }   // nothing is shown at startup, so nothing needs keeping
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log.Debug("[Milieu] Startup cache cleanup skipped."); }
 
         vfx = new VfxInterop(SigScanner, Hooks, Framework, log, strings);
         penumbra = new PenumbraIpc(PluginInterface, log, configDir);
-        controller = new BackdropController(vfx, penumbra, new GameState(ClientState, Condition, ObjectTable),
-                                            new BackdropPreparer(cache, new Bc7()), cache, config, log);
         downloads = new DefaultBackdropsDownloadService(log, configDir);
+        controller = new BackdropController(vfx, penumbra, new GameState(ClientState, Condition, ObjectTable),
+                                            new BackdropPreparer(cache, new Bc7(), downloads, thumbStore), cache, config, log,
+                                            bundled: downloads);
+        var userImages = config.UserImages.ToArray();
+        Task.Run(() =>
+        {
+            // Startup tidy-up off the framework thread: v1 JPEGs and unpinned textures, orphaned thumbnails.
+            try { downloads.CleanupStale(); thumbStore.Cleanup(userImages); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log.Debug("[Milieu] Startup cleanup skipped."); }
+        });
 
         vfx.GameRemoved += controller.OnGameRemoved;
         penumbra.Initialized += OnPenumbraInitialized;
@@ -68,7 +81,8 @@ public sealed class Plugin : IDalamudPlugin
         ClientState.Logout += OnLogout;
         Framework.RunOnFrameworkThread(controller.OnPenumbraInitialized);   // clear a temp mod an earlier session left
 
-        mainWindow = new MainWindow(controller, config, Save, BackdropListViewModel.For(downloads));
+        grid = new SceneGridViewModel(config, Save, controller.Post, controller, downloads, File.Exists);
+        mainWindow = new MainWindow(controller, config, Save, grid, new ThumbnailCache(TextureProvider, thumbStore));
         windows.AddWindow(mainWindow);
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -85,7 +99,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        if (ParseCommand(args) == CommandAction.Hide) controller.Post(controller.Hide);
+        if (ParseCommand(args) == CommandAction.Hide) grid.SelectNone();
         else mainWindow.Toggle();
     }
 
@@ -133,6 +147,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= mainWindow.OpenSettings;
         CommandManager.RemoveHandler(CommandName);
         windows.RemoveAllWindows();
+        mainWindow.Dispose();
     }
 
     private sealed class DalamudLog(IPluginLog log) : ILogSink

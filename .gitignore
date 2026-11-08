@@ -21,3 +21,4 @@ Thumbs.db
 
 ## Generated bundled-backdrop textures (published with tools/publish-backdrops.ps1, never committed)
 artifacts/
+artifacts_pins.txt

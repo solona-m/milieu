@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
+using Milieu.Assets;
 using System.Threading;
 using System.Threading.Tasks;
 using Milieu.GameFiles;
@@ -18,8 +20,9 @@ public interface IBackdropPreparer
 /// probe → limits and budget → warnings → cache → decode → (tone map) → seam check → layout, resample, band fill →
 /// mips → BC7 → atomic write. Progress weights: decode 10, tone map 10, resample 10, mips 10, encode 60.
 /// </summary>
-public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder) : IBackdropPreparer
+public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IBundledBackdrops? bundled = null, ThumbStore? thumbs = null) : IBackdropPreparer
 {
+    private readonly HashSet<string> verified = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim oneAtATime = new(1, 1);
     private int decodes, encodes;
 
@@ -38,9 +41,55 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder) : 
     /// </summary>
     public async Task<PreparedTexture> PrepareTextureAsync(BackdropRequest request, IProgress<float>? progress, CancellationToken ct)
     {
+        if (BackdropPins.IsBundledId(request.ImagePath)) return PrepareBundled(request.ImagePath, progress);
         await oneAtATime.WaitAsync(ct).ConfigureAwait(false);
         try { return await PrepareCoreAsync(request, progress, ct).ConfigureAwait(false); }
         finally { oneAtATime.Release(); }
+    }
+
+    /// <summary>
+    /// A bundled scene: its downloaded, pre-converted .atex is checked (pinned size, exact header, SHA-256 once per
+    /// session per file version) and registered as-is. Max width, exposure and tone map don't apply.
+    /// </summary>
+    private PreparedTexture PrepareBundled(string id, IProgress<float>? progress)
+    {
+        if (!BackdropPins.TryParseId(id, out var pin) || bundled == null)
+            throw new MilieuException(StatusMessage.Of(MessageKey.FileMissing, ("file", id)));
+        var name = pin.DisplayName;
+        if (!bundled.IsDownloaded(pin.Stem)) throw new MilieuException(StatusMessage.Of(MessageKey.BundledNotDownloaded, ("name", name)));
+        var path = bundled.PathOf(pin.Stem);
+        try
+        {
+            var info = new FileInfo(path);
+            var versionKey = $"{path}|{info.Length}|{info.LastWriteTimeUtc.Ticks}";
+            bool ok;
+            lock (verified) ok = verified.Contains(versionKey);
+            if (!ok)
+            {
+                using var fs = File.OpenRead(path);
+                var expected = AtexWriter.ExpectedHeader(BackdropPins.Width, BackdropPins.Height);
+                var head = new byte[expected.Length];
+                fs.ReadExactly(head);
+                fs.Position = 0;
+                ok = info.Length == pin.Bytes && head.AsSpan().SequenceEqual(expected)
+                     && Convert.ToHexString(SHA256.HashData(fs)).ToLowerInvariant() == pin.Sha256;
+                if (ok) lock (verified) verified.Add(versionKey);
+            }
+            if (!ok)
+            {
+                bundled.MarkCorrupt(pin.Stem);
+                throw new MilieuException(StatusMessage.Of(MessageKey.BundledCorrupt, ("name", name)));
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            bundled.MarkCorrupt(pin.Stem);
+            throw new MilieuException(StatusMessage.Of(MessageKey.BundledCorrupt, ("name", name)));
+        }
+        progress?.Report(1f);
+        var key = pin.Sha256[..16];
+        return new PreparedTexture(key, path, CacheStore.TextureGamePath(key), BackdropPins.Width, BackdropPins.Height, ImageKind.Jpeg, [],
+                                   Preconverted: true);
     }
 
     private async Task<PreparedTexture> PrepareCoreAsync(BackdropRequest request, IProgress<float>? progress, CancellationToken ct)
@@ -83,7 +132,13 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder) : 
         var convertProgress = progress == null ? null : new Bc7.SyncProgress(f => progress.Report(0.20f + 0.80f * f));
         var (srcW, srcH) = (image.Width, image.Height);
         image = null!;
-        var blocks = await TextureConversion.EncodeAsync(rgb, srcW, srcH, outW, outH, encoder, convertProgress, ct, OnMip0, OnThumb)
+        Action<byte[]> onThumb = t =>
+        {
+            OnThumb?.Invoke(t);
+            try { thumbs?.Save(request.ImagePath, t); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* a missing preview is not an error */ }
+        };
+        var blocks = await TextureConversion.EncodeAsync(rgb, srcW, srcH, outW, outH, encoder, convertProgress, ct, OnMip0, onThumb)
                                             .ConfigureAwait(false);
         rgb = null!;
 

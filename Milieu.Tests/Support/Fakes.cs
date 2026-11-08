@@ -133,3 +133,40 @@ public sealed class FakePreparer(CacheStore cache) : IBackdropPreparer
         return new PreparedTexture(key, disk, CacheStore.TextureGamePath(key), 1024, 512, ImageKind.Jpeg, []);
     }
 }
+
+public sealed class FakeGridController : Milieu.Gui.IGridController
+{
+    public BackdropState State { get; set; } = BackdropState.Hidden;
+    public float Progress { get; set; }
+    public readonly List<string> Calls = [];
+    public StatusMessage? Reported;
+    public void Show() => Calls.Add("Show");
+    public void Hide() => Calls.Add("Hide");
+    public void ReportStatus(StatusMessage message) { Calls.Add("Report"); Reported = message; }
+}
+
+public sealed class FakeGridDownloads : Milieu.Gui.IGridDownloads
+{
+    public readonly HashSet<string> Downloaded = new(StringComparer.OrdinalIgnoreCase);
+    public readonly Dictionary<string, Milieu.Assets.EntryStatus> Status = new(StringComparer.OrdinalIgnoreCase);
+    public readonly List<string> Requests = [];
+    public bool Unpublished;
+
+    public Milieu.Assets.EntryStatus StatusOf(string stem) =>
+        Status.TryGetValue(stem, out var s) ? s
+        : new Milieu.Assets.EntryStatus(Downloaded.Contains(stem) ? Milieu.Assets.EntryState.Downloaded : Milieu.Assets.EntryState.NotDownloaded, 0, "");
+    public bool IsDownloaded(string stem) => Downloaded.Contains(stem);
+    public void Request(string stem) => Requests.Add(stem);
+    public void RequestAll() => Requests.Add("*");
+    public bool AnyMissing => Downloaded.Count < Milieu.Assets.BackdropPins.Count;
+    public bool PackUnpublished => Unpublished;
+}
+
+/// <summary>Bundled scenes on disk for the preparer/controller tests.</summary>
+public sealed class FakeBundled(string dir) : Milieu.Assets.IBundledBackdrops
+{
+    public readonly List<string> Corrupt = [];
+    public bool IsDownloaded(string stem) => System.IO.File.Exists(PathOf(stem));
+    public string PathOf(string stem) => System.IO.Path.Combine(dir, stem + ".atex");
+    public void MarkCorrupt(string stem) { Corrupt.Add(stem); System.IO.File.Delete(PathOf(stem)); }
+}

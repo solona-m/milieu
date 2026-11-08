@@ -28,6 +28,10 @@ public enum MessageKey
     GameEndedVfx,
     Converting,
     NoImage,
+    BundledNotDownloaded,
+    BundledCorrupt,
+    LoadingBundled,
+    BundledNote,
 }
 
 public enum Severity { Info, Warning, Error }
@@ -79,14 +83,18 @@ public static class Messages
         [MessageKey.PenumbraGone] = "Penumbra was unloaded; the backdrop was hidden.",
         [MessageKey.GameEndedVfx] = "The game ended the backdrop effect; Milieu stopped re-showing it.",
         [MessageKey.Converting] = "Converting {file}… {pct}%",
-        [MessageKey.NoImage] = "Choose an image or a bundled backdrop first.",
+        [MessageKey.NoImage] = "Choose a scene first.",
+        [MessageKey.BundledNotDownloaded] = "{name} isn't downloaded yet.",
+        [MessageKey.BundledCorrupt] = "{name} was damaged on disk; download it again.",
+        [MessageKey.LoadingBundled] = "Loading {name}…",
+        [MessageKey.BundledNote] = "Bundled scenes come pre-converted at 8192x4096, so the texture size and HDR settings don't apply.",
     };
 
     public static string Template(MessageKey key) => Texts[key];
 
     public static Severity SeverityOf(MessageKey key) => key switch
     {
-        MessageKey.None or MessageKey.Converting => Severity.Info,
+        MessageKey.None or MessageKey.Converting or MessageKey.LoadingBundled or MessageKey.BundledNote => Severity.Info,
         MessageKey.LargeImage or MessageKey.NoWrap or MessageKey.NotTwoToOne => Severity.Warning,
         _ => Severity.Error,
     };

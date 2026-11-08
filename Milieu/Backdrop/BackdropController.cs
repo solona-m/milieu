@@ -5,6 +5,7 @@ using System.IO;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using Milieu.Assets;
 using Milieu.GameFiles;
 
 namespace Milieu.Backdrop;
@@ -19,7 +20,7 @@ public sealed record BackdropStatus(BackdropState State, float Progress, StatusM
 /// background task; everything else (Penumbra IPC, native spawn/move/remove) happens in <see cref="Tick"/> and the
 /// event handlers, which the plugin calls on the framework thread only.
 /// </summary>
-public sealed class BackdropController
+public sealed class BackdropController : Gui.IGridController
 {
     public const int RedirectTimeoutTicks = 120;
     public const int RespawnDelayFrames = 30;
@@ -36,6 +37,7 @@ public sealed class BackdropController
     private readonly ILogSink log;
     private readonly Func<Func<Task<PreparedTexture>>, Task<PreparedTexture>> run;
     private readonly Func<DateTime> utcNow;
+    private readonly IBundledBackdrops? bundled;
 
     private CancellationTokenSource? jobCts;
     private Task<PreparedTexture>? job;
@@ -68,8 +70,10 @@ public sealed class BackdropController
 
     public BackdropController(IVfxSpawner spawner, IPenumbraRedirects penumbra, IGameState game, IBackdropPreparer preparer,
                               CacheStore cache, Configuration config, ILogSink log,
-                              Func<Func<Task<PreparedTexture>>, Task<PreparedTexture>>? run = null, Func<DateTime>? utcNow = null)
+                              Func<Func<Task<PreparedTexture>>, Task<PreparedTexture>>? run = null, Func<DateTime>? utcNow = null,
+                              IBundledBackdrops? bundled = null)
     {
+        this.bundled = bundled;
         this.spawner = spawner;
         this.penumbra = penumbra;
         this.game = game;
@@ -97,6 +101,29 @@ public sealed class BackdropController
 
     public BackdropState State => state;
 
+    public float Progress => progress;
+
+    /// <summary>Shows a message without changing state (e.g. a missing file clicked in the grid).</summary>
+    public void ReportStatus(StatusMessage m) => message = m;
+
+    public static readonly TimeSpan ReconvertDelay = TimeSpan.FromMilliseconds(500);
+    private DateTime? reconvertAt;
+
+    /// <summary>
+    /// Exposure, tone map or texture size changed: re-run the conversion 500 ms after the last change, for a selected
+    /// user image that is shown, suspended, converting or waiting for Penumbra (a running job is cancelled; latest
+    /// wins). Hidden or bundled: nothing (the setting is just saved).
+    /// </summary>
+    public void RequestReconvert() => reconvertAt = utcNow() + ReconvertDelay;
+
+    private void TickReconvert()
+    {
+        if (reconvertAt is not { } at || utcNow() < at) return;
+        reconvertAt = null;
+        if (config.ImagePath == null || BackdropPins.IsBundledId(config.ImagePath)) return;
+        if (state is BackdropState.Shown or BackdropState.Suspended or BackdropState.Preparing or BackdropState.AwaitingRedirect) Show();
+    }
+
     /// <summary>The reason Show is unavailable right now, in fixed priority order, or None.</summary>
     public MessageKey Blocker()
     {
@@ -113,6 +140,8 @@ public sealed class BackdropController
 
     private StatusMessage CurrentMessage()
     {
+        if (state == BackdropState.Preparing && job != null && BackdropPins.TryParseId(config.ImagePath, out var pin))
+            return StatusMessage.Of(MessageKey.LoadingBundled, ("name", pin.DisplayName));
         if (state == BackdropState.Preparing && job != null)
             return StatusMessage.Of(MessageKey.Converting, ("file", Path.GetFileName(config.ImagePath ?? "")), ("pct", (int)(progress * 100)));
         return message;
@@ -127,6 +156,11 @@ public sealed class BackdropController
         if (string.IsNullOrEmpty(config.ImagePath))
         {
             message = StatusMessage.Of(MessageKey.NoImage);
+            return;
+        }
+        if (BackdropPins.TryParseId(config.ImagePath, out var bundledPin) && bundled != null && !bundled.IsDownloaded(bundledPin.Stem))
+        {
+            message = StatusMessage.Of(MessageKey.BundledNotDownloaded, ("name", bundledPin.DisplayName));
             return;
         }
         CancelJob();
@@ -243,6 +277,7 @@ public sealed class BackdropController
         spawner.Tick();
         if (++ticks % PenumbraRefreshTicks == 0) penumbra.Refresh();
         while (posted.TryDequeue(out var action)) action();
+        TickReconvert();
 
         CheckGameRemoval();
         var ready = game.IsReady;

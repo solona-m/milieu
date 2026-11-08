@@ -7,51 +7,32 @@ using System.Threading.Tasks;
 
 namespace Milieu.Assets;
 
-public enum PackState { Idle, Downloading, Ready, Failed }
+public enum EntryState { NotDownloaded, Queued, Downloading, Downloaded, Failed, Unpublished }
 
-/// <summary>The bundled pack's download status. <see cref="Unpublished"/>: every asset answered 404/410 (no release yet).</summary>
-public sealed record PackStatus(PackState State, int Have, int Total, string Detail, bool Unpublished);
+/// <summary>One bundled scene's download state. <see cref="Bytes"/> is the bytes on disk while downloading.</summary>
+public sealed record EntryStatus(EntryState State, long Bytes, string Detail)
+{
+    public float Fraction(long total) => total <= 0 ? 0 : Math.Clamp((float)Bytes / total, 0, 1);
+}
 
-/// <summary>A bundled backdrop on disk (only listed once it is at its pinned size).</summary>
-public sealed record BundledBackdrop(string Name, string DisplayName, string Path);
+/// <summary>What the preparer needs to show a bundled scene.</summary>
+public interface IBundledBackdrops
+{
+    bool IsDownloaded(string stem);
+    string PathOf(string stem);
+
+    /// <summary>The file failed its checks: delete it so it is downloaded again.</summary>
+    void MarkCorrupt(string stem);
+}
 
 /// <summary>
-/// Milieu's bundled backdrops: pinned release assets (tag <see cref="BackdropsTag"/>), never in the plugin zip.
-/// Downloaded lazily into <c>&lt;config&gt;/DefaultBackdrops</c> the first time the Backdrops list is drawn, never at
-/// plugin load. Follows Proteus's DefaultMatcapsDownloadService: present = at the pinned size; a 404/410 skips that
-/// file; any other failure stops the run until Try again; a cancelled download keeps its .tmp for range resume.
+/// Milieu's bundled scenes: pre-converted .atex release assets (<see cref="BackdropPins"/>), never in the plugin zip.
+/// Downloaded one scene at a time, only when asked for (a tile click or "Download all"), into
+/// <c>&lt;config&gt;/DefaultBackdrops</c>. Present = at the pinned size. A 404/410 marks that scene unpublished and moves
+/// on; any other failure fails that scene and drains the queue. A cancelled download keeps its .tmp for range resume.
 /// </summary>
-public sealed class DefaultBackdropsDownloadService : IDisposable
+public sealed class DefaultBackdropsDownloadService : IBundledBackdrops, Gui.IGridDownloads, IDisposable
 {
-    /// <summary>
-    /// Immutable by contract: bump it whenever <see cref="Backdrops"/> changes and never re-upload assets under an
-    /// existing tag (a mirror would keep serving the old bytes). upload-backdrops.yml publishes it.
-    /// </summary>
-    internal const string BackdropsTag = "backdrops-v1";
-
-    public const string CreditsUrl = "https://github.com/" + MilieuAssets.Repo + "/blob/" + BackdropsTag + "/Milieu/DefaultBackdrops/CREDITS.md";
-
-    /// <summary>
-    /// Must equal the committed <c>Milieu/DefaultBackdrops</c> folder byte for byte
-    /// (<c>DefaultBackdropsDownloadServiceTests.Pinned_list_matches_the_committed_folder</c>).
-    /// </summary>
-    internal static readonly (string Name, string DisplayName, long Bytes, string Sha256)[] Backdrops =
-    [
-        ("forest.jpeg", "Forest", 11438345L, "4f50adab0cacdcb44464c4db66edf4a83b5cc6de76ce237b0837ac0e650d4017"),
-        ("galaxy.jpeg", "Galaxy", 5164434L, "543a9c982849726862a721e6a6f64cc2361afa35e8e160087e4c67916e407757"),
-        ("livingroom.jpeg", "Living Room", 6014821L, "63010dea376a722b331256c0a93fdb4266bde072ee228f4c69e87a821641840a"),
-        ("livingroom2.jpeg", "Living Room 2", 5701238L, "bf80174da981527a7f250f6d4b2e552d79deb3b587671028896363b969c7bee6"),
-        ("lodge.jpeg", "Lodge", 14927085L, "0a2bde2818f55b08b422f508494880a273398543b133ecd72254bc5107245fec"),
-        ("moon.jpeg", "Moon", 4964229L, "ae1bb9ba8d66dc58b121c5fbd3b8cb3ee88bd16190cc012269cea2621878cfe7"),
-        ("sunset.jpeg", "Sunset", 2175541L, "19583850892488e1d60f0220393140e7e4a43d8233b870dc8b8ff51702789dee"),
-        ("warehouse.jpeg", "Warehouse", 7416775L, "7fb67402575e408b303730c21a606e43d4a3d0c95673a93c15da6c8130f7886a"),
-    ];
-
-    public static long TotalBytes => Backdrops.Sum(b => b.Bytes);
-
-    /// <summary>The asset name to ask for: GitHub rewrites spaces, and upload-backdrops.yml uploads with this substitution.</summary>
-    internal static string RemoteName(string localName) => localName.Replace(' ', '.');
-
     internal delegate Task<FetchResult> Fetch(string[] baseUrls, string fileName, long expectedBytes, string expectedSha,
                                               string destPath, Action<long>? onProgress, CancellationToken ct);
 
@@ -63,11 +44,16 @@ public sealed class DefaultBackdropsDownloadService : IDisposable
     private readonly string dir;
     private readonly CancellationTokenSource cts = new();
     private readonly object gate = new();
-    private PackStatus status;
-    private bool running;
-    private bool started;
-    private Task? runTask;
+    private readonly Queue<string> queue = new();
+    private readonly Dictionary<string, EntryStatus> status = new(StringComparer.OrdinalIgnoreCase);
+    private Task? worker;
     private long version;
+
+    /// <summary>
+    /// A scene finished downloading. Fires on the download worker thread and only signals: consumers read state on
+    /// the framework tick or the draw (no game or Penumbra call may happen here).
+    /// </summary>
+    public event Action<string>? EntryCompleted;
 
     public string Directory => dir;
 
@@ -79,108 +65,159 @@ public sealed class DefaultBackdropsDownloadService : IDisposable
         if (fetch == null) downloader = new ResilientDownloader(log, sensitiveDir: configDir);
         this.fetch = fetch ?? downloader!.FetchAsync;
         dir = Path.Combine(configDir, "DefaultBackdrops");
-        status = new PackStatus(PackState.Idle, 0, Backdrops.Length, "", false);
     }
 
-    public PackStatus Status { get { lock (gate) return status; } }
-
-    /// <summary>Bumped on every change, so the UI can re-read cheaply.</summary>
+    /// <summary>Bumped on every change so the UI can re-read cheaply.</summary>
     public long Version => Interlocked.Read(ref version);
 
-    internal bool IsRunActive { get { lock (gate) return running; } }
+    public string PathOf(string stem) => Path.Combine(dir, (BackdropPins.Find(stem)?.Stem ?? stem) + ".atex");
 
-    public string PathOf(string name) => Path.Combine(dir, name);
+    public bool IsDownloaded(string stem) => BackdropPins.Find(stem) is { } pin && AtPinnedSize(PathOf(pin.Stem), pin.Bytes);
 
-    public bool IsDownloaded(string name)
-    {
-        var pin = Backdrops.FirstOrDefault(b => b.Name == name);
-        return pin.Name != null && AtPinnedSize(PathOf(name), pin.Bytes);
-    }
-
-    public IReadOnlyList<BundledBackdrop> Available() =>
-        Backdrops.Where(b => AtPinnedSize(PathOf(b.Name), b.Bytes))
-                 .Select(b => new BundledBackdrop(b.Name, b.DisplayName, PathOf(b.Name)))
-                 .ToList();
-
-    /// <summary>
-    /// Starts the download once. <paramref name="retryFailed"/> re-arms a failed, finished run (Try again);
-    /// a call while a run is active does nothing.
-    /// </summary>
-    public void EnsureAsync(bool retryFailed = false)
+    public EntryStatus StatusOf(string stem)
     {
         lock (gate)
         {
-            if (running) return;
-            var rearm = retryFailed && status.State == PackState.Failed;
-            if (started && !rearm) return;
-            started = true;
-            running = true;
-            status = status with { State = PackState.Downloading, Detail = "", Have = CountHave(), Unpublished = false };
-            Interlocked.Increment(ref version);
-            runTask = Task.Run(Run);
+            if (status.TryGetValue(stem, out var s) && s.State is not (EntryState.Downloaded or EntryState.NotDownloaded)) return s;
         }
+        return IsDownloaded(stem) ? new EntryStatus(EntryState.Downloaded, 0, "") : new EntryStatus(EntryState.NotDownloaded, 0, "");
+    }
+
+    public bool AnyMissing => BackdropPins.All.Any(p => !IsDownloaded(p.Stem));
+
+    /// <summary>The release isn't there yet: some scene answered 404/410 and none is on disk.</summary>
+    public bool PackUnpublished => BackdropPins.All.Any(p => StatusOf(p.Stem).State == EntryState.Unpublished)
+                                   && BackdropPins.All.All(p => !IsDownloaded(p.Stem));
+
+    internal bool IsRunActive { get { lock (gate) return worker is { IsCompleted: false }; } }
+
+    /// <summary>Queues one scene (no-op when it is downloaded, queued or downloading).</summary>
+    public void Request(string stem)
+    {
+        if (BackdropPins.Find(stem) is not { } pin) return;
+        lock (gate)
+        {
+            if (cts.IsCancellationRequested) return;
+            var current = status.TryGetValue(pin.Stem, out var s) ? s.State : EntryState.NotDownloaded;
+            if (current is EntryState.Queued or EntryState.Downloading) return;
+            if (IsDownloaded(pin.Stem)) return;
+            status[pin.Stem] = new EntryStatus(EntryState.Queued, 0, "");
+            queue.Enqueue(pin.Stem);
+            Bump();
+            if (worker is not { IsCompleted: false }) worker = Task.Run(Run);
+        }
+    }
+
+    /// <summary>Queues every missing scene in table order.</summary>
+    public void RequestAll()
+    {
+        foreach (var pin in BackdropPins.All) Request(pin.Stem);
     }
 
     private async Task Run()
     {
-        var end = PackState.Ready;
-        var detail = "";
-        var absent = 0;
-        try
+        while (true)
         {
-            System.IO.Directory.CreateDirectory(dir);
-            SetHave();
-            foreach (var (name, _, bytes, sha) in Backdrops)
-            {
-                cts.Token.ThrowIfCancellationRequested();
-                var dest = PathOf(name);
-                if (AtPinnedSize(dest, bytes)) continue;
-                var r = await fetch(MilieuAssets.BaseUrls(BackdropsTag), RemoteName(name), bytes, sha, dest, null, cts.Token).ConfigureAwait(false);
-                if (r.Ok)
-                {
-                    SetHave();
-                    Interlocked.Increment(ref version);
-                    continue;
-                }
-                end = PackState.Failed;
-                detail = $"{name}: {r.Detail}";
-                log.Warning($"[Milieu] Backdrop {name} unavailable ({r.Detail})");
-                // Only an asset that is not there (404/410) is skipped; anything else stops the run, which Try again resumes.
-                if (r.Failure == FetchFailure.Http && r.StatusCode is 404 or 410) { absent++; continue; }
-                break;
-            }
-            if (end == PackState.Ready) log.Information("[Milieu] The bundled backdrops are ready.");
-        }
-        catch (Exception) when (cts.IsCancellationRequested)
-        {
-            end = PackState.Idle;   // plugin unloading: not a failure; partial .tmp files stay for resume
-        }
-        catch (Exception ex)
-        {
-            end = PackState.Failed;
-            detail = ex.GetType().Name;
-            log.Warning("[Milieu] Downloading the bundled backdrops failed: " + LogText.Describe(ex, dir));
-        }
-        finally
-        {
-            var have = CountHave();
+            string stem;
             lock (gate)
             {
-                running = false;
-                // Unpublished: nothing on disk and every asset answered 404/410, i.e. the release tag doesn't exist yet.
-                status = status with { State = end, Detail = detail, Have = have, Unpublished = end == PackState.Failed && have == 0 && absent == Backdrops.Length };
-                Interlocked.Increment(ref version);
+                if (queue.Count == 0 || cts.IsCancellationRequested) return;
+                stem = queue.Dequeue();
+                status[stem] = new EntryStatus(EntryState.Downloading, 0, "");
+                Bump();
+            }
+            var pin = BackdropPins.Find(stem)!;
+            var completed = false;
+            try
+            {
+                System.IO.Directory.CreateDirectory(dir);
+                var r = await fetch(MilieuAssets.BaseUrls(BackdropPins.Tag), BackdropPins.RemoteName(pin), pin.Bytes, pin.Sha256,
+                                    PathOf(stem), bytes => SetBytes(stem, bytes), cts.Token).ConfigureAwait(false);
+                if (r.Ok)
+                {
+                    Set(stem, EntryState.Downloaded, "");
+                    completed = true;
+                }
+                else if (r.Failure == FetchFailure.Http && r.StatusCode is 404 or 410)
+                {
+                    Set(stem, EntryState.Unpublished, r.Detail);
+                    log.Warning($"[Milieu] Backdrop {pin.FileName} isn't published yet ({r.Detail})");
+                }
+                else
+                {
+                    Set(stem, EntryState.Failed, r.Detail);
+                    log.Warning($"[Milieu] Backdrop {pin.FileName} unavailable ({r.Detail})");
+                    Drain();
+                }
+            }
+            catch (Exception) when (cts.IsCancellationRequested)
+            {
+                Set(stem, EntryState.NotDownloaded, "");   // unloading: not a failure; the .tmp stays for resume
+                return;
+            }
+            catch (Exception ex)
+            {
+                Set(stem, EntryState.Failed, ex.GetType().Name);
+                log.Warning($"[Milieu] Downloading {pin.FileName} failed: " + LogText.Describe(ex, dir));
+                Drain();
+            }
+            if (completed)
+            {
+                try { EntryCompleted?.Invoke(stem); }
+                catch (Exception e) { log.Warning("[Milieu] EntryCompleted handler failed: " + LogText.Describe(e, dir)); }
             }
         }
     }
 
-    private void SetHave()
+    /// <summary>After a real failure the rest of the queue goes back to "not downloaded" until asked again.</summary>
+    private void Drain()
     {
-        var have = CountHave();
-        lock (gate) status = status with { Have = have };
+        lock (gate)
+        {
+            while (queue.Count > 0) status[queue.Dequeue()] = new EntryStatus(EntryState.NotDownloaded, 0, "");
+            Bump();
+        }
     }
 
-    private int CountHave() => Backdrops.Count(b => AtPinnedSize(PathOf(b.Name), b.Bytes));
+    private void Set(string stem, EntryState state, string detail)
+    {
+        lock (gate) { status[stem] = new EntryStatus(state, 0, detail); Bump(); }
+    }
+
+    private void SetBytes(string stem, long bytes)
+    {
+        lock (gate) { status[stem] = new EntryStatus(EntryState.Downloading, bytes, ""); Bump(); }
+    }
+
+    private void Bump() => Interlocked.Increment(ref version);
+
+    public void MarkCorrupt(string stem)
+    {
+        try { if (File.Exists(PathOf(stem))) File.Delete(PathOf(stem)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log.Warning("[Milieu] Could not delete a damaged backdrop: " + LogText.Describe(e, dir)); }
+        Set(stem, EntryState.NotDownloaded, "");
+    }
+
+    /// <summary>
+    /// Deletes leftovers at the top of the download folder: v1 JPEGs (and their partials) and .atex files that are not
+    /// pinned. Pinned .atex files and anything else are kept. Runs on a background task at startup.
+    /// </summary>
+    public int CleanupStale()
+    {
+        if (!System.IO.Directory.Exists(dir)) return 0;
+        var deleted = 0;
+        foreach (var f in System.IO.Directory.EnumerateFiles(dir, "*", SearchOption.TopDirectoryOnly))
+        {
+            var name = Path.GetFileName(f);
+            var stale = name.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".jpeg.tmp", StringComparison.OrdinalIgnoreCase)
+                        || ((name.EndsWith(".atex", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".atex.tmp", StringComparison.OrdinalIgnoreCase))
+                            && BackdropPins.Find(name.Split('.')[0]) == null);
+            if (!stale) continue;
+            try { File.Delete(f); deleted++; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* retried next start */ }
+        }
+        return deleted;
+    }
 
     private static bool AtPinnedSize(string path, long bytes)
     {
@@ -188,12 +225,15 @@ public sealed class DefaultBackdropsDownloadService : IDisposable
         catch (Exception) { return false; }
     }
 
-    /// <summary>Cancels a fetch, waits up to 2 s for the run to stop, then releases the HTTP client.</summary>
+    /// <summary>Cancels the queue, waits up to 2 s for the worker, then releases the HTTP client.</summary>
     public void Dispose()
     {
-        cts.Cancel();
         Task? t;
-        lock (gate) t = runTask;
+        lock (gate)
+        {
+            cts.Cancel();
+            t = worker;
+        }
         try { t?.Wait(DisposeWait); }
         catch (AggregateException) { }
         downloader?.Dispose();

@@ -46,6 +46,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 256x128 previews of the bundled scenes (tools/PrepareBackdrops thumbs), embedded so the grid shows before any download. -->
+    <EmbeddedResource Include="Resources\Thumbs\*.jpg" LogicalName="Milieu.Resources.Thumbs.%(Filename).jpg" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="..\THIRD_PARTY_NOTICES.txt" Link="THIRD_PARTY_NOTICES.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

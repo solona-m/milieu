@@ -24,7 +24,11 @@ public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker,
     public string ShowButtonLabel => status.State is BackdropState.Shown or BackdropState.Suspended or BackdropState.AwaitingRedirect
         ? "Apply" : "Show";
 
-    public bool HdrControlsEnabled => config.ImagePath != null && ImageLoader.KindOf(config.ImagePath) == ImageKind.Hdr;
+    public bool HdrControlsEnabled => config.ImagePath != null && !Assets.BackdropPins.IsBundledId(config.ImagePath)
+                                      && ImageLoader.KindOf(config.ImagePath) == ImageKind.Hdr;
+
+    /// <summary>A bundled scene is selected: texture size and HDR settings don't apply (pre-converted).</summary>
+    public bool IsBundledSelection => Assets.BackdropPins.IsBundledId(config.ImagePath);
 
     public bool ShowRoomHint => config.Mode == DomeMode.Room;
 
