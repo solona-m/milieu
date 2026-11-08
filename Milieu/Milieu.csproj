@@ -21,7 +21,18 @@
     <DalamudApiLevel>15</DalamudApiLevel>
     <Tags>hdri;skybox;backdrop;gpose;screenshot;vfx</Tags>
     <CategoryTags>utility</CategoryTags>
+    <RepoUrl>https://github.com/solona-m/milieu</RepoUrl>
+    <!-- Dalamud reads images\icon.png next to the DLL for dev plugins only; installs from a plugin repo fetch this URL,
+         so the file must exist on main at this exact path. -->
+    <IconUrl>https://raw.githubusercontent.com/solona-m/milieu/main/Milieu/images/icon.png</IconUrl>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lands at bin\...\images\icon.png, where Dalamud looks for a dev plugin's icon. Square, at most 512x512. -->
+    <None Include="images\icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
   <!-- Plain versions (no floats or ranges), the same ones Proteus ships, so packages.lock.json stays a reviewable diff. -->
   <ItemGroup>
