@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted; partly superseded by ADR 0005 (the scenes now ship pre-converted as .atex, published by a guarded local script instead of the workflow, downloaded per scene).
 
 ## Context
 

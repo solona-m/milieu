@@ -56,7 +56,7 @@ Architecture decision records are in `docs/adr/`.
 - stop: none — unload the plugin in game via `/xlplugins`
 - single test: `dotnet test Milieu.Tests/Milieu.Tests.csproj -c Release --filter "FullyQualifiedName~PluginManifestTests"`
 - reference-parity tests (run before code review): set `MILIEU_REFERENCE_AVFX` / `MILIEU_REFERENCE_ATEX` to an extracted "Pickles Venue" `ve0002.avfx` / `Sky1.atex` and `MILIEU_HDRI_SOURCE_DIR` to the source images, then filter `FullyQualifiedName~Reference|FullyQualifiedName~WhenSourcePresent|FullyQualifiedName~BundledBackdropsTests|FullyQualifiedName~CancelInsideMip0`; report pass/skip counts
-- prepare bundled backdrops (rarely): `dotnet run --project tools/PrepareBackdrops -c Release -- <source dir> Milieu/DefaultBackdrops`, then update the pinned table in `DefaultBackdropsDownloadService` and bump its tag
+- prepare bundled backdrops (rarely): `dotnet run --project tools/PrepareBackdrops -c Release -- <source dir> Milieu/DefaultBackdrops`, then `-- atex Milieu/DefaultBackdrops artifacts/backdrops`, paste the printed pins into `Milieu/Assets/BackdropPins.cs` and bump its `Tag`, `-- verify artifacts/backdrops --tag <tag>`, `-- thumbs Milieu/DefaultBackdrops Milieu/Resources/Thumbs`; publish (the owner): tag that commit, push the tag, `powershell -File tools/publish-backdrops.ps1 -Tag <tag>` (ADR 0005)
 - default branch: `test` — reviews diff against it; work merges into it (`main` is the stable release branch)
 
 ## Architecture
@@ -69,7 +69,8 @@ Milieu/            the Dalamud plugin (Plugin.cs: services, events, /milieu, dis
   Interop/         native signatures, static VFX spawner + remove hook, Penumbra IPC, game state
   Assets/          bundled-backdrop downloads (pinned release assets, resilient downloader)
   Gui/             main window and its pure view models
-  DefaultBackdrops/  committed bundled images (NOT shipped in the zip; published by upload-backdrops.yml)
+  DefaultBackdrops/  committed source JPEGs of the bundled scenes (NOT shipped; pre-converted .atex are built into artifacts/backdrops and published with tools/publish-backdrops.ps1)
+  Resources/Thumbs/  embedded 256x128 previews of the bundled scenes
 Milieu.Tests/      xunit tests (Support/: fakes, synthetic images, reference-file facts)
 tools/PrepareBackdrops/  offline tool that produces Milieu/DefaultBackdrops
 docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops), agent guidance
@@ -88,7 +89,7 @@ tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 - Native interop: function signatures, hooks, unsafe struct access, VFX spawn/remove — a wrong signature or a dangling VFX pointer crashes the game
 - Penumbra IPC (temporary mods/redirects) — must be removed on dispose and never touch the user's own mods
 - `Milieu/Configuration.cs` migrations — a mistake loses user settings
-- Downloads (`Milieu/Assets/`) and `.github/workflows/` — outbound GETs that write into the config directory; pinned size + SHA-256; workflow actions stay SHA-pinned
+- Downloads (`Milieu/Assets/`) and `tools/publish-backdrops.ps1` — outbound GETs that write into the config directory, downloaded textures handed to the game; pinned size + header + SHA-256 before use; the publish script's guards keep pins and release assets identical
 - `.claude/settings.json` — loaded by every agent session in the repo
 
 ## Review & Planning Guidance

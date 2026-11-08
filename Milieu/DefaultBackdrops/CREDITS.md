@@ -1,6 +1,6 @@
 # Bundled backdrop credits
 
-These images ship as release assets under the `backdrops-v1` tag and are downloaded by Milieu on demand.
+These images are the source of the bundled scenes. They ship pre-converted (BC7 .atex) as release assets under the `backdrops-v2` tag and are downloaded by Milieu on demand.
 
 **Licence:** the repository owner confirmed on 2026-11-08 that the images' licence permits redistribution and does
 not require attribution. No attribution is therefore listed. The processed files carry no EXIF metadata.
@@ -18,5 +18,5 @@ not require attribution. No attribution is therefore listed. The processed files
 
 Regenerate the processed images with
 `dotnet run --project tools/PrepareBackdrops -c Release -- <source dir> Milieu/DefaultBackdrops`,
-then update the pinned table in `Milieu/Assets/DefaultBackdropsDownloadService.cs` and bump `BackdropsTag`.
+then rebuild the .atex, update `Milieu/Assets/BackdropPins.cs` and bump its `Tag` (ADR 0005).
 The upload workflow refuses to publish while this file still contains a TODO placeholder in square brackets.

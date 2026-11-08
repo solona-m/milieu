@@ -12,27 +12,35 @@ Type `/milieu` in game to open the window, and `/milieu off` to hide the backdro
 
 ## Using it
 
-1. Pick an image: **Browse…** for your own `.hdr`, `.png` or `.jpg`, or open **Backdrops** and pick one of the
-   bundled panoramas (downloaded the first time you open the list).
-2. Choose **Sky dome** or **Room dome**.
-3. Press **Show**. The first time, the image is converted in the background (an 8K image takes a little while);
-   after that it is cached.
+The window shows a grid of scenes. **Click a scene to show it**; there is no Show button.
 
-While the dome is up:
+- **None** turns the backdrop off.
+- **Bundled scenes** (Forest, Galaxy, Living Room, Living Room 2, Lodge, Moon, Sunset, Warehouse) come pre-converted.
+  A scene downloads (about 45 MB) the first time you click it, then shows within a second or two. **Download all**
+  fetches the rest.
+- **Add more…** adds your own `.hdr`, `.png` or `.jpg` as a tile and shows it. Your images are converted on your PC
+  the first time (an 8K image takes a while), then cached; their tile gets a preview once converted. **×** removes a
+  tile from the grid without touching the file.
+- **Sky dome / Room dome** picks the dome. Each remembers its own settings.
 
-- **Yaw** and **Height** move it live.
-- **Radius**, **Vertical scale**, **Horizontal/Vertical repeat**, **Flip** and **Brightness** apply when you let go
-  of the slider.
-- **Re-centre on me** moves the dome to where you stand.
-- For HDR images, **Exposure** and **Tone map** apply the next time you press **Apply**.
+**Settings** (collapsed by default; the plugin's settings button in `/xlplugins` opens it expanded):
+
+- **Ground projection** (on by default) flattens the bottom of the dome into a floor at your feet, so the image's
+  ground lies on the ground. **Camera height** (1.6 by default) is how far the image's horizon sits above that floor;
+  the line under the checkbox tells you if the floor is inactive and why.
+- **Radius**, **Vertical scale**, **Camera height** and **Yaw** apply when you let go of the slider (the dome is
+  replaced, new one first, so there is no flicker). **Re-centre on me** moves the dome to where you stand.
+- **Horizontal/Vertical repeat**, **Flip** and **Brightness** adjust the mapping.
+- For your own HDR images, **Exposure** and **Tone map**, and **Texture size** for your own images, re-convert
+  automatically shortly after you change them.
 
 The dome follows you through zone changes (re-centred) and stays up in GPose. It is hidden during cutscenes and on
 logout, and never shown automatically when the plugin loads.
 
 ### Room dome
 
-The room dome is a small sphere (radius 10 by default, centred at eye height). It only looks right with the camera
-inside it, near the centre: that is where the photo was taken from.
+The room dome is small (radius 10 by default). It looks right with the camera inside it, near the centre: that is
+where the photo was taken from.
 
 ### Images
 
@@ -47,9 +55,10 @@ inside it, near the centre: that is where the photo was taken from.
 - `dotnet build Milieu/Milieu.csproj -c Release`
 - `dotnet test Milieu.Tests/Milieu.Tests.csproj -c Release`
 
-See `AGENTS.md` for the development workflow and `docs/adr/` for the design decisions.
+See `AGENTS.md` for the development workflow and `docs/adr/` for the design decisions. Bundled scenes are prepared
+and published as described in ADR 0005.
 
 ## Licence
 
-AGPL-3.0-or-later. Third-party notices are in `THIRD_PARTY_NOTICES.txt`; the bundled backdrops' terms are in
+AGPL-3.0-or-later. Third-party notices are in `THIRD_PARTY_NOTICES.txt`; the bundled scenes' terms are in
 `Milieu/DefaultBackdrops/CREDITS.md`.
