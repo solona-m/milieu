@@ -17,9 +17,17 @@
     <Compile Include="..\..\Milieu\Imaging\BandFill.cs" Link="Imaging\BandFill.cs" />
     <Compile Include="..\..\Milieu\Imaging\SeamDetector.cs" Link="Imaging\SeamDetector.cs" />
     <Compile Include="..\..\Milieu\Imaging\ToneMapper.cs" Link="Imaging\ToneMapper.cs" />
+    <Compile Include="..\..\Milieu\Imaging\MipChain.cs" Link="Imaging\MipChain.cs" />
+    <Compile Include="..\..\Milieu\Imaging\Bc7.cs" Link="Imaging\Bc7.cs" />
+    <Compile Include="..\..\Milieu\GameFiles\AtexWriter.cs" Link="GameFiles\AtexWriter.cs" />
+    <Compile Include="..\..\Milieu\Backdrop\TextureConversion.cs" Link="Backdrop\TextureConversion.cs" />
+    <Compile Include="..\..\Milieu\Assets\BackdropPins.cs" Link="Assets\BackdropPins.cs" />
+    <Compile Include="..\..\Milieu\Assets\MilieuAssets.cs" Link="Assets\MilieuAssets.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="StbImageSharp" Version="2.30.16" />
     <PackageReference Include="StbImageWriteSharp" Version="1.16.7" />
+    <PackageReference Include="BCnEncoder.Net" Version="2.3.0" />
+    <PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.2" />
   </ItemGroup>
 </Project>

@@ -11,7 +11,7 @@ public class ConfigurationTests
     public void Defaults_SkyAndRoomPresets()
     {
         var c = new Configuration();
-        Assert.Equal((20000f, 1f, 0f, 0f), (c.Sky.Radius, c.Sky.VerticalScale, c.Sky.HeightOffset, c.Sky.YawDegrees));
+        Assert.Equal((20000f, 1f, 400f, 0f), (c.Sky.Radius, c.Sky.VerticalScale, c.Sky.HeightOffset, c.Sky.YawDegrees));
         Assert.Equal((10f, 1f, 1.6f, 0f), (c.Room.Radius, c.Room.VerticalScale, c.Room.HeightOffset, c.Room.YawDegrees));
         Assert.Equal(DomeMode.Sky, c.Mode);
         Assert.Same(c.Sky, c.Current);

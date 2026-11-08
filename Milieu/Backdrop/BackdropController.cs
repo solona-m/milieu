@@ -48,6 +48,8 @@ public sealed class BackdropController
 
     private Dictionary<string, string>? shownSet;
     private string? shownAvfxGamePath;
+    private float? shownFloorY;
+    private float? pendingFloorY;
     private VfxHandle? handle;
     private Vector3 centre;
     private bool recenterOnRespawn;
@@ -161,7 +163,7 @@ public sealed class BackdropController
     /// dome behind (seen in game, build 3). The new dome is spawned before the old one is removed, so it never flickers.
     /// Saved settings apply on the next spawn otherwise.
     /// </summary>
-    public void ApplyLive()
+    public void ApplyPlacement()
     {
         if (state != BackdropState.Shown || handle is not { IsDead: false } old || shownAvfxGamePath == null) return;
         var spawned = spawner.Spawn(shownAvfxGamePath, SpawnPosition(), YawRadians());
@@ -170,7 +172,17 @@ public sealed class BackdropController
         handle = spawned;
     }
 
-    /// <summary>Radius, vertical scale, repeats, flip or brightness changed: rebuild the VFX and swap it in.</summary>
+    /// <summary>
+    /// Height changed. With ground projection the floor is baked into the mesh, so a new floor means a rebuild; if the
+    /// floor is unchanged (or projection is off) the same VFX is respawned at the new height. Exactly one swap.
+    /// </summary>
+    public void ApplyHeight()
+    {
+        if (config.Current.FloorY() != shownFloorY) ApplyRebuild();
+        else ApplyPlacement();
+    }
+
+    /// <summary>Radius, vertical scale, repeats, flip, brightness, mode or ground projection changed: rebuild the VFX and swap it in.</summary>
     public void ApplyRebuild()
     {
         if (texture == null) return;
@@ -181,7 +193,7 @@ public sealed class BackdropController
     public void Recenter()
     {
         if (game.PlayerPosition is { } p) centre = p;
-        ApplyLive();
+        ApplyPlacement();
     }
 
     // ---------------------------------------------------------------- game and Penumbra events (framework thread)
@@ -305,10 +317,11 @@ public sealed class BackdropController
     private void Register(PreparedTexture tex)
     {
         byte[] avfx;
+        var floorY = config.Current.FloorY();
         try
         {
             avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, config.Current.VerticalScale,
-                config.HorizontalRepeat, config.VerticalRepeat, config.FlipHorizontal, config.Brightness));
+                config.HorizontalRepeat, config.VerticalRepeat, config.FlipHorizontal, config.Brightness, floorY));
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
         {
@@ -346,6 +359,7 @@ public sealed class BackdropController
         }
         pendingSet = set;
         pendingAvfxGamePath = CacheStore.AvfxGamePath(key);
+        pendingFloorY = floorY;
         waitTicks = 0;
         state = BackdropState.AwaitingRedirect;
     }
@@ -373,6 +387,7 @@ public sealed class BackdropController
             handle = spawned;
             shownSet = pendingSet;
             shownAvfxGamePath = pendingAvfxGamePath;
+            shownFloorY = pendingFloorY;
             pendingSet = null; pendingAvfxGamePath = null;
             state = BackdropState.Shown;
             readyFrames = 0;

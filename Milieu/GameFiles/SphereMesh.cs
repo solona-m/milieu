@@ -43,9 +43,15 @@ internal sealed class SphereMesh
     /// <summary>The reference stores 127 in the unused 4th byte of normals and tangents.</summary>
     public const byte UnusedW = 127;
 
-    public static SphereMesh Build(int segments = 96, int rings = 48)
+    /// <param name="floorY">
+    /// Ground projection: when set (0 &lt; floorY &lt; 1, in unit-radius space), every vertex below the floor plane
+    /// y = −floorY is pulled in along its own ray onto that plane (position = d · min(1, floorY / −d.y)), so the
+    /// panorama's ground lies flat. UVs, normals, tangents and indices are unchanged; null gives the reference mesh.
+    /// </param>
+    public static SphereMesh Build(int segments = 96, int rings = 48, float? floorY = null)
     {
         if (segments < 3 || rings < 2) throw new ArgumentOutOfRangeException(nameof(segments));
+        if (floorY is { } f && !(f > 0 && f < 1)) throw new ArgumentOutOfRangeException(nameof(floorY), "floorY must be in (0, 1).");
         var cols = segments + 1;
         var count = cols * (rings + 1);
         if (count > ushort.MaxValue) throw new ArgumentOutOfRangeException(nameof(segments), "Too many vertices for 16-bit indices.");
@@ -62,11 +68,18 @@ internal sealed class SphereMesh
                 var pz = Math.Cos(el) * Math.Sin(az);
                 // Snap float noise at the poles and axes so +0/-0 behave like the reference.
                 px = Clean(px); py = Clean(py); pz = Clean(pz);
+                // Normals stay those of the sphere direction d (inward), whatever the projection.
+                double nx = px, ny = py, nz = pz;
+                if (floorY is { } floor && py < 0)
+                {
+                    var s = Math.Min(1.0, floor / -py);
+                    px *= s; py *= s; pz *= s;
+                }
                 var tx = Clean(-Math.Sin(az));
                 var tz = Clean(Math.Cos(az));
                 verts[r * cols + c] = new DomeVertex(
                     (Half)px, (Half)py, (Half)pz, (Half)1.0,
-                    EncodeBiased(-px), EncodeBiased(-py), EncodeBiased(-pz), UnusedW,
+                    EncodeBiased(-nx), EncodeBiased(-ny), EncodeBiased(-nz), UnusedW,
                     EncodeBiased(tx), EncodeBiased(0), EncodeBiased(tz), UnusedW,
                     (Half)(-0.5 + (double)c / segments), (Half)(-0.5 + (double)r / rings));
             }

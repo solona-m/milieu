@@ -4,7 +4,10 @@ using System.Linq;
 
 namespace Milieu.GameFiles;
 
-/// <summary>What gets baked into the dome VFX. Yaw and height are applied at runtime, not here.</summary>
+/// <summary>
+/// What gets baked into the dome VFX. Yaw and height are applied at spawn, not here. <see cref="FloorY"/> is the
+/// ground-projection floor in unit-radius space (null = plain sphere).
+/// </summary>
 internal sealed record DomeAvfxParams(
     string TextureGamePath,
     float Radius,
@@ -12,7 +15,8 @@ internal sealed record DomeAvfxParams(
     float URepeat,
     float VRepeat,
     bool Flip,
-    float Brightness);
+    float Brightness,
+    float? FloorY = null);
 
 /// <summary>
 /// Authors the dome <c>.avfx</c> in code: one scheduler item → one timeline → one emitter → one model particle →
@@ -31,7 +35,7 @@ internal static class DomeAvfxBuilder
     public static byte[] Build(DomeAvfxParams p)
     {
         Validate(p);
-        var mesh = SphereMesh.Build();
+        var mesh = SphereMesh.Build(floorY: p.FloorY);
         var w = new AvfxChunkWriter();
         w.Begin("AVFX");
         Root(w);

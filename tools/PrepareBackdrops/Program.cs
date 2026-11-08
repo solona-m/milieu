@@ -1,6 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Threading.Tasks;
+using Milieu.Assets;
+using Milieu.Backdrop;
 using Milieu.Imaging;
 using StbImageSharp;
 using StbImageWriteSharp;
@@ -8,10 +12,14 @@ using StbImageWriteSharp;
 namespace PrepareBackdrops;
 
 /// <summary>
-/// Prepares the bundled backdrops. Reads only from srcDir and writes only into dstDir.
-/// Equirect: fit to 8192x4096 (copied byte for byte when it already fits). Strip (a non-wrapping panorama such as
-/// Sunset): scaled to 4096 wide, mirror-tiled to 8192 so it wraps, its horizon placed on the equator, and the sky and
-/// ground fade-filled. Every output must pass the seam detector or nothing is written for it.
+/// Offline tool for the bundled backdrops. It links Milieu's own imaging and conversion code, so what it produces is
+/// exactly what the plugin would. Commands (each reads only its input directory and writes only its output directory):
+/// <list type="bullet">
+/// <item><c>&lt;srcDir&gt; &lt;dstDir&gt;</c>: source panoramas → the committed 8192x4096 JPEGs (Equirect fit, or the Sunset strip).</item>
+/// <item><c>atex &lt;jpegDir&gt; &lt;outDir&gt;</c>: committed JPEGs → pre-converted 8192x4096 BC7 .atex; prints the pin lines.</item>
+/// <item><c>verify &lt;atexDir&gt; --tag &lt;tag&gt;</c>: checks the .atex set against <see cref="BackdropPins"/>.</item>
+/// <item><c>thumbs &lt;jpegDir&gt; &lt;outDir&gt;</c>: 256x128 JPEG previews embedded in the plugin.</item>
+/// </list>
 /// </summary>
 internal static class Program
 {
@@ -32,11 +40,55 @@ internal static class Program
     ];
 
     private const int Quality = 92;
+    private const int ThumbQuality = 85;
 
-    private static int Main(string[] args)
+    private static async Task<int> Main(string[] args)
     {
-        if (args.Length != 2) { Console.Error.WriteLine("usage: PrepareBackdrops <srcDir> <dstDir>"); return 2; }
-        var (src, dst) = (args[0], args[1]);
+        try
+        {
+            return args switch
+            {
+                ["atex", var src, var dst] => await Atex(src, dst),
+                ["verify", var dir, "--tag", var tag] => Verify(dir, tag),
+                ["thumbs", var src, var dst] => Thumbs(src, dst),
+                [var src, var dst] when !src.StartsWith('-') => Prepare(src, dst),
+                _ => Usage(),
+            };
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"{e.GetType().Name}: {e.Message}");
+            return 1;
+        }
+    }
+
+    private static int Usage()
+    {
+        Console.Error.WriteLine("usage: PrepareBackdrops <srcDir> <dstDir>\n" +
+                                "       PrepareBackdrops atex <jpegDir> <outDir>\n" +
+                                "       PrepareBackdrops verify <atexDir> --tag <tag>\n" +
+                                "       PrepareBackdrops thumbs <jpegDir> <outDir>");
+        return 2;
+    }
+
+    private static string Stem(string file) => Path.GetFileNameWithoutExtension(file);
+
+    private static ImageResult LoadRgb(string path)
+    {
+        using var s = File.OpenRead(path);
+        return ImageResult.FromStream(s, StbImageSharp.ColorComponents.RedGreenBlue);
+    }
+
+    private static byte[] RgbaToRgb(byte[] rgba)
+    {
+        var rgb = new byte[rgba.Length / 4 * 3];
+        for (long i = 0, j = 0; i < rgb.Length; i += 3, j += 4) { rgb[i] = rgba[j]; rgb[i + 1] = rgba[j + 1]; rgb[i + 2] = rgba[j + 2]; }
+        return rgb;
+    }
+
+    /// <summary>Source panoramas → committed JPEGs.</summary>
+    private static int Prepare(string src, string dst)
+    {
         Directory.CreateDirectory(dst);
         var failed = 0;
         foreach (var plan in Plans)
@@ -44,8 +96,7 @@ internal static class Program
             var input = Path.Combine(src, plan.File);
             var output = Path.Combine(dst, plan.File);
             if (!File.Exists(input)) { Console.Error.WriteLine($"missing: {plan.File}"); failed++; continue; }
-            ImageResult img;
-            using (var s = File.OpenRead(input)) img = ImageResult.FromStream(s, StbImageSharp.ColorComponents.RedGreenBlue);
+            var img = LoadRgb(input);
             byte[] rgba; int w, h;
             if (plan.Mode == Mode.Equirect)
             {
@@ -72,11 +123,57 @@ internal static class Program
             }
             var m = SeamDetector.Measure(rgba, w, h, 4);
             if (m.NoWrap) { Console.Error.WriteLine($"{plan.File}: output does not wrap (seam {m.Seam:0.0} vs {m.Adjacent:0.0}); not written"); failed++; continue; }
-            var rgb = new byte[(long)w * h * 3];
-            for (long i = 0, j = 0; i < rgb.Length; i += 3, j += 4) { rgb[i] = rgba[j]; rgb[i + 1] = rgba[j + 1]; rgb[i + 2] = rgba[j + 2]; }
-            using (var o = File.Create(output)) new ImageWriter().WriteJpg(rgb, w, h, StbImageWriteSharp.ColorComponents.RedGreenBlue, o, Quality);
+            using (var o = File.Create(output)) new ImageWriter().WriteJpg(RgbaToRgb(rgba), w, h, StbImageWriteSharp.ColorComponents.RedGreenBlue, o, Quality);
             Console.WriteLine($"{plan.File}: {img.Width}x{img.Height} -> {w}x{h} ({plan.Mode}), seam {m.Seam:0.0} vs {m.Adjacent:0.0}");
         }
         return failed == 0 ? 0 : 1;
+    }
+
+    /// <summary>Committed JPEGs → pre-converted .atex, with the same conversion code the plugin uses.</summary>
+    private static async Task<int> Atex(string src, string dst)
+    {
+        Directory.CreateDirectory(dst);
+        var encoder = new Bc7();
+        foreach (var plan in Plans)
+        {
+            var stem = Stem(plan.File);
+            var img = LoadRgb(Path.Combine(src, plan.File));
+            var (outW, outH) = BackdropSizing.OutputSize(img.Width, BackdropPins.Width);
+            var output = Path.Combine(dst, stem + ".atex");
+            var started = DateTime.UtcNow;
+            await using (var fs = File.Create(output))
+                await TextureConversion.ConvertToAtexAsync(img.Data, img.Width, img.Height, outW, outH, encoder, fs);
+            var bytes = new FileInfo(output).Length;
+            string sha;
+            await using (var fs = File.OpenRead(output)) sha = Convert.ToHexString(await SHA256.HashDataAsync(fs)).ToLowerInvariant();
+            var display = BackdropPins.Find(stem)?.DisplayName ?? stem;
+            Console.WriteLine($"        new(\"{stem}\", \"{display}\", {bytes}L, \"{sha}\"),   // {(DateTime.UtcNow - started).TotalSeconds:0}s");
+        }
+        return 0;
+    }
+
+    private static int Verify(string dir, string tag)
+    {
+        var problems = BackdropPins.Verify(dir, tag);
+        foreach (var p in problems) Console.Error.WriteLine(p);
+        if (problems.Count == 0) Console.WriteLine($"{BackdropPins.Count} files match the pins for {tag}.");
+        return problems.Count == 0 ? 0 : 1;
+    }
+
+    /// <summary>Committed JPEGs → 256x128 previews (Milieu/Resources/Thumbs/&lt;stem&gt;.jpg).</summary>
+    private static int Thumbs(string src, string dst)
+    {
+        Directory.CreateDirectory(dst);
+        foreach (var plan in Plans)
+        {
+            var img = LoadRgb(Path.Combine(src, plan.File));
+            var rgba = EquirectResampler.Resample(img.Data, img.Width, img.Height, TextureConversion.ThumbWidth, TextureConversion.ThumbHeight);
+            var output = Path.Combine(dst, Stem(plan.File) + ".jpg");
+            using (var o = File.Create(output))
+                new ImageWriter().WriteJpg(RgbaToRgb(rgba), TextureConversion.ThumbWidth, TextureConversion.ThumbHeight,
+                                           StbImageWriteSharp.ColorComponents.RedGreenBlue, o, ThumbQuality);
+            Console.WriteLine($"{Path.GetFileName(output)}: {new FileInfo(output).Length} bytes");
+        }
+        return 0;
     }
 }

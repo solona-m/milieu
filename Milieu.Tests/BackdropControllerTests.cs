@@ -95,7 +95,7 @@ public sealed class BackdropControllerTests : IDisposable
     }
 
     [Fact] // [AC-hdri-backdrop-3]
-    public void YawAndHeight_ApplyLiveWithoutRebuild()
+    public void ApplyPlacement_SpawnsNewBeforeRemovingOld_SameAvfx()
     {
         var h = ShowAndSpawn();
         var sets = penumbra.Sets.Count;
@@ -103,7 +103,7 @@ public sealed class BackdropControllerTests : IDisposable
         config.Sky.YawDegrees = 90;
         config.Sky.HeightOffset = 5;
         spawner.Calls.Clear();
-        c.ApplyLive();
+        c.ApplyPlacement();
         // Respawned at the new placement (new first, then the old removed); never just moved.
         Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
         Assert.Empty(spawner.Moves);
@@ -205,7 +205,7 @@ public sealed class BackdropControllerTests : IDisposable
         game.PlayerPosition = new Vector3(500, 0, -500);
         Ticks(BackdropController.RespawnDelayFrames);
         Assert.Equal(BackdropState.Shown, c.State);
-        Assert.Equal(new Vector3(500, 0, -500), spawner.Spawns[^1].Pos);
+        Assert.Equal(new Vector3(500, config.Sky.HeightOffset, -500), spawner.Spawns[^1].Pos);
     }
 
     [Fact] // [AC-hdri-backdrop-8] [EDGE-hdri-backdrop-21]
@@ -369,7 +369,7 @@ public sealed class BackdropControllerTests : IDisposable
         var h = ShowAndSpawn();
         now += TimeSpan.FromMinutes(1);
         spawner.GameFrees(h);
-        c.ApplyLive();
+        c.ApplyPlacement();
         c.Tick();
         Assert.Empty(spawner.Moves);
         Assert.Empty(spawner.Removes);
@@ -400,7 +400,7 @@ public sealed class BackdropControllerTests : IDisposable
         c.Tick();
         var calls = spawner.NativeCalls;
         config.Sky.YawDegrees = 45;
-        c.ApplyLive();
+        c.ApplyPlacement();
         Assert.Equal(calls, spawner.NativeCalls);
     }
 
@@ -409,7 +409,7 @@ public sealed class BackdropControllerTests : IDisposable
     {
         config.Sky.Radius = 300;
         c.ApplyRebuild();
-        c.ApplyLive();
+        c.ApplyPlacement();
         Ticks(5);
         Assert.Empty(penumbra.Sets);
         Assert.Equal(0, spawner.NativeCalls);

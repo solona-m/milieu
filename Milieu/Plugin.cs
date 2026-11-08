@@ -47,10 +47,9 @@ public sealed class Plugin : IDalamudPlugin
     {
         log = new DalamudLog(Log);
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        config.Migrate();
-        config.Clamp();
-
         var configDir = PluginInterface.GetPluginConfigDirectory();
+        config.Migrate(configDir);
+        config.Clamp();
         var cache = new CacheStore(Path.Combine(configDir, "cache"));
         try { cache.Cleanup(new HashSet<string>()); }   // nothing is shown at startup, so nothing needs keeping
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log.Debug("[Milieu] Startup cache cleanup skipped."); }

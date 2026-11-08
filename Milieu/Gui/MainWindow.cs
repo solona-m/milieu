@@ -112,8 +112,7 @@ public sealed class MainWindow : Window
         {
             config.Mode = (DomeMode)mode;
             save();
-            controller.Post(controller.ApplyRebuild);
-            controller.Post(controller.ApplyLive);
+            controller.Post(controller.ApplyRebuild);   // one swap at the new mode's settings and placement
         }
         if (vm.ShowRoomHint) ImGui.TextColored(Yellow, BackdropViewModel.RoomHint);
 
@@ -183,11 +182,14 @@ public sealed class MainWindow : Window
         if (ImGui.SliderFloat(label, ref v, min, max, format))
         {
             set(Math.Clamp(v, min, max));
-            if (BackdropViewModel.ApplyOf(key) == SliderApply.Live) controller.Post(controller.ApplyLive);
         }
         if (!ImGui.IsItemDeactivatedAfterEdit()) return;
         save();
-        if (key is "Yaw" or "Height") controller.Post(controller.ApplyLive);
-        else controller.Post(controller.ApplyRebuild);
+        controller.Post(BackdropViewModel.ApplyOf(key) switch
+        {
+            SliderApply.Placement => controller.ApplyPlacement,
+            SliderApply.Height => controller.ApplyHeight,
+            _ => controller.ApplyRebuild,
+        });
     }
 }

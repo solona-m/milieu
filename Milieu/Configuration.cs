@@ -1,4 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Milieu.Assets;
 using Dalamud.Configuration;
 using Milieu.Backdrop;
 using Milieu.Imaging;
@@ -12,12 +16,15 @@ namespace Milieu;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public int Version { get; set; } = CurrentVersion;
 
-    /// <summary>A user file or <c>&lt;config&gt;/DefaultBackdrops/&lt;name&gt;</c>. Never logged.</summary>
+    /// <summary>The selected scene: null = None, "bundled:&lt;stem&gt;", or a user image path. Never logged.</summary>
     public string? ImagePath { get; set; }
+
+    /// <summary>The user's own images shown as tiles, in the order added (paths; never logged).</summary>
+    public List<string> UserImages { get; set; } = [];
 
     public DomeMode Mode { get; set; } = DomeMode.Sky;
     public DomeSettings Sky { get; set; } = DomeSettings.SkyDefaults();
@@ -41,9 +48,33 @@ public sealed class Configuration : IPluginConfiguration
 
     public DomeSettings Current => ForMode(Mode);
 
-    /// <summary>Upgrades older versions in place. Version 1 is the first, so there is nothing to do yet.</summary>
-    public void Migrate()
+    /// <summary>
+    /// Upgrades older versions in place, as ordered steps (a later version adds its own step). Values the user set are
+    /// never overwritten.
+    /// </summary>
+    public void Migrate(string configDirectory)
     {
+        if (Version < 2)
+        {
+            // 1. A bundled JPEG path from v1 becomes its bundled id; 2. any other image becomes one of the user's tiles.
+            if (!string.IsNullOrWhiteSpace(ImagePath))
+            {
+                var bundledDir = Path.GetFullPath(Path.Combine(configDirectory, "DefaultBackdrops"));
+                string? dir = null;
+                try { dir = Path.GetDirectoryName(Path.GetFullPath(ImagePath)); } catch (Exception) { /* not a path */ }
+                var stem = Path.GetFileNameWithoutExtension(ImagePath);
+                if (dir != null && string.Equals(dir.TrimEnd('\\', '/'), bundledDir.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase)
+                    && BackdropPins.Find(stem) is { } pin)
+                    ImagePath = BackdropPins.IdOf(pin.Stem);
+                else if (!UserImages.Contains(ImagePath, StringComparer.OrdinalIgnoreCase))
+                    UserImages.Add(ImagePath);
+            }
+            // 3. The untouched old sky height (0) moves up to the new default; 4. ground-projection defaults.
+            if (Sky != null && Sky.HeightOffset == 0) Sky.HeightOffset = DomeSettings.SkyDefaults().HeightOffset;
+            if (Room != null) Room.GroundProjection = true;
+            if (Sky != null) Sky.GroundProjection = false;
+            Version = 2;
+        }
         if (Version < CurrentVersion) Version = CurrentVersion;
     }
 
@@ -61,5 +92,8 @@ public sealed class Configuration : IPluginConfiguration
         if (!Enum.IsDefined(ToneMap)) ToneMap = ToneMapOperator.Aces;
         if (MaxTextureWidth is not (4096 or 8192)) MaxTextureWidth = 8192;
         if (ImagePath != null && ImagePath.Trim().Length == 0) ImagePath = null;
+        if (BackdropPins.IsBundledId(ImagePath) && !BackdropPins.TryParseId(ImagePath, out _)) ImagePath = null;
+        UserImages = (UserImages ?? []).Where(p => !string.IsNullOrWhiteSpace(p))
+                                       .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 }
