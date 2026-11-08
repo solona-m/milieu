@@ -75,6 +75,17 @@ Penumbra re-init cleanup still run on stable (removal only; the staging folder i
 - Tech debt: `BackdropController` now holds both deliveries' lifecycles; splitting the synced branch into its own
   coordinator is a follow-up.
 
+## Implementation notes
+
+- Internal signatures drifted from the plan, behaviour unchanged: `SyncPlanner.ResolveBase(target, vanillaImc,
+  string? playerMeta, byte? ignoreVfxId)` and `Build(SyncBase, atexGamePath, atexDisk, avfxDisk)` (the target comes
+  from the base, no separate parameter); `SyncedDelivery.Begin` returns `(MessageKey Failure, StatusMessage? Message)`;
+  `PenumbraMeta.ReadImcOverrides(string?)` plus `TryReadImcOverrides` for the unreadable-meta status.
+- The ring's VFX path `chara/accessory/a0028/vfx/eff/va####.avfx` is shared by every a0028 slot. While synced, in the
+  player's collection only, Milieu's redirect overrides a user mod's own `va####` at the chosen id (200 or the next
+  free one), and an IMC VFX id ≥ 200 that a user mod gives another a0028 slot then loads Milieu's dome if it equals
+  the chosen id. The chosen id skips every id the vanilla IMC and the user's overrides use for the right-ring part only.
+
 ## When the dome doesn't show
 
 The dome is the item's own VFX, so it shows only while the game draws that item for that character:

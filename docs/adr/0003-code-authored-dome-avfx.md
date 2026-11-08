@@ -45,6 +45,10 @@ BC7 encoding uses BCnEncoder.Net per mip; its `EncodeToRawBytesAsync` observes t
 - **Lifetime:** the emitter lives 60 frames and the particle forever, as in the reference. If the game removes the
   dome on its own, Milieu's guard stops re-showing it after three early removals (`GameEndedVfx`).
 
+Synced delivery (ADR 0006) is the one exception to runtime placement: there the game places the item's VFX, so height
+and yaw are baked into the particle's Pos/Rot Y curves and the emitter uses `DomeAvfxBuilder.SyncedAttach` ItPr flags;
+local delivery stays runtime-placed with the reference's flags, byte-identical.
+
 ## Consequences
 
 Easier: any image, any size, no third-party VFX shipped, and the structure is tested.

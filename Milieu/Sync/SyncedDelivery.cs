@@ -102,7 +102,8 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
         var p = Pending;
         Pending = null;
         sync.ClearSynced(p.Collection);
-        if (Shown != null && sync.SetSynced(Shown.Collection, Shown.Plan.Paths, Shown.Plan.Manips) != 0)
+        if (Shown == null) sync.RedrawPlayer();   // nothing to put back: reload the item without the pending dome
+        else if (sync.SetSynced(Shown.Collection, Shown.Plan.Paths, Shown.Plan.Manips) != 0)
             log.Warning("[Milieu] Penumbra refused restoring the shown synced backdrop.");
         DropUnlessHeld((p.Collection, p.Target.Mode));
     }

@@ -152,12 +152,7 @@ public sealed class MainWindow : Window, IDisposable
             changed |= ImGui.RadioButton(labels[i], ref current, i);
             if (BackdropViewModel.DeliveryTooltip((Sync.DeliveryMode)i) is { } tip && ImGui.IsItemHovered()) ImGui.SetTooltip(tip);
         }
-        if (changed)
-        {
-            config.Delivery = (Sync.DeliveryMode)current;
-            save();
-            controller.Post(controller.ApplyDelivery);
-        }
+        if (changed) controller.Post(BackdropViewModel.DeliveryChange(config, (Sync.DeliveryMode)current, save, controller.ApplyDelivery));
         if (vm.DeliveryHint.Length > 0) ImGui.TextDisabled(vm.DeliveryHint);
     }
 

@@ -826,11 +826,8 @@ public sealed class BackdropController : Gui.IGridController
         RemoveDome();
         penumbra.Clear();
         shownSet = null; pendingSet = null;
-        if (synced is { HasRegistration: true })
-        {
-            synced.RemoveAll(redraw: true);
-            CleanupStaging(keepShown: false);
-        }
+        if (synced is { HasRegistration: true }) synced.RemoveAll(redraw: true);
+        CleanupStaging(keepShown: false);   // whenever the folder exists (e.g. a failed registration's atex); never creates it
         state = BackdropState.Hidden;
     }
 

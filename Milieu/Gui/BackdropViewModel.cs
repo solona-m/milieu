@@ -43,6 +43,18 @@ public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker,
         _ => "",
     };
 
+    /// <summary>
+    /// The action the window posts when "Visible to" changes: the config is set, saved and applied on the framework tick,
+    /// never during draw (the controller reads <c>config.Delivery</c> on that thread).
+    /// </summary>
+    public static System.Action DeliveryChange(Configuration config, Sync.DeliveryMode mode, System.Action save, System.Action apply) =>
+        () =>
+        {
+            config.Delivery = mode;
+            save();
+            apply();
+        };
+
     /// <summary>Why Re-centre is disabled in synced mode, or null.</summary>
     public string? RecenterTooltip => EffectiveDelivery != Sync.DeliveryMode.Local ? RecenterSyncedTooltip : null;
 

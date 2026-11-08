@@ -797,4 +797,31 @@ public sealed class BackdropControllerSyncTests : IDisposable
         Assert.Equal(["notes.txt"], StagedFiles());
         Assert.Empty(pen.RegistrationCalls);
     }
+
+    // ---------------------------------------------------------------- second look
+
+    [Fact] // [EDGE-synced-delivery-15] [EDGE-synced-delivery-2]
+    public void FailedRegistration_ThenTeardown_LeavesNoStagedTexture()
+    {
+        pen.SetSyncedResult = 11;                             // the staged atex exists, nothing is registered
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        c.Tick();
+        Assert.Contains(StagedFiles(), f => f.StartsWith("sky_"));
+        c.Teardown();
+        Assert.DoesNotContain(StagedFiles(), f => f.StartsWith("sky_") || f.StartsWith("dome_"));
+    }
+
+    [Fact] // [EDGE-synced-delivery-5]
+    public void PendingTimeout_NothingToRestore_RedrawsPlayer()
+    {
+        pen.ResolvePlayerWorks = false;
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        c.Tick();
+        var redraws = pen.Redraws;
+        Ticks(BackdropController.RedirectTimeoutTicks);
+        Assert.Equal(MessageKey.SyncRedirectTimeout, c.Status.Message.Key);
+        Assert.Equal(redraws + 1, pen.Redraws);
+    }
 }

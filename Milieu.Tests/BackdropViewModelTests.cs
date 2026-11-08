@@ -155,4 +155,17 @@ public class BackdropViewModelTests
         Assert.Equal("The Mad Bird Ring has no free effect slot for the backdrop.", StatusMessage.Of(MessageKey.SyncNoFreeVfxId, ("item", "Mad Bird Ring")).Text);
         Assert.StartsWith("pano.jpg isn't shared yet.", StatusMessage.Of(MessageKey.SyncUploadNotice, ("file", "pano.jpg")).Text);
     }
+
+    [Fact] // [AC-synced-delivery-1]
+    public void DeliveryChange_AppliedOnlyWhenThePostedActionRuns()
+    {
+        var c = Cfg();
+        var calls = new System.Collections.Generic.List<string>();
+        var action = BackdropViewModel.DeliveryChange(c, Milieu.Sync.DeliveryMode.MadBirdRing, () => calls.Add("save"), () => calls.Add("apply"));
+        Assert.Equal(Milieu.Sync.DeliveryMode.Local, c.Delivery);   // nothing changes during draw
+        Assert.Empty(calls);
+        action();
+        Assert.Equal(Milieu.Sync.DeliveryMode.MadBirdRing, c.Delivery);
+        Assert.Equal(["save", "apply"], calls);
+    }
 }
