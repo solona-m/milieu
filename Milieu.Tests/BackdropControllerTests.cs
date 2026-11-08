@@ -644,4 +644,110 @@ public sealed class BackdropControllerTests : IDisposable
         first.SetCanceled();
         Assert.True(BackdropController.WaitForJob(all, TimeSpan.FromSeconds(2)));
     }
+
+
+    private float SpawnedFloorY()
+    {
+        var avfx = AvfxChunkReader.Parse(File.ReadAllBytes(penumbra.Current!.Values.Single(v => v.EndsWith(".avfx"))));
+        var vdrw = avfx.Need("Modl").Need("VDrw").Data;
+        var min = float.MaxValue;
+        for (var o = 0; o < vdrw.Length; o += 36) min = Math.Min(min, (float)BitConverter.ToHalf(vdrw, o + 2));
+        return -min;
+    }
+
+    [Fact] // [AC-hdri-backdrop-15]
+    public void RoomDefaults_BuildWithFloorY_HeightOverRadius()
+    {
+        config.Mode = DomeMode.Room;
+        ShowAndSpawn();
+        Assert.Equal(0.16f, SpawnedFloorY(), 2);
+        Assert.Equal(game.PlayerPosition!.Value.Y + 1.6f, spawner.Spawns[^1].Pos.Y, 4);
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-82]
+    public void FloorYNull_WhenHeightNotBelowRadiusOrNonPositive()
+    {
+        var d = DomeSettings.RoomDefaults();
+        Assert.Equal(0.16f, d.FloorY()!.Value, 4);
+        d.HeightOffset = 0; Assert.Null(d.FloorY());
+        d.HeightOffset = -1; Assert.Null(d.FloorY());
+        d.HeightOffset = 10; Assert.Null(d.FloorY());     // = radius × vertical scale
+        d.HeightOffset = 1.6f; d.GroundProjection = false; Assert.Null(d.FloorY());
+        Assert.Null(DomeSettings.SkyDefaults().FloorY());  // sky: projection off by default
+    }
+
+    [Fact] // [AC-hdri-backdrop-3] [EDGE-hdri-backdrop-84]
+    public void HeightRelease_ProjectionOn_FloorChanged_OneRebuildNoPlacement()
+    {
+        config.Mode = DomeMode.Room;
+        ShowAndSpawn();
+        var oldAvfx = spawner.Spawns[^1].Path;
+        spawner.Calls.Clear();
+        config.Room.HeightOffset = 2.0f;
+        c.ApplyHeight();
+        c.Tick();
+        Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
+        Assert.NotEqual(oldAvfx, spawner.Spawns[^1].Path);
+        Assert.Equal(0.20f, SpawnedFloorY(), 2);
+        Assert.Equal(game.PlayerPosition!.Value.Y + 2.0f, spawner.Spawns[^1].Pos.Y, 4);
+    }
+
+    [Fact] // [AC-hdri-backdrop-3] [EDGE-hdri-backdrop-84]
+    public void HeightRelease_ProjectionOn_FloorUnchanged_DoesPlacement()
+    {
+        config.Mode = DomeMode.Room;
+        config.Room.HeightOffset = 12;   // ≥ radius × vertical scale: no floor
+        ShowAndSpawn();
+        var sets = penumbra.Sets.Count;
+        var avfx = spawner.Spawns[^1].Path;
+        spawner.Calls.Clear();
+        config.Room.HeightOffset = 15;
+        c.ApplyHeight();
+        Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
+        Assert.Equal(avfx, spawner.Spawns[^1].Path);
+        Assert.Equal(sets, penumbra.Sets.Count);
+        Assert.Equal(game.PlayerPosition!.Value.Y + 15, spawner.Spawns[^1].Pos.Y, 4);
+    }
+
+    [Fact] // [AC-hdri-backdrop-3] [EDGE-hdri-backdrop-84]
+    public void HeightRelease_ProjectionOff_DoesPlacement()
+    {
+        ShowAndSpawn();
+        var avfx = spawner.Spawns[^1].Path;
+        var sets = penumbra.Sets.Count;
+        spawner.Calls.Clear();
+        config.Sky.HeightOffset = 800;
+        c.ApplyHeight();
+        Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
+        Assert.Equal(avfx, spawner.Spawns[^1].Path);
+        Assert.Equal(sets, penumbra.Sets.Count);
+    }
+
+    [Fact] // [AC-hdri-backdrop-3]
+    public void Recenter_RespawnsAtPlayer_NewFirst()
+    {
+        ShowAndSpawn();
+        game.PlayerPosition = new Vector3(7, 8, 9);
+        spawner.Calls.Clear();
+        c.Recenter();
+        Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
+        Assert.Equal(new Vector3(7, 8 + config.Sky.HeightOffset, 9), spawner.Spawns[^1].Pos);
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-94]
+    public void ModeSwitch_And_ProjectionToggle_OneRebuildOnly()
+    {
+        ShowAndSpawn();
+        spawner.Calls.Clear();
+        config.Mode = DomeMode.Room;
+        c.ApplyRebuild();
+        c.Tick();
+        Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
+        Assert.Equal(game.PlayerPosition!.Value.Y + 1.6f, spawner.Spawns[^1].Pos.Y, 4);
+        spawner.Calls.Clear();
+        config.Room.GroundProjection = false;
+        c.ApplyRebuild();
+        c.Tick();
+        Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
+    }
 }

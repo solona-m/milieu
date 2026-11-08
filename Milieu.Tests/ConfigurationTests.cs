@@ -78,4 +78,77 @@ public class ConfigurationTests
             Assert.Equal(expected, c.HorizontalRepeat);
         }
     }
+
+
+    [Fact] // [AC-hdri-backdrop-15]
+    public void Defaults_SkyHeight400_RoomGroundProjectionOn_SkyOff()
+    {
+        var c = new Configuration();
+        Assert.Equal(400f, c.Sky.HeightOffset);
+        Assert.False(c.Sky.GroundProjection);
+        Assert.True(c.Room.GroundProjection);
+        Assert.Equal(2, c.Version);
+        Assert.Empty(c.UserImages);
+    }
+
+    private static Configuration V1(string json) =>
+        Newtonsoft.Json.JsonConvert.DeserializeObject<Configuration>(json)!;
+
+    [Fact] // [AC-hdri-backdrop-15] [EDGE-hdri-backdrop-83]
+    public void Migrate_SkyHeight0To400_KeepsUserValue_SetsGroundProjectionDefaults()
+    {
+        var untouched = V1("{\"Version\":1,\"Sky\":{\"Radius\":20000,\"VerticalScale\":1,\"HeightOffset\":0,\"YawDegrees\":0},\"Room\":{\"Radius\":10,\"VerticalScale\":1,\"HeightOffset\":1.6,\"YawDegrees\":0}}");
+        untouched.Migrate(@"C:\cfg");
+        Assert.Equal(400f, untouched.Sky.HeightOffset);
+        Assert.True(untouched.Room.GroundProjection);
+        Assert.False(untouched.Sky.GroundProjection);
+        Assert.Equal(2, untouched.Version);
+
+        var userSet = V1("{\"Version\":1,\"Sky\":{\"Radius\":20000,\"VerticalScale\":1,\"HeightOffset\":250,\"YawDegrees\":30}}");
+        userSet.Migrate(@"C:\cfg");
+        Assert.Equal(250f, userSet.Sky.HeightOffset);
+        Assert.Equal(30f, userSet.Sky.YawDegrees);
+
+        // Already v2: nothing changes.
+        var v2 = new Configuration();
+        v2.Sky.HeightOffset = 0;
+        v2.Migrate(@"C:\cfg");
+        Assert.Equal(0f, v2.Sky.HeightOffset);
+    }
+
+    [Theory] // [EDGE-hdri-backdrop-64]
+    [InlineData("forest")] [InlineData("galaxy")] [InlineData("livingroom")] [InlineData("livingroom2")]
+    [InlineData("lodge")] [InlineData("moon")] [InlineData("sunset")] [InlineData("warehouse")]
+    public void Migrate_v1_bundled_jpeg_path_to_bundled_id(string stem)
+    {
+        var c = V1("{\"Version\":1,\"ImagePath\":" + Newtonsoft.Json.JsonConvert.ToString($@"C:\cfg\DefaultBackdrops\{stem}.jpeg") + "}");
+        c.Migrate(@"C:\cfg");
+        Assert.Equal("bundled:" + stem, c.ImagePath);
+        Assert.Empty(c.UserImages);
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-64]
+    public void Migrate_v1_user_path_added_to_UserImages()
+    {
+        var c = V1("{\"Version\":1,\"ImagePath\":" + Newtonsoft.Json.JsonConvert.ToString(@"D:\pics\pano.hdr") + "}");
+        c.Migrate(@"C:\cfg");
+        Assert.Equal(@"D:\pics\pano.hdr", c.ImagePath);
+        Assert.Equal(new[] { @"D:\pics\pano.hdr" }, c.UserImages);
+        // A bundled-looking file outside the config's DefaultBackdrops folder is a user image.
+        var other = V1("{\"Version\":1,\"ImagePath\":" + Newtonsoft.Json.JsonConvert.ToString(@"D:\pics\forest.jpeg") + "}");
+        other.Migrate(@"C:\cfg");
+        Assert.Equal(@"D:\pics\forest.jpeg", other.ImagePath);
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-65]
+    public void Clamp_UnknownBundledId_ToNull()
+    {
+        var c = new Configuration { ImagePath = "bundled:nope", UserImages = [@"C:\a.png", @"c:\A.PNG", "", @"C:\b.jpg"] };
+        c.Clamp();
+        Assert.Null(c.ImagePath);
+        Assert.Equal(new[] { @"C:\a.png", @"C:\b.jpg" }, c.UserImages);
+        var ok = new Configuration { ImagePath = "bundled:moon" };
+        ok.Clamp();
+        Assert.Equal("bundled:moon", ok.ImagePath);
+    }
 }

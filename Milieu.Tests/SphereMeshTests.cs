@@ -92,4 +92,39 @@ public class SphereMeshTests
                 Assert.InRange(Math.Abs((double)BitConverter.ToHalf(vdrw, o + k) - (double)BitConverter.ToHalf(ours, o + k)), 0, 1e-3);
         }
     }
+
+
+    [Fact] // [AC-hdri-backdrop-15] [EDGE-hdri-backdrop-81]
+    public void GroundProjection_FlattensBelowFloor_KeepsUvsNormalsIndices()
+    {
+        const float floor = 0.16f;
+        var flat = SphereMesh.Build(floorY: floor);
+        Assert.Equal(Mesh.Indices, flat.Indices);
+        var a = Mesh.VertexBytes();
+        var b = flat.VertexBytes();
+        for (var i = 0; i < Mesh.Vertices.Length; i++)
+        {
+            var v = flat.Vertices[i];
+            var o = i * 36;
+            Assert.Equal(a[(o + 8)..(o + 36)], b[(o + 8)..(o + 36)]);   // normals, tangents, colour, UVs unchanged
+            Assert.True((double)v.Y >= -floor - 2e-3, $"vertex {i} below the floor");
+            var orig = Mesh.Vertices[i];
+            if ((double)orig.Y >= -floor) Assert.Equal(orig, v);        // at or above the floor: untouched
+            else
+            {
+                Assert.Equal(-floor, (double)v.Y, 2);                   // on the floor plane…
+                var r = Math.Sqrt((double)orig.X * (double)orig.X + (double)orig.Z * (double)orig.Z);
+                var rf = Math.Sqrt((double)v.X * (double)v.X + (double)v.Z * (double)v.Z);
+                if (r > 1e-3) Assert.InRange(Math.Abs((double)v.X / rf - (double)orig.X / r), 0, 0.01);   // …along its own ray
+            }
+        }
+        Assert.Throws<ArgumentOutOfRangeException>(() => SphereMesh.Build(floorY: 1.5f));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SphereMesh.Build(floorY: 0f));
+    }
+
+    [Fact] // [AC-hdri-backdrop-15] [EDGE-hdri-backdrop-81]
+    public void NoProjection_IdenticalToV5()
+    {
+        Assert.Equal(Mesh.VertexBytes(), SphereMesh.Build(floorY: null).VertexBytes());
+    }
 }

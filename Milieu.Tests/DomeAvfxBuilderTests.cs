@@ -156,4 +156,31 @@ public class DomeAvfxBuilderTests
             j++;
         }
     }
+
+
+    [Fact] // [AC-hdri-backdrop-15]
+    public void GroundProjection_ChangesOnlyVertexPositions()
+    {
+        var plain = AvfxChunkReader.Parse(DomeAvfxBuilder.Build(Params()));
+        var flat = AvfxChunkReader.Parse(DomeAvfxBuilder.Build(Params() with { FloorY = 0.2f }));
+        var a = plain.Need("Modl").Need("VDrw").Data;
+        var b = flat.Need("Modl").Need("VDrw").Data;
+        Assert.Equal(a.Length, b.Length);
+        Assert.NotEqual(a, b);
+        for (var o = 0; o < a.Length; o += 36) Assert.Equal(a[(o + 8)..(o + 36)], b[(o + 8)..(o + 36)]);
+        Assert.Equal(plain.Need("Modl").Need("VIdx").Data, flat.Need("Modl").Need("VIdx").Data);
+        Assert.Equal(plain.Need("Ptcl").Data, flat.Need("Ptcl").Data);
+    }
+
+    [Fact] // [AC-hdri-backdrop-15]
+    public void PosAndRotYAreZero_SeamForSyncedFollowUp()
+    {
+        // The reference raises its particle 400 and turns it 45°; Milieu places the dome at spawn instead. The synced
+        // follow-up will bake these (the game, not Milieu, places the cushion's VFX), so they must stay present at 0.
+        var ptcl = Build(Params()).Need("Ptcl");
+        Assert.Equal(0, ptcl.Need("Pos").Need("ACT").AsInt());
+        Assert.Equal(0, ptcl.Need("Rot").Need("ACT").AsInt());
+        Assert.Null(ptcl.Need("Pos").Child("Y"));
+        Assert.Null(ptcl.Need("Rot").Child("Y"));
+    }
 }
