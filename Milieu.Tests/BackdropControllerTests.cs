@@ -673,7 +673,7 @@ public sealed class BackdropControllerTests : IDisposable
         d.HeightOffset = -1; Assert.Null(d.FloorY());
         d.HeightOffset = 10; Assert.Null(d.FloorY());     // = radius × vertical scale
         d.HeightOffset = 1.6f; d.GroundProjection = false; Assert.Null(d.FloorY());
-        Assert.Null(DomeSettings.SkyDefaults().FloorY());  // sky: projection off by default
+        Assert.Equal(1.6f / 20000f, DomeSettings.SkyDefaults().FloorY()!.Value, 7);  // sky: eye height over the radius
     }
 
     [Fact] // [AC-hdri-backdrop-3] [EDGE-hdri-backdrop-84]
@@ -712,6 +712,7 @@ public sealed class BackdropControllerTests : IDisposable
     [Fact] // [AC-hdri-backdrop-3] [EDGE-hdri-backdrop-84]
     public void HeightRelease_ProjectionOff_DoesPlacement()
     {
+        config.Sky.GroundProjection = false;
         ShowAndSpawn();
         var avfx = spawner.Spawns[^1].Path;
         var sets = penumbra.Sets.Count;
@@ -749,5 +750,21 @@ public sealed class BackdropControllerTests : IDisposable
         c.ApplyRebuild();
         c.Tick();
         Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
+    }
+
+    [Fact] // [AC-hdri-backdrop-15] [EDGE-hdri-backdrop-82]
+    public void ProjectionStatus_ExplainsInactiveFloor()
+    {
+        var d = DomeSettings.RoomDefaults();
+        Assert.Equal("Floor at your feet; horizon 1.6 above it.", d.ProjectionStatus());
+        Assert.False(d.ProjectionInactive);
+        d.HeightOffset = 10;
+        Assert.True(d.ProjectionInactive);
+        Assert.Equal("Inactive: the camera height (10) must be below the dome's height (10). Lower it or raise the radius.", d.ProjectionStatus());
+        d.HeightOffset = -1;
+        Assert.Equal("Inactive: the camera height (-1) must be above 0.", d.ProjectionStatus());
+        d.GroundProjection = false;
+        Assert.False(d.ProjectionInactive);
+        Assert.StartsWith("Off:", d.ProjectionStatus());
     }
 }

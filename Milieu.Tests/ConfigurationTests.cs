@@ -11,7 +11,7 @@ public class ConfigurationTests
     public void Defaults_SkyAndRoomPresets()
     {
         var c = new Configuration();
-        Assert.Equal((20000f, 1f, 400f, 0f), (c.Sky.Radius, c.Sky.VerticalScale, c.Sky.HeightOffset, c.Sky.YawDegrees));
+        Assert.Equal((20000f, 1f, 1.6f, 0f), (c.Sky.Radius, c.Sky.VerticalScale, c.Sky.HeightOffset, c.Sky.YawDegrees));
         Assert.Equal((10f, 1f, 1.6f, 0f), (c.Room.Radius, c.Room.VerticalScale, c.Room.HeightOffset, c.Room.YawDegrees));
         Assert.Equal(DomeMode.Sky, c.Mode);
         Assert.Same(c.Sky, c.Current);
@@ -81,13 +81,14 @@ public class ConfigurationTests
 
 
     [Fact] // [AC-hdri-backdrop-15]
-    public void Defaults_SkyHeight400_RoomGroundProjectionOn_SkyOff()
+    public void Defaults_CameraHeight16_GroundProjectionOnForBoth()
     {
         var c = new Configuration();
-        Assert.Equal(400f, c.Sky.HeightOffset);
-        Assert.False(c.Sky.GroundProjection);
+        Assert.Equal(1.6f, c.Sky.HeightOffset);
+        Assert.Equal(1.6f, c.Room.HeightOffset);
+        Assert.True(c.Sky.GroundProjection);
         Assert.True(c.Room.GroundProjection);
-        Assert.Equal(2, c.Version);
+        Assert.Equal(4, c.Version);
         Assert.Empty(c.UserImages);
     }
 
@@ -95,25 +96,42 @@ public class ConfigurationTests
         Newtonsoft.Json.JsonConvert.DeserializeObject<Configuration>(json)!;
 
     [Fact] // [AC-hdri-backdrop-15] [EDGE-hdri-backdrop-83]
-    public void Migrate_SkyHeight0To400_KeepsUserValue_SetsGroundProjectionDefaults()
+    public void Migrate_SkyHeightDefaultsTo16_KeepsUserValue_SetsGroundProjectionDefaults()
     {
         var untouched = V1("{\"Version\":1,\"Sky\":{\"Radius\":20000,\"VerticalScale\":1,\"HeightOffset\":0,\"YawDegrees\":0},\"Room\":{\"Radius\":10,\"VerticalScale\":1,\"HeightOffset\":1.6,\"YawDegrees\":0}}");
         untouched.Migrate(@"C:\cfg");
-        Assert.Equal(400f, untouched.Sky.HeightOffset);
+        Assert.Equal(1.6f, untouched.Sky.HeightOffset);
         Assert.True(untouched.Room.GroundProjection);
-        Assert.False(untouched.Sky.GroundProjection);
-        Assert.Equal(2, untouched.Version);
+        Assert.True(untouched.Sky.GroundProjection);
+        Assert.Equal(4, untouched.Version);
 
         var userSet = V1("{\"Version\":1,\"Sky\":{\"Radius\":20000,\"VerticalScale\":1,\"HeightOffset\":250,\"YawDegrees\":30}}");
         userSet.Migrate(@"C:\cfg");
         Assert.Equal(250f, userSet.Sky.HeightOffset);
         Assert.Equal(30f, userSet.Sky.YawDegrees);
 
-        // Already v2: nothing changes.
-        var v2 = new Configuration();
-        v2.Sky.HeightOffset = 0;
+        // A v2 config (sky projection off, height 400 by the old defaults) gets projection and eye height.
+        var v2 = new Configuration { Version = 2 };
+        v2.Sky.HeightOffset = 400;
+        v2.Sky.GroundProjection = false;
         v2.Migrate(@"C:\cfg");
-        Assert.Equal(0f, v2.Sky.HeightOffset);
+        Assert.Equal(1.6f, v2.Sky.HeightOffset);
+        Assert.True(v2.Sky.GroundProjection);
+        Assert.Equal(4, v2.Version);
+
+        // A v3 config with a height the user chose keeps it.
+        var v3 = new Configuration { Version = 3 };
+        v3.Sky.HeightOffset = 120;
+        v3.Migrate(@"C:\cfg");
+        Assert.Equal(120f, v3.Sky.HeightOffset);
+
+        // Already v4: nothing changes, including a projection the user turned off.
+        var v4 = new Configuration();
+        v4.Sky.GroundProjection = false;
+        v4.Sky.HeightOffset = 400;
+        v4.Migrate(@"C:\cfg");
+        Assert.False(v4.Sky.GroundProjection);
+        Assert.Equal(400f, v4.Sky.HeightOffset);
     }
 
     [Theory] // [EDGE-hdri-backdrop-64]

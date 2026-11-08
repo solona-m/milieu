@@ -156,6 +156,8 @@ public sealed class MainWindow : Window, IDisposable
             controller.Post(controller.ApplyRebuild);
         }
         if (ImGui.IsItemHovered()) ImGui.SetTooltip("Flattens the bottom of the dome into a floor, so the image's ground lies at your feet.");
+        if (d.ProjectionInactive) ImGui.TextColored(Yellow, d.ProjectionStatus());
+        else ImGui.TextDisabled(d.ProjectionStatus());
 
         ImGui.Separator();
         Slider("Horizontal repeat", "HorizontalRepeat", config.HorizontalRepeat, Configuration.RepeatRange.Min, Configuration.RepeatRange.Max, v => config.HorizontalRepeat = v);

@@ -16,7 +16,7 @@ namespace Milieu;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 4;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -74,6 +74,20 @@ public sealed class Configuration : IPluginConfiguration
             if (Room != null) Room.GroundProjection = true;
             if (Sky != null) Sky.GroundProjection = false;
             Version = 2;
+        }
+        if (Version < 3)
+        {
+            // Seen in game: the sky dome stayed a sphere sinking below you. Ground projection becomes the sky default too,
+            // so the dome's floor is at your feet (v2 had it off by default; nobody had chosen it).
+            if (Sky != null) Sky.GroundProjection = true;
+            Version = 3;
+        }
+        if (Version < 4)
+        {
+            // Chosen in game: eye height 1.6 is the right camera height for the sky dome too. The old untouched default
+            // (400, or 0 from v1 which step 2 raised) moves to it; a height the user set stays.
+            if (Sky != null && Sky.HeightOffset is 400f or 0f) Sky.HeightOffset = DomeSettings.SkyDefaults().HeightOffset;
+            Version = 4;
         }
         if (Version < CurrentVersion) Version = CurrentVersion;
     }

@@ -32,7 +32,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static ITextureProvider TextureProvider { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 9;
+    public const int BuildNumber = 11;
 
     private const string CommandName = "/milieu";
 
