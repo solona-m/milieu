@@ -43,6 +43,9 @@ internal static class AtexWriter
         return new AtexLayout(width, height, ws.ToArray(), hs.ToArray(), sizes.ToArray(), offsets, pos);
     }
 
+    /// <summary>The exact 80-byte header a w×h BC7 texture written by Milieu starts with.</summary>
+    public static byte[] ExpectedHeader(int width, int height) => Header(Layout(width, height));
+
     public static byte[] Header(AtexLayout layout)
     {
         var h = new byte[HeaderSize];

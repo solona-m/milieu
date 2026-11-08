@@ -29,6 +29,9 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder) : 
     /// <summary>Test hook: sees mip 0 RGBA before encoding.</summary>
     internal Action<byte[]>? OnMip0 { get; set; }
 
+    /// <summary>Sees the 256x128 RGBA mip of a conversion (the user image's thumbnail).</summary>
+    internal Action<byte[]>? OnThumb { get; set; }
+
     /// <summary>
     /// Conversions never overlap: a new one waits for the previous to finish (its decode cannot be interrupted), so the
     /// memory budget holds even if Show is pressed repeatedly.
@@ -76,20 +79,13 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder) : 
         if (SeamDetector.Measure(rgb, image.Width, image.Height).NoWrap)
             warnings.Add(StatusMessage.Of(MessageKey.NoWrap, ("file", file)));
 
-        ct.ThrowIfCancellationRequested();
-        var rgba = EquirectResampler.ResampleLayout(rgb, image.Width, image.Height, outW, outH, ct);
-        rgb = null!;
-        image = null!;
-        progress?.Report(0.30f);
-
-        var mips = MipChain.Build(rgba, outW, outH, ct);
-        OnMip0?.Invoke(mips[0]);
-        progress?.Report(0.40f);
-
         Interlocked.Increment(ref encodes);
-        var encodeProgress = progress == null ? null : new Bc7.SyncProgress(f => progress.Report(0.40f + 0.60f * f));
-        var blocks = await Bc7.EncodeChainAsync(encoder, mips, MipChain.Sizes(outW, outH), encodeProgress, ct).ConfigureAwait(false);
-        mips = null!;
+        var convertProgress = progress == null ? null : new Bc7.SyncProgress(f => progress.Report(0.20f + 0.80f * f));
+        var (srcW, srcH) = (image.Width, image.Height);
+        image = null!;
+        var blocks = await TextureConversion.EncodeAsync(rgb, srcW, srcH, outW, outH, encoder, convertProgress, ct, OnMip0, OnThumb)
+                                            .ConfigureAwait(false);
+        rgb = null!;
 
         ct.ThrowIfCancellationRequested();
         try
