@@ -22,6 +22,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          # Nothing here pushes, so the token isn't left in .git/config for later steps; the repo is public, so the
+          # tag fetch below works without it.
+          persist-credentials: false
 
       - name: Download Dalamud
         shell: pwsh
@@ -54,7 +57,7 @@ jobs:
       - name: Read the changelog
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:GITHUB_REF_NAME
           git fetch --force --tags origin
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ((git cat-file -t $tag) -ne 'tag') {
@@ -82,7 +85,7 @@ jobs:
         run: |
           $manifest = Get-Content "Milieu\bin\Release\win-x64\Milieu.json" | ConvertFrom-Json
           $version = $manifest.AssemblyVersion
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:GITHUB_REF_NAME
           if ($tag -ne "v$version") {
             throw "$tag does not match the built version $version. Tag the commit as v$version instead (git tag -a v$version -F notes.md); never reuse a tag."
           }

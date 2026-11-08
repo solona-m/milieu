@@ -46,9 +46,9 @@ public sealed class PackageCheckScriptTests : System.IDisposable
         return $"{{\"Author\":\"Solona\",\"Name\":\"Milieu\",\"InternalName\":\"{internalName}\",\"AssemblyVersion\":\"{version}\"{cl}}}";
     }
 
-    private static (int Code, string Output) Run(string zip, string version, string? changelog, long maxBytes)
+    private static (int Code, string Output) Run(string zip, string version, string? changelog, long maxBytes, string shell = "powershell.exe")
     {
-        var psi = new ProcessStartInfo("powershell.exe")
+        var psi = new ProcessStartInfo(shell)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -120,5 +120,32 @@ public sealed class PackageCheckScriptTests : System.IDisposable
         var (code, output) = Run(zip, "2611.40.0.0", "Line 1\nLine 2", FourMb);
         Assert.True(code == 1, $"{variant}: exit {code}: {output}");
         Assert.Contains(named, output);
+    }
+
+    // The workflows run the script under pwsh; these run it there too when pwsh is installed (it is on windows-latest).
+    [PwshFact] // [AC-plugin-release-1] [EDGE-plugin-release-3] [EDGE-plugin-release-10]
+    public void Pwsh_valid_missing_changelog_and_wrong_version()
+    {
+        var zip = MakeZip("ok.zip", Manifest());
+        var (code, output) = Run(zip, "2611.40.0.0", "Line 1\r\nLine 2 ", FourMb, "pwsh");
+        Assert.True(code == 0, output);
+        var bare = MakeZip("bare.zip", Manifest(changelog: null));
+        (code, output) = Run(bare, "2611.40.0.0", null, FourMb, "pwsh");
+        Assert.True(code == 0, output);
+        (code, output) = Run(zip, "2611.39.0.0", "Line 1\nLine 2", FourMb, "pwsh");
+        Assert.True(code == 1, output);
+        Assert.Contains("AssemblyVersion", output);
+    }
+}
+
+/// <summary>A fact that needs pwsh (PowerShell 7) on PATH; it skips otherwise.</summary>
+public sealed class PwshFactAttribute : FactAttribute
+{
+    public PwshFactAttribute()
+    {
+        var path = System.Environment.GetEnvironmentVariable("PATH") ?? "";
+        foreach (var d in path.Split(Path.PathSeparator))
+            if (d.Length > 0 && File.Exists(Path.Combine(d.Trim('"'), "pwsh.exe"))) return;
+        Skip = "pwsh is not on PATH.";
     }
 }

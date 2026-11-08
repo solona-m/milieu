@@ -350,6 +350,55 @@ public class WorkflowTests
         }
     }
 
+    [Fact] // [EDGE-plugin-release-15]
+    public void Only_release_workflows_grant_any_write_permission()
+    {
+        foreach (var name in AllWorkflows().Where(n => !Releases.Contains(n)))
+            foreach (var line in Code(name))
+            {
+                Assert.False(Regex.IsMatch(line, @":\s*write\b"), $"{name}: write permission in '{line.Trim()}'");
+                Assert.DoesNotContain("write-all", line);
+            }
+    }
+
+    [Theory] // [AC-plugin-release-1] [AC-plugin-release-2]
+    [InlineData("release.yml")]
+    [InlineData("testing-release.yml")]
+    public void Notify_runs_only_after_the_release_exists(string name)
+    {
+        var code = Code(name);
+        var publish = IndexOf(code, "uses: softprops/action-gh-release@");
+        var notify = IndexOf(code, "name: Notify plugins repo");
+        Assert.True(publish >= 0 && notify > publish, $"{name}: release {publish}, notify {notify}");
+    }
+
+    [Fact] // [EDGE-plugin-release-18]
+    public void No_github_context_is_interpolated_into_scripts()
+    {
+        // ${{ github.* }} is pasted into the script text before pwsh parses it, so a crafted ref name would become
+        // code; scripts read $env:GITHUB_REF_NAME and friends instead.
+        foreach (var name in AllWorkflows())
+            foreach (var block in RunBlocks(Raw(name)))
+                foreach (var line in block)
+                    Assert.False(Regex.IsMatch(line, @"\$\{\{\s*github\."), $"{name}: '{line.Trim()}' interpolates the github context");
+    }
+
+    [Fact] // [EDGE-plugin-release-15]
+    public void Checkouts_do_not_persist_credentials()
+    {
+        foreach (var name in AllWorkflows())
+        {
+            var code = Code(name);
+            for (var i = 0; i < code.Count; i++)
+            {
+                if (!code[i].Contains("uses: actions/checkout@")) continue;
+                var indent = code[i].Length - code[i].TrimStart().TrimStart('-').TrimStart().Length;
+                var with = code.Skip(i + 1).TakeWhile(l => l.Trim().Length == 0 || l.Length - l.TrimStart().Length >= indent).ToList();
+                Assert.True(with.Any(l => l.Trim() == "persist-credentials: false"), $"{name}: checkout at line {i + 1} persists credentials");
+            }
+        }
+    }
+
     [Theory] // [EDGE-plugin-release-16]
     [InlineData("release.yml")]
     [InlineData("testing-release.yml")]
@@ -388,6 +437,7 @@ public class WorkflowTests
         ("-ErrorAction", new Regex("-ErrorAction")),
         ("$ErrorActionPreference", new Regex(@"\$ErrorActionPreference")),
         ("-SkipHttpErrorCheck", new Regex("-SkipHttpErrorCheck")),
+        ("-EA (the -ErrorAction alias)", new Regex(@"(?<![\w-])-EA\b", RegexOptions.IgnoreCase)),
     ];
 
     [Fact] // [EDGE-plugin-release-18]
@@ -401,7 +451,7 @@ public class WorkflowTests
         var script = File.ReadAllLines(Path.Combine(RepoPaths.Root(), "tools", "check-package.ps1"))
                          .Where(l => !l.TrimStart().StartsWith('#')).ToList();
         foreach (var line in script)
-            foreach (var (what, pattern) in Disablers.Where(d => d.What is "catch" or "trap" or "SilentlyContinue" or "-ErrorAction" or "$ErrorActionPreference"))
+            foreach (var (what, pattern) in Disablers.Where(d => d.What is "catch" or "trap" or "SilentlyContinue" or "-ErrorAction" or "$ErrorActionPreference" or "-EA (the -ErrorAction alias)"))
                 Assert.False(pattern.IsMatch(line), $"check-package.ps1: {what} in '{line.Trim()}'");
     }
 

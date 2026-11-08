@@ -22,6 +22,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          # Nothing here pushes, so the token isn't left in .git/config for later steps; the repo is public, so the
+          # tag fetch below works without it.
+          persist-credentials: false
 
       - name: Download Dalamud
         shell: pwsh
@@ -54,7 +57,7 @@ jobs:
       - name: Read the changelog
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:GITHUB_REF_NAME
           if ($tag -notmatch '^testing-[0-9]{1,10}$') {
             Write-Error "$tag is not testing-<n>, the only testing tag shape the dl.solona.info mirror serves."; exit 1
           }

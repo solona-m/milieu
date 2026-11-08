@@ -39,8 +39,12 @@ Facts found while planning (they shape the gates below):
   largest entries are listed), root `Milieu.json` and `Milieu.dll`, `InternalName` `Milieu`, `AssemblyVersion` equal to
   the read version, and the changelog equal after normalising (CRLF/LF, trim; missing and empty are equal).
   `PackageCheckScriptTests` runs it against synthetic zips.
-- **No silent failures:** no `continue-on-error`, step-level `if:`, `catch`, `trap`, `|| true`, `-ErrorAction`,
-  `$ErrorActionPreference` or `-SkipHttpErrorCheck`; every native command in a `run:` block is its last line or is
+- **No injection, no leftover credentials:** scripts read the tag as `$env:GITHUB_REF_NAME`, never by pasting
+  `${{ github.* }}` into a `run:` block; every checkout uses `persist-credentials: false` (nothing pushes, and the repo
+  is public, so the tag fetch works without a token); only the two release workflows grant any write permission, and
+  the dispatch runs only after the release exists.
+- **No silent failures:** no `continue-on-error`, step-level `if:`, `catch`, `trap`, `|| true`, `-ErrorAction` (or
+  its `-EA` alias), `$ErrorActionPreference` or `-SkipHttpErrorCheck`; every native command in a `run:` block is its last line or is
   followed by `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }` (pwsh does not stop on a failing native command).
   `WorkflowTests` pins all of it.
 - **Dispatch:** `repository_dispatch` `plugin-released` to `solona-m/plugins` with the secret `PLUGINS_REPO_TOKEN`
@@ -56,7 +60,11 @@ Facts found while planning (they shape the gates below):
 - **Listing:** a `PLUGINS` row `Milieu|solona-m/milieu|Milieu.json|milieu/|https://dl.solona.info/milieu/icon.png` in
   the plugins `sync.yml`, plus a hand-seeded `repo.json` entry (the sync only updates existing entries), inserted as
   text, `IsTestingExclusive: true` until a stable release is verified. `tests/test_listing.py` in that repo checks the
-  invariants, including that a non-testing-exclusive Milieu entry installs from a `v` build.
+  invariants, including that a non-testing-exclusive Milieu entry installs from a `v` build. It deliberately pins only
+  fields the sync never rewrites (identity, `IconUrl`, `RepoUrl`, `ApplicableVersion`, the API levels, `IsHide`, the
+  link shape): `Description`, `Punchline` and the tags are merged from each release's manifest, and the versions,
+  `LastUpdate` and `DownloadCount` are the sync's. The publish run checks the versions itself (both equal to the
+  `testing-1` build's at P7). Run it with `python -B` so no `__pycache__` lands in that repo.
 - **Publishing is a gated runbook,** run by the agent under the owner's authorisation ("No do it all for me. Notify on
   discord when done"; "Once this is done, push a main release as well"): the canary, `testing-1`, its verification, the
   listing and sync, then the full suite on the release commit, `main`, the stable tag, its verification and the stable
