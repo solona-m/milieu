@@ -23,5 +23,26 @@
     <CategoryTags>utility</CategoryTags>
   </PropertyGroup>
 
+  <!-- Plain versions (no floats or ranges), the same ones Proteus ships, so packages.lock.json stays a reviewable diff. -->
+  <ItemGroup>
+    <PackageReference Include="StbImageSharp" Version="2.30.16" />
+    <PackageReference Include="BCnEncoder.Net" Version="2.3.0" />
+    <PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Milieu.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\THIRD_PARTY_NOTICES.txt" Link="THIRD_PARTY_NOTICES.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- The bundled backdrops are NOT shipped in the plugin zip: they are published as pinned release assets under the
+         backdrops-* tag (upload-backdrops.yml) and downloaded on demand by DefaultBackdropsDownloadService. -->
+    <None Remove="DefaultBackdrops\**" />
+    <Content Remove="DefaultBackdrops\**" />
+  </ItemGroup>
+
   <Import Project="Sdk.targets" Sdk="Dalamud.NET.Sdk" />
 </Project>

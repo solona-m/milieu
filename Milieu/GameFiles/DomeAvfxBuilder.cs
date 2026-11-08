@@ -1,0 +1,267 @@
+using System;
+using System.IO;
+using System.Linq;
+
+namespace Milieu.GameFiles;
+
+/// <summary>What gets baked into the dome VFX. Yaw and height are applied at runtime, not here.</summary>
+internal sealed record DomeAvfxParams(
+    string TextureGamePath,
+    float Radius,
+    float VerticalScale,
+    float URepeat,
+    float VRepeat,
+    bool Flip,
+    float Brightness);
+
+/// <summary>
+/// Authors the dome <c>.avfx</c> in code: one scheduler item → one timeline → one emitter → one model particle →
+/// one texture and the sphere model. Every chunk, its order and its value mirror the element chain that draws the sky
+/// in the reference ("Pickles Venue" ve0002.avfx: Schd, TmLn#2, Emit#5, Ptcl#11, Tex#12, Modl#7), except the deliberate
+/// differences listed in docs/adr/0003-code-authored-dome-avfx.md. Chunk tags and nesting follow VFXEditor's
+/// AVFX reader (Formats/AvfxFormat/**); no VFXEditor code is copied.
+/// </summary>
+internal static class DomeAvfxBuilder
+{
+    public const int Version = 0x20110913;
+    public const int TriggerCount = 12;
+
+    private const int Pi = 1078530011; // the bit pattern of (float)Math.PI, as the reference stores AFXi etc.
+
+    public static byte[] Build(DomeAvfxParams p)
+    {
+        Validate(p);
+        var mesh = SphereMesh.Build();
+        var w = new AvfxChunkWriter();
+        w.Begin("AVFX");
+        Root(w);
+        Scheduler(w);
+        Timeline(w);
+        Emitter(w);
+        Particle(w, p);
+        w.CString("Tex", p.TextureGamePath);
+        w.Begin("Modl").Bytes("VDrw", mesh.VertexBytes()).Bytes("VIdx", mesh.IndexBytes()).End();
+        w.End();
+        var bytes = w.ToArray();
+        SelfCheck(bytes, p, mesh);
+        return bytes;
+    }
+
+    private static void Validate(DomeAvfxParams p)
+    {
+        if (string.IsNullOrEmpty(p.TextureGamePath) || p.TextureGamePath.Any(c => c is < (char)0x20 or > (char)0x7E))
+            throw new ArgumentException("Texture game path must be non-empty printable ASCII.", nameof(p));
+        foreach (var (name, v) in new[] { ("Radius", p.Radius), ("VerticalScale", p.VerticalScale), ("URepeat", p.URepeat),
+                                          ("VRepeat", p.VRepeat), ("Brightness", p.Brightness) })
+            if (!float.IsFinite(v) || v < 0 || (v == 0 && name != "Brightness"))
+                throw new ArgumentOutOfRangeException(nameof(p), $"{name} must be finite and positive (got {v}).");
+    }
+
+    private static void Root(AvfxChunkWriter w)
+    {
+        w.Int("Ver", Version).Int("bDFP", 1).Int("bFG", 0).Int("bTS", 0).Int("bASH", 0)
+         // Deliberate difference: the reference culls with a 25-unit clip box (bCBC/bCul 1), which would cull a dome
+         // thousands of units across as soon as the box leaves the view.
+         .Int("bCBC", 0).Int("bCul", 0)
+         .Float("CBPx", 0).Float("CBPy", 24).Float("CBPz", 0).Float("CBSx", 25).Float("CBSy", 25).Float("CBSz", 25)
+         .Float("ZBMs", 1).Float("ZBMd", 0).Int("bCmS", 0).Int("bFEL", 0).Int("bOSE", 0).Int("bOSt", 0)
+         .Float("SPFR", 1).Int("SKO", 0).Int("DwLy", 2).Int("DwOT", 0).Int("DLST", 2).Int("PL1S", 0).Int("PL2S", 0)
+         .Float("RvPx", 0).Float("RvPy", 0).Float("RvPz", 0).Float("RvRx", 0).Float("RvRy", 0).Float("RvRz", 0)
+         .Float("RvSx", 1).Float("RvSy", 1).Float("RvSz", 1).Float("RvR", 1).Float("RvG", 1).Float("RvB", 1)
+         .Int("AFXe", 0).Int("AFXi", Pi).Int("AFXo", Pi).Int("AFYe", 0).Int("AFYi", Pi).Int("AFYo", Pi)
+         .Int("AFZe", 0).Int("AFZi", Pi).Int("AFZo", Pi)
+         .Int("bGFE", 0).Float("GFIM", 1).Int("bLTS", 0).Int("bAGS", 0).Int("APri", 5).Int("DPri", 5)
+         .Int("ScCn", 1).Int("TlCn", 1).Int("EmCn", 1).Int("PrCn", 1).Int("EfCn", 0).Int("BdCn", 0)
+         .Int("TxCn", 1).Int("MdCn", 1);
+    }
+
+    /// <summary>
+    /// The scheduler: ItCn, TrCn, then Item chunks (chunk i holds items[0..i]) and Trgr chunks (chunk j holds every item
+    /// followed by triggers[0..j]), exactly as the reference and VFXEditor's AvfxScheduler write them.
+    /// </summary>
+    private static void Scheduler(AvfxChunkWriter w)
+    {
+        w.Begin("Schd").Int("ItCn", 1).Int("TrCn", TriggerCount);
+        w.Begin("Item");
+        SchedulerItem(w, 0);
+        w.End();
+        for (var j = 0; j < TriggerCount; j++)
+        {
+            w.Begin("Trgr");
+            SchedulerItem(w, 0);
+            for (var t = 0; t <= j; t++) SchedulerItem(w, -1);
+            w.End();
+        }
+        w.End();
+    }
+
+    private static void SchedulerItem(AvfxChunkWriter w, int timeline) =>
+        w.Int("bEna", 1).Int("StTm", 0).Int("TlNo", timeline);
+
+    private static void Timeline(AvfxChunkWriter w)
+    {
+        w.Begin("TmLn").Int("LpSt", 0).Int("LpEd", 0).Int("BnNo", -1).Int("TICn", 1).Int("CpCn", 0);
+        w.Begin("Item").Int("bEna", 1).Int("StTm", 0).Int("EdTm", -1).Int("BdNo", -1).Int("EfNo", -1).Int("EmNo", 0)
+         .Int("Plfm", 0).End();
+        w.End();
+    }
+
+    private static void Emitter(AvfxChunkWriter w)
+    {
+        w.Begin("Emit").Int("SdNo", -1).Int("LpSt", 0).Int("LpEd", 0).Int("ClCn", 30).Int("EfNo", -1).Byte("bAD", 0)
+         .Int("EVT", 0).Int("RBDT", 2).Int("CCOT", 0).Int("ROT", 2).Int("PrCn", 1).Int("EmCn", 0);
+        w.Begin("Life").Float("Val", 60).Float("ValR", 0).Int("Type", 0).End();
+        Curve(w, "CrC", 1);
+        Curve(w, "CrI", 30);
+        Curve(w, "ARs", 1);
+        w.Begin("Col");
+        CurveRgb(w, "RGB", 1, 1, 1);
+        w.End();
+        Axes(w, "Pos", 0);
+        Axes(w, "Rot", 0);
+        Axes(w, "Scl", 1);
+        w.Begin("ItPr").Int("bEnb", 1).Int("TgtB", 0).Int("LoDr", 0).Int("CrTm", 1).Int("CrCn", 1).Int("CrPr", 100)
+         .Int("PICd", 3).Int("PICo", 0).Int("ICbS", 1).Int("ICbR", 1).Int("ICbP", 1).Int("ICbB", 0).Int("ICSK", 0)
+         .Int("IPbV", 0).Int("IPbL", 0).Int("bOvr", 0).Int("OvrV", 60).Int("OvrR", 0).Int("PrLk", -1).Int("StFr", 0)
+         .Int("bStN", 0).Int("BIAX", 0).Int("BIAY", 0).Int("BIAZ", 0).Int("GenD", 0).Int("bGD", 0).End();
+        w.End();
+    }
+
+    private static void Particle(AvfxChunkWriter w, DomeAvfxParams p)
+    {
+        w.Begin("Ptcl").Int("LpSt", 0).Int("LpEd", 0)
+         .Int("PrVT", 5)          // Model
+         .Int("RBDT", 2).Int("RoOT", 2).Int("CCOT", 0)
+         .Int("RMT", 8)           // render mode as the reference (opaque)
+         .Int("CulT", 0).Int("EnvT", 0).Int("DirT", 0).Int("UVPT", 0).Int("DwPr", 1).Int("DsDt", 1).Int("DsDw", 1)
+         .Int("DsSp", 0).Int("Coll", -1).Int("bS11", 0).Int("bATM", 0).Int("bAFg", 0).Int("bNea", 0).Int("bFar", 0)
+         .Float("NeSt", 0).Float("NeEd", 1).Float("FaSt", 50).Float("FaEd", 60).Int("FaBP", 0)
+         .Int("UvSN", 2).Int("EvAR", 0).Int("DlAR", 0).Int("LBAR", 0).Int("DOTy", 0).Float("DpOf", 0).Int("bSCt", 0);
+        w.Begin("Life").Float("Val", -1).Float("ValR", 0).Int("Type", 0).End();
+        Curve(w, "ARs", 1);
+
+        // Particle scale: X (and Z, via ACT 3) is the radius of the unit sphere; Y is radius × vertical scale.
+        w.Begin("Scl").Int("ACT", 3).Int("ACTR", 0);
+        Curve(w, "X", p.Radius);
+        Curve(w, "Y", p.Radius * p.VerticalScale);
+        w.End();
+        Axes(w, "Rot", 0);   // yaw is applied at runtime
+        Axes(w, "Pos", 0);   // height is applied at runtime
+        w.Begin("Col");
+        Curve(w, "Bri", p.Brightness);
+        w.End();
+
+        // UV set 0 feeds the colour texture. The reference scales U by 2 ("the UV doubling"); flip mirrors it.
+        w.Begin("UvSt").Int("CUvT", 0);
+        w.Begin("Scl").Int("ACT", 0).Int("ACTR", 0);
+        Curve(w, "X", p.Flip ? -p.URepeat : p.URepeat);
+        Curve(w, "Y", p.VRepeat);
+        w.End();
+        Axes(w, "Scr", 0);
+        w.End();
+        // UV set 1 is unused (its texture slot is disabled); kept static.
+        w.Begin("UvSt").Int("CUvT", 0);
+        w.Begin("Scl").Int("ACT", 0).Int("ACTR", 0);
+        Curve(w, "X", 1);
+        Curve(w, "Y", 1);
+        w.End();
+        Axes(w, "Scr", 0);
+        w.End();
+
+        w.Begin("Data").Int("MNRv", 0).Int("MNRt", 0).Int("MNRi", 0).Int("FrsT", 0).Int("DLT", 0).Int("PLT", 0)
+         .Int("bLgt", 0).Int("bShp", 0).Byte("MdNo", 0);
+        Curve(w, "FrC", 1);
+        w.Begin("FrRt").Int("ACT", 0).Int("ACTR", 0);
+        Curve(w, "Z", -0.05235988f);
+        w.End();
+        w.Begin("ColB");
+        CurveRgb(w, "RGB", 1, 1, 1);
+        w.End();
+        w.Begin("ColE");
+        CurveRgb(w, "RGB", 1, 1, 1);
+        w.End();
+        w.End();
+
+        // TC1 references the texture through TLst (a byte list), as the reference does; it has no TxNo.
+        w.Begin("TC1").Int("bEna", 1).Int("bC2A", 0).Int("bUSC", 0).Int("bPFC", 0).Int("UvSN", 0).Int("TFT", 1)
+         .Int("TBUT", 0).Int("TBVT", 0).Int("TCCT", 3).Int("TCAT", 1).Byte("TLst", 0).End();
+        w.Begin("TC2").Int("bEna", 0).Int("bC2A", 0).Int("bUSC", 0).Int("bPFC", 0).Int("UvSN", 1).Int("TFT", 1)
+         .Int("TBUT", 0).Int("TBVT", 0).Int("TCCT", 0).Int("TCAT", 0).Int("TxNo", -1).End();
+        w.Begin("TC3").Int("bEna", 0).Int("bC2A", 0).Int("bUSC", 0).Int("bPFC", 0).Int("UvSN", 0).Int("TFT", 1)
+         .Int("TBUT", 1).Int("TBVT", 1).Int("TCCT", 0).Int("TCAT", 0).Int("TxNo", -1).End();
+        w.Begin("TN").Int("bEna", 0).Int("UvSN", 0).Int("TFT", 1).Int("TBUT", 0).Int("TBVT", 0).Int("TxNo", -1);
+        Curve(w, "NPow", 10);
+        w.End();
+        w.Begin("TR").Int("bEna", 0).Int("bUSC", 0).Int("TFT", 1).Int("TCCT", 0).Int("TxNo", -1).End();
+        w.Begin("TD").Int("bEna", 0).Int("bT1", 0).Int("bT2", 1).Int("bT3", 0).Int("bT4", 0).Int("UvSN", 0).Int("TFT", 1)
+         .Int("TBUT", 0).Int("TBVT", 0).Int("TxNo", -1);
+        Curve(w, "DPow", 0.2f);
+        w.End();
+        w.Begin("TP").Int("bEna", 0).Int("TFT", 1).Int("TBT", 0).Int("TxNo", -1).End();
+        w.End();
+    }
+
+    /// <summary>A one-key 1-axis curve: KeyC, BvPr, BvPo, RanT, Keys (16-byte key: u16 time, u16 type, 3 × f32).</summary>
+    private static void Curve(AvfxChunkWriter w, string tag, float value)
+    {
+        w.Begin(tag).Int("KeyC", 1).Int("BvPr", 0).Int("BvPo", 0).Int("RanT", 0).Bytes("Keys", Key(1, 1, value)).End();
+    }
+
+    /// <summary>A one-key colour curve (no RanT), the three floats being R, G, B.</summary>
+    private static void CurveRgb(AvfxChunkWriter w, string tag, float r, float g, float b)
+    {
+        w.Begin(tag).Int("KeyC", 1).Int("BvPr", 0).Int("BvPo", 0).Bytes("Keys", Key(r, g, b)).End();
+    }
+
+    private static byte[] Key(float a, float b, float c)
+    {
+        var key = new byte[16];
+        BitConverter.TryWriteBytes(key.AsSpan(0, 2), (ushort)0);
+        BitConverter.TryWriteBytes(key.AsSpan(2, 2), (ushort)1);
+        BitConverter.TryWriteBytes(key.AsSpan(4, 4), a);
+        BitConverter.TryWriteBytes(key.AsSpan(8, 4), b);
+        BitConverter.TryWriteBytes(key.AsSpan(12, 4), c);
+        return key;
+    }
+
+    private static void Axes(AvfxChunkWriter w, string tag, int act) =>
+        w.Begin(tag).Int("ACT", act).Int("ACTR", 0).End();
+
+    /// <summary>Parses the output back and throws on anything that would make the chain inconsistent.</summary>
+    internal static void SelfCheck(byte[] bytes, DomeAvfxParams p, SphereMesh mesh)
+    {
+        var root = AvfxChunkReader.Parse(bytes);
+        void Expect(bool ok, string what) { if (!ok) throw new InvalidDataException("Dome AVFX self-check failed: " + what); }
+
+        Expect(root.Need("ScCn").AsInt() == 1 && root.All("Schd").Count() == 1, "one scheduler");
+        Expect(root.Need("TlCn").AsInt() == 1 && root.All("TmLn").Count() == 1, "one timeline");
+        Expect(root.Need("EmCn").AsInt() == 1 && root.All("Emit").Count() == 1, "one emitter");
+        Expect(root.Need("PrCn").AsInt() == 1 && root.All("Ptcl").Count() == 1, "one particle");
+        Expect(root.Need("TxCn").AsInt() == 1 && root.All("Tex").Count() == 1, "one texture");
+        Expect(root.Need("MdCn").AsInt() == 1 && root.All("Modl").Count() == 1, "one model");
+        Expect(root.Need("EfCn").AsInt() == 0 && root.Need("BdCn").AsInt() == 0, "no effectors or binders");
+
+        var schd = root.Need("Schd");
+        Expect(schd.Need("Item").Children.Single(c => c.Tag == "TlNo").AsInt() == 0, "scheduler item → timeline 0");
+        Expect(schd.All("Trgr").Count() == TriggerCount, "12 triggers");
+        Expect(root.Need("TmLn").Need("Item").Need("EmNo").AsInt() == 0, "timeline → emitter 0");
+        Expect(root.Need("Emit").Need("ItPr").Need("TgtB").AsInt() == 0, "emitter → particle 0");
+
+        var ptcl = root.Need("Ptcl");
+        Expect(ptcl.Need("PrVT").AsInt() == 5, "model particle");
+        Expect(ptcl.Need("Data").Need("MdNo") is { Size: 1 } md && md.AsInt() == 0, "particle → model 0");
+        var tc1 = ptcl.Need("TC1");
+        Expect(tc1.Need("bEna").AsInt() == 1 && tc1.Need("TLst") is { Size: 1 } tl && tl.AsInt() == 0 && tc1.Child("TxNo") == null,
+               "TC1 → texture 0 through TLst");
+        foreach (var slot in new[] { "TC2", "TC3", "TN", "TR", "TD", "TP" })
+            Expect(ptcl.Need(slot).Need("bEna").AsInt() == 0 && ptcl.Need(slot).Need("TxNo").AsInt() == -1, $"{slot} disabled");
+
+        var tex = root.Need("Tex").Data;
+        Expect(tex.Length == p.TextureGamePath.Length + 1 && tex[^1] == 0, "Tex holds the NUL-terminated path");
+
+        var modl = root.Need("Modl");
+        Expect(modl.Need("VDrw").Size == mesh.Vertices.Length * DomeVertex.Stride, "vertex buffer size");
+        Expect(modl.Need("VIdx").Size == mesh.Indices.Length * 2, "index buffer size");
+        Expect(mesh.Indices.All(i => i < mesh.Vertices.Length), "indices in range");
+    }
+}
