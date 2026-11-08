@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+  </PropertyGroup>
+
+  <Import Project="Sdk.props" Sdk="Dalamud.NET.Sdk" />
+
+  <PropertyGroup>
+    <Version>0.1.0.0</Version>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Name>Milieu</Name>
+    <Author>Solona</Author>
+    <Punchline>Swap the backdrop for an HDRI panorama</Punchline>
+    <Description>Projects an HDRI or panorama image onto a sky dome around you, for screenshots and venues. A large dome for outdoor skies, a small one for room interiors.&#xA;&#xA;Type /milieu to open it.</Description>
+    <ApplicableVersion>any</ApplicableVersion>
+    <DalamudApiLevel>15</DalamudApiLevel>
+    <Tags>hdri;skybox;backdrop;gpose;screenshot;vfx</Tags>
+    <CategoryTags>utility</CategoryTags>
+  </PropertyGroup>
+
+  <Import Project="Sdk.targets" Sdk="Dalamud.NET.Sdk" />
+</Project>
