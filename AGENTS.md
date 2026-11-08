@@ -55,22 +55,31 @@ Architecture decision records are in `docs/adr/`.
 - run: bump `Plugin.BuildNumber`, build, output at `E:\repos\Milieu\Milieu\bin\Release\win-x64` — the game dev-loads it (no app URL; verification is in game)
 - stop: none — unload the plugin in game via `/xlplugins`
 - single test: `dotnet test Milieu.Tests/Milieu.Tests.csproj -c Release --filter "FullyQualifiedName~PluginManifestTests"`
+- reference-parity tests (run before code review): set `MILIEU_REFERENCE_AVFX` / `MILIEU_REFERENCE_ATEX` to an extracted "Pickles Venue" `ve0002.avfx` / `Sky1.atex` and `MILIEU_HDRI_SOURCE_DIR` to the source images, then filter `FullyQualifiedName~Reference|FullyQualifiedName~WhenSourcePresent|FullyQualifiedName~BundledBackdropsTests|FullyQualifiedName~CancelInsideMip0`; report pass/skip counts
+- prepare bundled backdrops (rarely): `dotnet run --project tools/PrepareBackdrops -c Release -- <source dir> Milieu/DefaultBackdrops`, then update the pinned table in `DefaultBackdropsDownloadService` and bump its tag
 - default branch: `test` — reviews diff against it; work merges into it (`main` is the stable release branch)
 
 ## Architecture
 
 ```
-Milieu/          the Dalamud plugin (Plugin.cs entry point, /milieu command)
-  Gui/           ImGui windows
-Milieu.Tests/    xunit tests
-docs/            product context, ADRs, agent review/planning guidance
+Milieu/            the Dalamud plugin (Plugin.cs: services, events, /milieu, dispose order)
+  Backdrop/        lifecycle controller, background converter, cache, config types, messages
+  GameFiles/       AVFX chunk I/O, dome sphere mesh, dome .avfx builder, BC7 .atex writer
+  Imaging/         header probes, decode budget, tone mapping, resampling, band fill, seam check, mips, BC7
+  Interop/         native signatures, static VFX spawner + remove hook, Penumbra IPC, game state
+  Assets/          bundled-backdrop downloads (pinned release assets, resilient downloader)
+  Gui/             main window and its pure view models
+  DefaultBackdrops/  committed bundled images (NOT shipped in the zip; published by upload-backdrops.yml)
+Milieu.Tests/      xunit tests (Support/: fakes, synthetic images, reference-file facts)
+tools/PrepareBackdrops/  offline tool that produces Milieu/DefaultBackdrops
+docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops), agent guidance
 ```
 
 ## Testing
 
 xunit in `Milieu.Tests/`, one `*Tests.cs` per unit, synthetic fixtures built in
 code. Tests needing real game or user files must skip when the file is absent;
-never hard-code a local path. While iterating run only targeted `--filter`
+never hard-code a local path. Exception: product-asset tests (`BundledBackdropsTests`, the pinned-folder test) read the committed `Milieu/DefaultBackdrops` images (ADR 0004). While iterating run only targeted `--filter`
 tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 
 ## Sensitive Areas — the security surface
@@ -79,6 +88,7 @@ tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 - Native interop: function signatures, hooks, unsafe struct access, VFX spawn/remove — a wrong signature or a dangling VFX pointer crashes the game
 - Penumbra IPC (temporary mods/redirects) — must be removed on dispose and never touch the user's own mods
 - `Milieu/Configuration.cs` migrations — a mistake loses user settings
+- Downloads (`Milieu/Assets/`) and `.github/workflows/` — outbound GETs that write into the config directory; pinned size + SHA-256; workflow actions stay SHA-pinned
 - `.claude/settings.json` — loaded by every agent session in the repo
 
 ## Review & Planning Guidance

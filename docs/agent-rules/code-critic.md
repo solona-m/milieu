@@ -17,7 +17,7 @@ tests; for a rule backed by a test, a diff that weakens the test is `FAIL`.
 ## Privacy anchors
 
 - **Sensitive categories**: character names and full local paths of user images; neither goes to chat (beyond the file name) or to logs at Information level or above.
-- **Public surfaces**: none; the plugin has no network surface.
+- **Public surfaces**: none inbound. Outbound only: HTTPS GETs for the bundled backdrops (`Milieu/Assets/`), which send no user data.
 - **Identifier exemptions**: none.
 - **Privacy tests**: none yet.
 
