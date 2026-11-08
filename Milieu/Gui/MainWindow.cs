@@ -10,7 +10,10 @@ using Milieu.Imaging;
 
 namespace Milieu.Gui;
 
-/// <summary>The one window. All enable/disable and text decisions come from the pure view models.</summary>
+/// <summary>
+/// The one window. All enable/disable and text decisions come from the pure view models. ImGui draws off the framework
+/// thread, so every action is posted to the controller and runs at the start of the next framework tick.
+/// </summary>
 public sealed class MainWindow : Window
 {
     private readonly BackdropController controller;
@@ -34,7 +37,7 @@ public sealed class MainWindow : Window
 
     public override void Draw()
     {
-        var vm = new BackdropViewModel(controller.Status, controller.Blocker(), config);
+        var vm = new BackdropViewModel(controller.Status, controller.UiBlocker, config);
         DrawStatus(vm);
         ImGui.Separator();
         DrawImage();
@@ -100,8 +103,8 @@ public sealed class MainWindow : Window
         {
             config.Mode = (DomeMode)mode;
             save();
-            controller.ApplyRebuild();
-            controller.ApplyLive();
+            controller.Post(controller.ApplyRebuild);
+            controller.Post(controller.ApplyLive);
         }
         if (vm.ShowRoomHint) ImGui.TextColored(Yellow, BackdropViewModel.RoomHint);
 
@@ -124,7 +127,7 @@ public sealed class MainWindow : Window
         {
             config.FlipHorizontal = flip;
             save();
-            controller.ApplyRebuild();
+            controller.Post(controller.ApplyRebuild);
         }
         Slider("Brightness", "Brightness", config.Brightness, Configuration.BrightnessRange.Min, Configuration.BrightnessRange.Max, v => config.Brightness = v);
     }
@@ -155,11 +158,11 @@ public sealed class MainWindow : Window
 
     private void DrawButtons(BackdropViewModel vm)
     {
-        using (ImRaii.Disabled(!vm.CanShow)) if (ImGui.Button(vm.ShowButtonLabel)) controller.Show();
+        using (ImRaii.Disabled(!vm.CanShow)) if (ImGui.Button(vm.ShowButtonLabel)) controller.Post(controller.Show);
         ImGui.SameLine();
-        using (ImRaii.Disabled(!vm.CanHide)) if (ImGui.Button("Hide")) controller.Hide();
+        using (ImRaii.Disabled(!vm.CanHide)) if (ImGui.Button("Hide")) controller.Post(controller.Hide);
         ImGui.SameLine();
-        using (ImRaii.Disabled(!vm.CanRecenter)) if (ImGui.Button("Re-centre on me")) controller.Recenter();
+        using (ImRaii.Disabled(!vm.CanRecenter)) if (ImGui.Button("Re-centre on me")) controller.Post(controller.Recenter);
     }
 
     /// <summary>A slider that applies live (yaw, height) or on release (everything baked into the VFX).</summary>
@@ -169,10 +172,10 @@ public sealed class MainWindow : Window
         if (ImGui.SliderFloat(label, ref v, min, max, format))
         {
             set(Math.Clamp(v, min, max));
-            if (BackdropViewModel.ApplyOf(key) == SliderApply.Live) controller.ApplyLive();
+            if (BackdropViewModel.ApplyOf(key) == SliderApply.Live) controller.Post(controller.ApplyLive);
         }
         if (!ImGui.IsItemDeactivatedAfterEdit()) return;
         save();
-        if (BackdropViewModel.ApplyOf(key) == SliderApply.OnRelease) controller.ApplyRebuild();
+        if (BackdropViewModel.ApplyOf(key) == SliderApply.OnRelease) controller.Post(controller.ApplyRebuild);
     }
 }

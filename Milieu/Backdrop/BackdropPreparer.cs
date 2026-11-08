@@ -20,6 +20,7 @@ public interface IBackdropPreparer
 /// </summary>
 public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder) : IBackdropPreparer
 {
+    private readonly SemaphoreSlim oneAtATime = new(1, 1);
     private int decodes, encodes;
 
     internal int DecodeCount => decodes;
@@ -28,8 +29,16 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder) : 
     /// <summary>Test hook: sees mip 0 RGBA before encoding.</summary>
     internal Action<byte[]>? OnMip0 { get; set; }
 
-    public Task<PreparedTexture> PrepareTextureAsync(BackdropRequest request, IProgress<float>? progress, CancellationToken ct) =>
-        PrepareCoreAsync(request, progress, ct);
+    /// <summary>
+    /// Conversions never overlap: a new one waits for the previous to finish (its decode cannot be interrupted), so the
+    /// memory budget holds even if Show is pressed repeatedly.
+    /// </summary>
+    public async Task<PreparedTexture> PrepareTextureAsync(BackdropRequest request, IProgress<float>? progress, CancellationToken ct)
+    {
+        await oneAtATime.WaitAsync(ct).ConfigureAwait(false);
+        try { return await PrepareCoreAsync(request, progress, ct).ConfigureAwait(false); }
+        finally { oneAtATime.Release(); }
+    }
 
     private async Task<PreparedTexture> PrepareCoreAsync(BackdropRequest request, IProgress<float>? progress, CancellationToken ct)
     {

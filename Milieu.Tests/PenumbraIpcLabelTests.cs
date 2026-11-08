@@ -38,4 +38,23 @@ public class PenumbraIpcLabelTests
         Assert.True(PenumbraIpc.IsMissingCollection((Guid.Empty, "None")));
         Assert.False(PenumbraIpc.IsMissingCollection((Guid.NewGuid(), "Default")));
     }
+
+
+    [Fact] // [AC-hdri-backdrop-9] [EDGE-hdri-backdrop-38] [EDGE-hdri-backdrop-39]
+    public void Classify_BlockedStateOrder()
+    {
+        var calls = new System.Collections.Generic.List<string>();
+        (int, int) V(int b) { calls.Add("v"); return (b, 19); }
+        bool E(bool e) { calls.Add("e"); return e; }
+        (Guid, string)? C((Guid, string)? c) { calls.Add("c"); return c; }
+        var ok = (Guid.NewGuid(), "Default");
+
+        Assert.Equal(Milieu.Backdrop.PenumbraState.Missing, PenumbraIpc.Classify(() => throw new InvalidOperationException("not ready"), () => E(true), () => C(ok)));
+        Assert.Equal(Milieu.Backdrop.PenumbraState.Incompatible, PenumbraIpc.Classify(() => V(4), () => E(true), () => C(ok)));
+        calls.Clear();
+        Assert.Equal(Milieu.Backdrop.PenumbraState.ModsDisabled, PenumbraIpc.Classify(() => V(5), () => E(false), () => C(null)));
+        Assert.Equal(new[] { "v", "e" }, calls);   // the collection is not asked once mods are known disabled
+        Assert.Equal(Milieu.Backdrop.PenumbraState.NoBaseCollection, PenumbraIpc.Classify(() => V(5), () => E(true), () => C((Guid.Empty, "None"))));
+        Assert.Equal(Milieu.Backdrop.PenumbraState.Available, PenumbraIpc.Classify(() => V(5), () => E(true), () => C(ok)));
+    }
 }

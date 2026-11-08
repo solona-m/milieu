@@ -214,4 +214,24 @@ public sealed class BackdropPreparerTests : IDisposable
         Assert.Equal(1f, values[^1], 3);
         for (var i = 1; i < values.Count; i++) Assert.True(values[i] >= values[i - 1] - 1e-4);
     }
+
+
+    [Fact] // [AC-hdri-backdrop-6] [EDGE-hdri-backdrop-15]
+    public async Task Conversions_NeverOverlap()
+    {
+        var release = new TaskCompletionSource();
+        var started = new TaskCompletionSource();
+        var e = new StubEncoder { Before = async _ => { started.TrySetResult(); await release.Task; } };
+        var p = new BackdropPreparer(cache, e);
+        var a = SyntheticImages.WriteJpg(dir.Path, "a.jpg", 64, 32);
+        var b = SyntheticImages.WriteJpg(dir.Path, "b.jpg", 64, 32);
+        var first = Task.Run(() => p.PrepareTextureAsync(Req(a), null, default));
+        await started.Task;
+        var second = Task.Run(() => p.PrepareTextureAsync(Req(b), null, default));
+        await Task.Delay(100);
+        Assert.Equal(1, p.DecodeCount);            // the second has not started decoding
+        release.SetResult();
+        await Task.WhenAll(first, second);
+        Assert.Equal(2, p.DecodeCount);
+    }
 }

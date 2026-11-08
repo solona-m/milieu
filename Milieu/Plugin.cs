@@ -32,8 +32,6 @@ public sealed class Plugin : IDalamudPlugin
     public const int BuildNumber = 2;
 
     private const string CommandName = "/milieu";
-    private static readonly TimeSpan JobWait = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan TeardownWait = TimeSpan.FromSeconds(5);
 
     private readonly WindowSystem windows = new("Milieu");
     private readonly MainWindow mainWindow;
@@ -58,7 +56,7 @@ public sealed class Plugin : IDalamudPlugin
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log.Debug("[Milieu] Startup cache cleanup skipped."); }
 
         vfx = new VfxInterop(SigScanner, Hooks, Framework, log, strings);
-        penumbra = new PenumbraIpc(PluginInterface, log);
+        penumbra = new PenumbraIpc(PluginInterface, log, configDir);
         controller = new BackdropController(vfx, penumbra, new GameState(ClientState, Condition, ObjectTable),
                                             new BackdropPreparer(cache, new Bc7()), cache, config, log);
         downloads = new DefaultBackdropsDownloadService(log, configDir);
@@ -87,7 +85,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        if (ParseCommand(args) == CommandAction.Hide) controller.Hide();
+        if (ParseCommand(args) == CommandAction.Hide) controller.Post(controller.Hide);
         else mainWindow.Toggle();
     }
 
@@ -106,24 +104,22 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        // 1. Stop the conversion and give it a bounded moment to finish.
-        BackdropController.WaitForJob(controller.CancelJobForDispose(), JobWait);
-        // 2. Stop downloads (bounded wait inside); partial files stay for resume.
-        downloads.Dispose();
-        // 3. Remove the dome and the temp mod on the framework thread.
-        var tornDown = true;
-        try
-        {
-            if (Framework.IsInFrameworkUpdateThread) controller.Teardown();
-            else tornDown = Framework.RunOnFrameworkThread(controller.Teardown).Wait(TeardownWait);
-        }
-        catch (Exception e)
-        {
-            tornDown = false;
-            log.Warning("[Milieu] Teardown failed: " + LogText.Describe(e));
-        }
-        if (!tornDown) log.Warning("[Milieu] Teardown did not finish in time (game exiting?); native strings are left allocated on purpose.");
-        // 4. Unhook and unsubscribe.
+        ShutdownSequence.Run(
+            cancelJobs: controller.CancelJobForDispose,
+            disposeDownloads: downloads.Dispose,
+            runTeardown: wait =>
+            {
+                if (Framework.IsInFrameworkUpdateThread) { controller.Teardown(); return true; }
+                return Framework.RunOnFrameworkThread(controller.Teardown).Wait(wait);
+            },
+            unhook: Unhook,
+            freeStrings: strings.FreeAll,
+            leakStrings: strings.Leak,
+            log: log);
+    }
+
+    private void Unhook()
+    {
         vfx.GameRemoved -= controller.OnGameRemoved;
         vfx.Dispose();
         penumbra.Initialized -= OnPenumbraInitialized;
@@ -136,9 +132,6 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= mainWindow.Toggle;
         CommandManager.RemoveHandler(CommandName);
         windows.RemoveAllWindows();
-        // 5. Free the native strings, unless the game might still read them.
-        if (tornDown) strings.FreeAll();
-        else strings.Leak();
     }
 
     private sealed class DalamudLog(IPluginLog log) : ILogSink

@@ -28,6 +28,7 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IDisposable
     public const byte BaseCollectionType = 0xE0;   // ApiCollectionType.Default
 
     private readonly ILogSink log;
+    private readonly string? sensitiveDir;
     private readonly ICallGateSubscriber<(int, int)> apiVersion;
     private readonly ICallGateSubscriber<bool> enabledState;
     private readonly ICallGateSubscriber<byte, (Guid, string)?> getCollection;
@@ -44,9 +45,10 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IDisposable
     public event Action? Initialized;
     public event Action? Disposed;
 
-    public PenumbraIpc(IDalamudPluginInterface pi, ILogSink log)
+    public PenumbraIpc(IDalamudPluginInterface pi, ILogSink log, string? sensitiveDir = null)
     {
         this.log = log;
+        this.sensitiveDir = sensitiveDir;
         apiVersion = pi.GetIpcSubscriber<(int, int)>(LabelApiVersion);
         enabledState = pi.GetIpcSubscriber<bool>(LabelGetEnabledState);
         getCollection = pi.GetIpcSubscriber<byte, (Guid, string)?>(LabelGetCollection);
@@ -64,23 +66,31 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IDisposable
 
     public static bool IsCompatible((int Breaking, int Features) version) => version.Breaking == RequiredBreaking;
 
+    /// <summary>
+    /// The blocked-state order: Missing (any call throws, e.g. IpcNotReadyError) → Incompatible → ModsDisabled →
+    /// NoBaseCollection → Available. Later calls are made only when the earlier ones passed.
+    /// </summary>
+    public static PenumbraState Classify(Func<(int, int)> version, Func<bool> enabled, Func<(Guid, string)?> baseCollection)
+    {
+        try
+        {
+            if (!IsCompatible(version())) return PenumbraState.Incompatible;
+            if (!enabled()) return PenumbraState.ModsDisabled;
+            if (IsMissingCollection(baseCollection())) return PenumbraState.NoBaseCollection;
+            return PenumbraState.Available;
+        }
+        catch (Exception)
+        {
+            return PenumbraState.Missing;
+        }
+    }
+
     /// <summary>A Base collection of None is reported as null or as the empty collection's identity.</summary>
     public static bool IsMissingCollection((Guid Id, string Name)? collection) => collection == null || collection.Value.Id == Guid.Empty;
 
     public void Refresh()
     {
-        try
-        {
-            var v = apiVersion.InvokeFunc();
-            if (!IsCompatible(v)) { State = PenumbraState.Incompatible; return; }
-            if (!enabledState.InvokeFunc()) { State = PenumbraState.ModsDisabled; return; }
-            if (IsMissingCollection(getCollection.InvokeFunc(BaseCollectionType))) { State = PenumbraState.NoBaseCollection; return; }
-            State = PenumbraState.Available;
-        }
-        catch (Exception)
-        {
-            State = PenumbraState.Missing;   // IpcNotReadyError and friends: Penumbra isn't there
-        }
+        State = Classify(() => apiVersion.InvokeFunc(), () => enabledState.InvokeFunc(), () => getCollection.InvokeFunc(BaseCollectionType));
     }
 
     public bool Set(IReadOnlyDictionary<string, string> redirects)
@@ -94,7 +104,7 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IDisposable
         }
         catch (Exception e)
         {
-            log.Warning("[Milieu] AddTemporaryModAll failed: " + LogText.Describe(e));
+            log.Warning("[Milieu] AddTemporaryModAll failed: " + LogText.Describe(e, sensitiveDir));
             return false;
         }
     }
@@ -102,7 +112,7 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IDisposable
     public void Clear()
     {
         try { removeAll.InvokeFunc(Tag, Priority); }
-        catch (Exception e) { log.Debug("[Milieu] RemoveTemporaryModAll failed: " + LogText.Describe(e)); }
+        catch (Exception e) { log.Debug("[Milieu] RemoveTemporaryModAll failed: " + LogText.Describe(e, sensitiveDir)); }
     }
 
     public string Resolve(string gamePath)

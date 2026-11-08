@@ -27,7 +27,7 @@ every value mirrors the reference element chain (`Schd`, `TmLn#2`, `Emit#5`, `Pt
 - UV set 0 scale X = ±horizontal repeat (default 2.0, negative when flipped), Y = vertical repeat (default 1.0).
 - Unused texture slots point nowhere (`TxNo -1`); the colour slot uses `TLst` (a byte list) as the reference does.
 
-The sphere is generated to the reference layout exactly (tested against model 7 to half precision), so the seam,
+The sphere is generated to the reference layout exactly (tested against model 7: positions and UVs to half precision, normal and tangent bytes within 1), so the seam,
 U direction, poles and winding are the proven ones. Every generated file is parsed back before it is written.
 Parity tests compare the structure with the reference when `MILIEU_REFERENCE_AVFX` is set.
 

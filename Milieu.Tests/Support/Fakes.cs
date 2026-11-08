@@ -45,11 +45,15 @@ public sealed class FakeSpawner : IVfxSpawner
         Calls.Add("Move");
     }
 
-    public void Remove(VfxHandle handle)
+    public bool Refuse;
+
+    public bool Remove(VfxHandle handle)
     {
+        if (Refuse) return false;
         if (!handle.MarkDead()) throw new InvalidOperationException("Remove on a dead handle");
         Removes.Add(handle);
         Calls.Add("Remove");
+        return true;
     }
 
     public void Tick() => Ticks++;

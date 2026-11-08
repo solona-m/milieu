@@ -87,7 +87,7 @@ public class SphereMeshTests
             for (var k = 0; k < 4; k++)   // position
                 Assert.InRange(Math.Abs((double)BitConverter.ToHalf(vdrw, o + k * 2) - (double)BitConverter.ToHalf(ours, o + k * 2)), 0, 1e-3);
             for (var k = 8; k < 20; k++)  // normal, tangent, colour bytes
-                Assert.InRange(Math.Abs(vdrw[o + k] - ours[o + k]), 0, 2);
+                Assert.InRange(Math.Abs(vdrw[o + k] - ours[o + k]), 0, 1);
             for (var k = 20; k < 36; k += 2)  // UVs
                 Assert.InRange(Math.Abs((double)BitConverter.ToHalf(vdrw, o + k) - (double)BitConverter.ToHalf(ours, o + k)), 0, 1e-3);
         }

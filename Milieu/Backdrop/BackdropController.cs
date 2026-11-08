@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
@@ -54,6 +55,11 @@ public sealed class BackdropController
     private int earlyRemovals;
     private int ticks;
 
+    private readonly ConcurrentQueue<Action> posted = new();
+    private readonly List<Task> outstanding = [];
+    private volatile bool lastReady;
+    private volatile MessageKey uiBlocker = MessageKey.NotLoggedIn;
+
     private BackdropState state = BackdropState.Hidden;
     private StatusMessage message = StatusMessage.None;
     private IReadOnlyList<StatusMessage> warnings = [];
@@ -74,6 +80,18 @@ public sealed class BackdropController
     }
 
     public BackdropStatus Status => new(state, progress, CurrentMessage(), warnings);
+
+    /// <summary>
+    /// The blocker as of the last tick, for the window (ImGui draws off the framework thread, so it must not read game
+    /// memory itself).
+    /// </summary>
+    public MessageKey UiBlocker => uiBlocker;
+
+    /// <summary>
+    /// Queues a user action (from the window or a command) to run at the start of the next framework tick, where native
+    /// calls and IPC are allowed.
+    /// </summary>
+    public void Post(Action action) => posted.Enqueue(action);
 
     public BackdropState State => state;
 
@@ -119,6 +137,8 @@ public sealed class BackdropController
         jobCts = cts;
         var reporter = new Imaging.Bc7.SyncProgress(p => progress = p);
         job = run(() => preparer.PrepareTextureAsync(request, reporter, cts.Token));
+        outstanding.RemoveAll(t => t.IsCompleted);
+        outstanding.Add(job);
         state = BackdropState.Preparing;
         log.Information($"[Milieu] Preparing {Path.GetFileName(request.ImagePath)}.");
     }
@@ -193,7 +213,7 @@ public sealed class BackdropController
     }
 
     /// <summary>Called by the remove hook (any thread): the handle is already marked dead.</summary>
-    public void OnGameRemoved(VfxHandle h) => log.Debug($"[Milieu] StaticVfxRemove fired for Milieu dome (game-side, ready={game.IsReady}).");
+    public void OnGameRemoved(VfxHandle h) => log.Debug($"[Milieu] StaticVfxRemove fired for Milieu dome (game-side, ready={lastReady}).");
 
     // ---------------------------------------------------------------- per-frame
 
@@ -201,8 +221,23 @@ public sealed class BackdropController
     {
         spawner.Tick();
         if (++ticks % PenumbraRefreshTicks == 0) penumbra.Refresh();
+        while (posted.TryDequeue(out var action)) action();
 
         CheckGameRemoval();
+        var ready = game.IsReady;
+        lastReady = ready;
+        if (handle is { IsDead: false } live)
+        {
+            // A dome that survived the early window resets the early-removal guard.
+            if (utcNow() - live.SpawnedAtUtc >= EarlyRemovalWindow) earlyRemovals = 0;
+            // Not ready (zone change, cutscene, logout) in ANY state: the dome comes down now, even mid-conversion.
+            if (!ready && state is not (BackdropState.Shown or BackdropState.Suspended))
+            {
+                if (game.BetweenAreas) recenterOnRespawn = true;
+                RemoveDome();
+                readyFrames = 0;
+            }
+        }
         switch (state)
         {
             case BackdropState.Preparing: TickPreparing(); break;
@@ -210,6 +245,7 @@ public sealed class BackdropController
             case BackdropState.Shown:
             case BackdropState.Suspended: TickShown(); break;
         }
+        uiBlocker = Blocker();
     }
 
     private void CheckGameRemoval()
@@ -312,7 +348,11 @@ public sealed class BackdropController
         {
             if (!game.IsReady) return;   // spawn as soon as the game is ready
             var old = handle;
-            if (old == null || old.IsDead) centre = game.PlayerPosition ?? centre;
+            if ((old == null || old.IsDead) && (shownSet == null || recenterOnRespawn))
+            {
+                centre = game.PlayerPosition ?? centre;
+                recenterOnRespawn = false;
+            }
             var spawned = spawner.Spawn(pendingAvfxGamePath, SpawnPosition(), YawRadians());
             if (spawned == null)
             {
@@ -320,7 +360,7 @@ public sealed class BackdropController
                 state = FallbackState();
                 return;
             }
-            if (old != null) spawner.Remove(old);   // new one first, then the old one: no flicker
+            if (old is { IsDead: false }) spawner.Remove(old);   // new one first, then the old one: no flicker
             handle = spawned;
             shownSet = pendingSet;
             shownAvfxGamePath = pendingAvfxGamePath;
@@ -376,9 +416,8 @@ public sealed class BackdropController
     private void RemoveDome()
     {
         var h = handle;
-        handle = null;
-        if (h == null || h.IsDead) return;
-        spawner.Remove(h);
+        if (h == null) return;
+        if (h.IsDead || spawner.Remove(h)) handle = null;   // a refused removal keeps the handle, so it is never orphaned
     }
 
     private void CancelJob()
@@ -413,9 +452,9 @@ public sealed class BackdropController
     /// <summary>Cancels the conversion and returns its task, so Dispose can wait (bounded) for it to stop.</summary>
     public Task? CancelJobForDispose()
     {
-        var running = job;
         CancelJob();
-        return running;
+        outstanding.RemoveAll(t => t.IsCompleted);
+        return outstanding.Count == 0 ? null : Task.WhenAll(outstanding);
     }
 
     /// <summary>Waits up to <paramref name="timeout"/> for a cancelled job; true if it finished.</summary>

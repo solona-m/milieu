@@ -287,4 +287,23 @@ public sealed class DefaultBackdropsDownloadServiceTests : IDisposable
         Assert.All(log.Lines, l => Assert.DoesNotContain(dir.Path, l.Text, StringComparison.OrdinalIgnoreCase));
         Assert.Contains(log.Lines, l => l.Text.Contains("forest.jpeg"));
     }
+
+
+    [Fact] // [EDGE-hdri-backdrop-57]
+    public void Io_failure_shows_PackFailed_and_Try_again_succeeds()
+    {
+        var locked = true;
+        using var s = Service(Recording(n => locked && n == "forest.jpeg" ? new FetchResult(false, FetchFailure.Io, 0, 0, "forest.jpeg could not be saved") : null));
+        s.EnsureAsync();
+        WaitIdle(s);
+        Assert.Equal(PackState.Failed, s.Status.State);
+        Assert.False(s.Status.Unpublished);
+        var vm = BackdropListVm(s);
+        Assert.True(vm.ShowTryAgain);
+        Assert.Equal("Couldn't download the backdrops.", vm.StatusLine);
+        locked = false;
+        vm.TryAgain();
+        WaitIdle(s);
+        Assert.Equal(PackState.Ready, s.Status.State);
+    }
 }

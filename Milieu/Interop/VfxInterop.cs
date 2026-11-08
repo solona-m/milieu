@@ -100,13 +100,14 @@ public sealed unsafe class VfxInterop : IVfxSpawner, IDisposable
         vfx->UpdateTransforms(true);
     }
 
-    public void Remove(VfxHandle handle)
+    public bool Remove(VfxHandle handle)
     {
-        if (!OnFrameworkThread("Remove")) return;
-        if (!handle.MarkDead()) return;                    // already removed, by Milieu or by the game
-        if (!live.TryRemove(handle.Pointer, out var entry)) return;
+        if (!OnFrameworkThread("Remove")) return false;
+        if (!handle.MarkDead()) return true;               // already removed, by Milieu or by the game
+        if (!live.TryRemove(handle.Pointer, out var entry)) return true;
         removeHook?.Original((VfxObject*)handle.Pointer);  // straight to the game: our detour need not see it
         strings.ScheduleFree(entry.PathString);
+        return true;
     }
 
     /// <summary>Runs on whatever thread the game frees VFX on. Fast, never throws, always calls the original.</summary>

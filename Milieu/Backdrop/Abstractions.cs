@@ -26,7 +26,8 @@ public interface IVfxSpawner
     bool Available { get; }
     VfxHandle? Spawn(string gamePath, Vector3 position, float yawRadians);
     void Move(VfxHandle handle, Vector3 position, float yawRadians);
-    void Remove(VfxHandle handle);
+    /// <summary>Removes the VFX. False when the call was refused (wrong thread), so the caller keeps the handle.</summary>
+    bool Remove(VfxHandle handle);
 
     /// <summary>Called once per framework tick: frees native strings whose grace period has passed.</summary>
     void Tick();

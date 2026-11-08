@@ -549,4 +549,93 @@ public sealed class BackdropControllerTests : IDisposable
         Assert.Equal(shown, penumbra.Current);    // the set actually on screen, not the superseded one
         Assert.Equal(BackdropState.Shown, c.State);
     }
+
+
+    [Fact] // [EDGE-hdri-backdrop-32]
+    public void EarlyRemovalGuard_ResetsWhenADomeSurvives10s()
+    {
+        // Two early removals…
+        for (var i = 0; i < 2; i++)
+        {
+            var h = i == 0 ? ShowAndSpawn() : spawner.Spawns[^1].Handle;
+            now += TimeSpan.FromSeconds(1);
+            spawner.GameFrees(h);
+            c.Tick();
+            Ticks(BackdropController.RespawnDelayFrames);
+        }
+        // …then a dome that survives the window resets the count…
+        now += BackdropController.EarlyRemovalWindow + TimeSpan.FromSeconds(1);
+        c.Tick();
+        // …so one more early removal still respawns.
+        var survivor = spawner.Spawns[^1].Handle;
+        now += TimeSpan.FromSeconds(1);
+        spawner.GameFrees(survivor);
+        c.Tick();
+        Ticks(BackdropController.RespawnDelayFrames);
+        Assert.Equal(BackdropState.Shown, c.State);
+        Assert.Equal(4, spawner.Spawns.Count);
+    }
+
+    [Fact] // [AC-hdri-backdrop-8] [EDGE-hdri-backdrop-34]
+    public void Cutscene_WhilePreparingAnotherImage_RemovesTheShownDome()
+    {
+        var a = ShowAndSpawn();
+        preparer.Gate = new TaskCompletionSource<PreparedTexture>();
+        config.ImagePath = dir.File("b.jpg");
+        c.Show();
+        Assert.Equal(BackdropState.Preparing, c.State);
+        game.InCutscene = true;
+        c.Tick();
+        Assert.True(a.IsDead);
+        Assert.Same(a, spawner.Removes.Single());
+        game.InCutscene = false;
+        preparer.Gate.SetResult(FakePreparer.Make(cache, "b", "bbbbbbbbbbbbbbbb"));
+        Ticks(3);
+        Assert.Equal(BackdropState.Shown, c.State);
+        Assert.Equal(a.SpawnedAtUtc, a.SpawnedAtUtc);
+        Assert.Equal(spawner.Spawns[0].Pos, spawner.Spawns[^1].Pos);   // same centre after a cutscene
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-41]
+    public void RefusedRemove_KeepsTheHandle()
+    {
+        var h = ShowAndSpawn();
+        spawner.Refuse = true;
+        c.Hide();
+        Assert.False(h.IsDead);
+        spawner.Refuse = false;
+        c.Teardown();
+        Assert.True(h.IsDead);   // still found and removed later
+    }
+
+    [Fact] // [AC-hdri-backdrop-1]
+    public void PostedActions_RunOnTheNextTick()
+    {
+        c.Post(c.Show);
+        Assert.Equal(0, preparer.Calls);
+        c.Tick();
+        Assert.Equal(1, preparer.Calls);
+        game.Ready = false;
+        c.Tick();
+        Assert.Equal(MessageKey.NotLoggedIn, c.UiBlocker);
+        game.Ready = true;
+        c.Tick();
+        Assert.Equal(MessageKey.None, c.UiBlocker);
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-37]
+    public void CancelJobForDispose_CoversEveryOutstandingJob()
+    {
+        var first = new TaskCompletionSource<PreparedTexture>();
+        preparer.Gate = first;
+        c.Show();
+        var second = new TaskCompletionSource<PreparedTexture>();
+        preparer.Gate = second;
+        c.Show();
+        var all = c.CancelJobForDispose()!;
+        second.SetCanceled();
+        Assert.False(BackdropController.WaitForJob(all, TimeSpan.FromMilliseconds(50)));   // the first is still running
+        first.SetCanceled();
+        Assert.True(BackdropController.WaitForJob(all, TimeSpan.FromSeconds(2)));
+    }
 }

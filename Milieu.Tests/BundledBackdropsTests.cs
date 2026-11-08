@@ -12,7 +12,6 @@ namespace Milieu.Tests;
 /// Product-asset tests: they read the committed images in Milieu/DefaultBackdrops (the acknowledged exception to the
 /// synthetic-fixture rule, docs/adr/0004).
 /// </summary>
-[Trait("Speed", "Slow")]
 public class BundledBackdropsTests
 {
     [Fact] // [AC-hdri-backdrop-11]
@@ -30,7 +29,7 @@ public class BundledBackdropsTests
         }
     }
 
-    [Fact] // [AC-hdri-backdrop-11] [EDGE-hdri-backdrop-60]
+    [Fact, Trait("Speed", "Slow")] // [AC-hdri-backdrop-11] [EDGE-hdri-backdrop-60]
     public void CommittedImages_WrapAround()
     {
         foreach (var pin in DefaultBackdropsDownloadService.Backdrops)
