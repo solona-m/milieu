@@ -11,11 +11,16 @@ Milieu needs [Penumbra](https://github.com/xivdev/Penumbra), with mods enabled a
 (Milieu hands the game its files through a Penumbra temporary mod).
 
 1. In game, type `/xlsettings` and open **Experimental**.
-2. Under **Custom Plugin Repositories**, add `https://dl.solona.info/repo.json`, tick **Enabled**, and save.
+2. Under **Custom Plugin Repositories** (the first time, read the warning and click **Ok, I have read and
+   understood this warning** once it unlocks), paste `https://dl.solona.info/repo.json` into the empty row and
+   click **+**. Check that **Enabled** is ticked, then click **Save**.
 3. While Milieu is in testing, also turn on **Get plugin testing builds** on the same tab.
 4. Type `/xlplugins`, search for **Milieu**, and install it.
 
 Only you see the backdrop; other players see the normal game world.
+
+> Milieu isn't listed in the repository just yet. The first testing build is on its way; until then step 4 won't
+> find it.
 
 ## Using it
 
@@ -23,7 +28,7 @@ The window shows a grid of scenes. **Click a scene to show it**; there is no Sho
 
 - **None** turns the backdrop off.
 - **Bundled scenes** (Forest, Galaxy, Living Room, Living Room 2, Lodge, Moon, Sunset, Warehouse) come pre-converted.
-  A scene downloads (about 45 MB) the first time you click it, then shows within a second or two. **Download all**
+  A scene downloads (about 43 MB) the first time you click it, then shows within a second or two. **Download all**
   fetches the rest.
 - **Add more…** adds your own `.hdr`, `.png` or `.jpg` as a tile and shows it. Your images are converted on your PC
   the first time (an 8K image takes a while), then cached; their tile gets a preview once converted. **×** removes a
@@ -38,7 +43,7 @@ The window shows a grid of scenes. **Click a scene to show it**; there is no Sho
 - **Radius**, **Vertical scale**, **Camera height** and **Yaw** apply when you let go of the slider (the dome is
   replaced, new one first, so there is no flicker). **Re-centre on me** moves the dome to where you stand.
 - **Horizontal/Vertical repeat**, **Flip** and **Brightness** adjust the mapping.
-- For your own HDR images, **Exposure** and **Tone map**, and **Texture size** for your own images, re-convert
+- For your own images, **Texture size** (and, for HDR images, **Exposure** and **Tone map**) re-convert
   automatically shortly after you change them.
 
 The dome follows you through zone changes (re-centred) and stays up in GPose. It is hidden during cutscenes and on
@@ -60,6 +65,8 @@ where the photo was taken from.
 ## Troubleshooting
 
 - **"Penumbra isn't running"**: install or enable Penumbra.
+- **"This Penumbra version isn't supported"**: update Penumbra.
+- **"Milieu can't find the game's VFX functions"**: a game patch changed things; wait for a Milieu update.
 - **"Mods are disabled in Penumbra"**: turn mods back on in Penumbra's settings.
 - **"Base collection is set to None"** or **"Penumbra didn't pick up the backdrop files"**: assign a Base
   collection in Penumbra, then click the scene again.
