@@ -65,7 +65,8 @@ where the photo was taken from.
 ## Troubleshooting
 
 - **"Penumbra isn't running"**: install or enable Penumbra.
-- **"This Penumbra version isn't supported"**: update Penumbra.
+- **"This Penumbra version isn't supported"**: update Penumbra. If it's already up to date, Penumbra has changed
+  its API and Milieu needs an update; wait for one.
 - **"Milieu can't find the game's VFX functions"**: a game patch changed things; wait for a Milieu update.
 - **"Mods are disabled in Penumbra"**: turn mods back on in Penumbra's settings.
 - **"Base collection is set to None"** or **"Penumbra didn't pick up the backdrop files"**: assign a Base
