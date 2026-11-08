@@ -26,14 +26,14 @@ public static class BackdropPins
 
     public static readonly IReadOnlyList<BackdropPin> All =
     [
-        new("forest", "Forest", 44739312L, "PENDING_FOREST"),
-        new("galaxy", "Galaxy", 44739312L, "PENDING_GALAXY"),
-        new("livingroom", "Living Room", 44739312L, "PENDING_LIVINGROOM"),
-        new("livingroom2", "Living Room 2", 44739312L, "PENDING_LIVINGROOM2"),
-        new("lodge", "Lodge", 44739312L, "PENDING_LODGE"),
-        new("moon", "Moon", 44739312L, "PENDING_MOON"),
-        new("sunset", "Sunset", 44739312L, "PENDING_SUNSET"),
-        new("warehouse", "Warehouse", 44739312L, "PENDING_WAREHOUSE"),
+        new("forest", "Forest", 44739312L, "80b81b010da5c49db392db65b0837d94d952c69419d54f794424a8f33e0eaa29"),
+        new("galaxy", "Galaxy", 44739312L, "5212832130fcb3916f4a05420b9a5f4c002896b52c9ecfc300759976ab50ec4b"),
+        new("livingroom", "Living Room", 44739312L, "708926c13a82ecc5c5ebd8a4c8c89a753d760798ff2f6f17e15ae55037226b31"),
+        new("livingroom2", "Living Room 2", 44739312L, "8727593be0652bf33c7b0827b79374613cac7322b9e81c26448e7a4fde90708d"),
+        new("lodge", "Lodge", 44739312L, "ec19e94f6a4964e9d752678d5f995988b9d175571e3c060c50b16fe13ff59572"),
+        new("moon", "Moon", 44739312L, "74d3deb3519573150760287fd876eed2fa88f8735778e11456515a353bd64f5f"),
+        new("sunset", "Sunset", 44739312L, "f646b04d1a92e8436a3857991b60f3ff865acd5883832e61ba6f6670028372bb"),
+        new("warehouse", "Warehouse", 44739312L, "6644700b04f9237f0c1ca07b21e66388075c26a9b827d75092e6c72fac7f2c92"),
     ];
 
     public static int Count => All.Count;
