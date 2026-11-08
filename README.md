@@ -25,9 +25,6 @@ Type `/xlplugins`, search for **Milieu**, and install it.
 
 Only you see the backdrop; other players see the normal game world.
 
-> Milieu isn't listed in the repository just yet. The first release is on its way; until then
-> `/xlplugins` won't find it.
-
 ## Using it
 
 The window shows a grid of scenes. **Click a scene to show it**; there is no Show button.
