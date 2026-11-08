@@ -29,7 +29,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static ISigScanner SigScanner { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 4;
+    public const int BuildNumber = 5;
 
     private const string CommandName = "/milieu";
 
@@ -77,6 +77,7 @@ public sealed class Plugin : IDalamudPlugin
         });
         PluginInterface.UiBuilder.Draw += windows.Draw;
         PluginInterface.UiBuilder.OpenMainUi += mainWindow.Toggle;
+        PluginInterface.UiBuilder.OpenConfigUi += mainWindow.OpenSettings;
     }
 
     /// <summary>"off" hides the backdrop; anything else toggles the window.</summary>
@@ -130,6 +131,7 @@ public sealed class Plugin : IDalamudPlugin
         ClientState.Logout -= OnLogout;
         PluginInterface.UiBuilder.Draw -= windows.Draw;
         PluginInterface.UiBuilder.OpenMainUi -= mainWindow.Toggle;
+        PluginInterface.UiBuilder.OpenConfigUi -= mainWindow.OpenSettings;
         CommandManager.RemoveHandler(CommandName);
         windows.RemoveAllWindows();
     }

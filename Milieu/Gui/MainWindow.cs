@@ -21,6 +21,14 @@ public sealed class MainWindow : Window
     private readonly Action save;
     private readonly BackdropListViewModel backdrops;
     private readonly FileDialogManager files = new();
+    private bool expandSettings;
+
+    /// <summary>Dalamud's config button (/xlplugins): open the window with the settings panels expanded.</summary>
+    public void OpenSettings()
+    {
+        IsOpen = true;
+        expandSettings = true;
+    }
 
     private static readonly Vector4 Red = new(1f, 0.4f, 0.4f, 1f);
     private static readonly Vector4 Yellow = new(1f, 0.85f, 0.3f, 1f);
@@ -49,6 +57,7 @@ public sealed class MainWindow : Window
         ImGui.Separator();
         DrawButtons(vm);
         files.Draw();
+        expandSettings = false;
     }
 
     private static void DrawStatus(BackdropViewModel vm)
@@ -119,6 +128,7 @@ public sealed class MainWindow : Window
 
     private void DrawMapping()
     {
+        if (expandSettings) ImGui.SetNextItemOpen(true, ImGuiCond.Always);
         if (!ImGui.CollapsingHeader("Mapping")) return;
         Slider("Horizontal repeat", "HorizontalRepeat", config.HorizontalRepeat, Configuration.RepeatRange.Min, Configuration.RepeatRange.Max, v => config.HorizontalRepeat = v);
         Slider("Vertical repeat", "VerticalRepeat", config.VerticalRepeat, Configuration.RepeatRange.Min, Configuration.RepeatRange.Max, v => config.VerticalRepeat = v);
@@ -134,6 +144,7 @@ public sealed class MainWindow : Window
 
     private void DrawHdr(BackdropViewModel vm)
     {
+        if (expandSettings) ImGui.SetNextItemOpen(true, ImGuiCond.Always);
         if (!ImGui.CollapsingHeader("Image conversion")) return;
         using (ImRaii.Disabled(!vm.HdrControlsEnabled))
         {
