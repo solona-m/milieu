@@ -7,7 +7,8 @@
   <Import Project="Sdk.props" Sdk="Dalamud.NET.Sdk" />
 
   <PropertyGroup>
-    <Version>0.1.0.0</Version>
+    <!-- yyMM.<commit count>, computed in Directory.Build.props (ComputeMilieuVersion). -->
+    <Version>$(MilieuVersion)</Version>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -22,9 +23,16 @@
     <Tags>hdri;skybox;backdrop;gpose;screenshot;vfx</Tags>
     <CategoryTags>utility</CategoryTags>
     <RepoUrl>https://github.com/solona-m/milieu</RepoUrl>
-    <!-- Dalamud reads images\icon.png next to the DLL for dev plugins only; installs from a plugin repo fetch this URL,
-         so the file must exist on main at this exact path. -->
-    <IconUrl>https://raw.githubusercontent.com/solona-m/milieu/main/Milieu/images/icon.png</IconUrl>
+    <!-- Dalamud reads images\icon.png next to the DLL for dev plugins only; an installed plugin's icon comes from this
+         URL in its manifest. The dl.solona.info worker serves Milieu/images/icon.png from the test branch at it, the same
+         URL the solona-m/plugins listing uses (the sync drops the manifest's IconUrl and sets its own), so both agree
+         without a main merge (docs/adr/0007-plugin-releases-and-listing.md). -->
+    <IconUrl>https://dl.solona.info/milieu/icon.png</IconUrl>
+    <!-- Shown under the plugin entry after an update. Deliberately empty here: the value comes from the annotated tag's
+         message, which the release workflows put in a Changelog environment variable before building (MSBuild surfaces
+         environment variables as properties, and this Condition yields to one when set). Hardcoded text would ship the
+         same stale line on every later release; an absent changelog is honest, a wrong one is not. -->
+    <Changelog Condition="'$(Changelog)' == ''"></Changelog>
   </PropertyGroup>
 
   <ItemGroup>
@@ -54,8 +62,9 @@
     <Content Include="..\THIRD_PARTY_NOTICES.txt" Link="THIRD_PARTY_NOTICES.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- The bundled backdrops are NOT shipped in the plugin zip: they are published as pinned release assets under the
-         backdrops-* tag (upload-backdrops.yml) and downloaded on demand by DefaultBackdropsDownloadService. -->
+    <!-- The bundled backdrops are NOT shipped in the plugin zip: they are pre-converted, published as pinned release assets
+         under a backdrops-v<N> tag by tools/publish-backdrops.ps1 (docs/adr/0005) and downloaded on demand by
+         DefaultBackdropsDownloadService. The release workflows' package check fails a zip over 4 MB. -->
     <None Remove="DefaultBackdrops\**" />
     <Content Remove="DefaultBackdrops\**" />
   </ItemGroup>

@@ -192,4 +192,41 @@ public sealed class ResilientDownloaderTests : IDisposable
         Assert.All(log.Lines, l => Assert.DoesNotContain(dir.Path, l.Text, StringComparison.OrdinalIgnoreCase));
         Assert.Equal(4, delays.Count);   // retried with (injected) backoff
     }
+
+    [Fact] // [AC-plugin-release-4] [EDGE-plugin-release-11]
+    public async Task Mirror_404_falls_back_to_GitHub()
+    {
+        var urls = new List<string>();
+        var h = new Handler((req, _) =>
+        {
+            lock (urls) urls.Add(req.RequestUri!.ToString());
+            return Task.FromResult(req.RequestUri!.Host == "dl.solona.info" ? new HttpResponseMessage(HttpStatusCode.NotFound) : Full());
+        });
+        using var d = Downloader(h);
+        var dest = Path.Combine(dir.Path, "moon.atex");
+        var r = await d.FetchAsync(MilieuAssets.BaseUrls("backdrops-v2"), "moon.atex", Body.Length, Sha, dest, null, default);
+        Assert.True(r.Ok, r.Detail);
+        Assert.Equal(new[] { "https://dl.solona.info/milieu/backdrops-v2/moon.atex", "https://github.com/solona-m/milieu/releases/download/backdrops-v2/moon.atex" }, urls);
+        Assert.Empty(delays);                                   // a 404 needs no backoff
+        Assert.Equal(Body, File.ReadAllBytes(dest));
+    }
+
+    [Fact] // [EDGE-plugin-release-11]
+    public async Task Unreachable_mirror_falls_back_to_GitHub()
+    {
+        var hosts = new List<string>();
+        var h = new Handler((req, _) =>
+        {
+            lock (hosts) hosts.Add(req.RequestUri!.Host);
+            if (req.RequestUri!.Host == "dl.solona.info") throw new HttpRequestException("unreachable");
+            return Task.FromResult(Full());
+        });
+        using var d = Downloader(h);
+        var dest = Path.Combine(dir.Path, "moon.atex");
+        var r = await d.FetchAsync(MilieuAssets.BaseUrls("backdrops-v2"), "moon.atex", Body.Length, Sha, dest, null, default);
+        Assert.True(r.Ok, r.Detail);
+        Assert.Equal(5, hosts.Count(x => x == "dl.solona.info"));
+        Assert.Equal("github.com", hosts[^1]);
+        Assert.Equal(4, delays.Count);                          // backoff between the mirror's attempts (injected)
+    }
 }

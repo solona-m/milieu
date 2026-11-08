@@ -14,4 +14,6 @@ public static class RepoPaths
     }
 
     public static string DefaultBackdrops() => Path.Combine(Root(), "Milieu", "DefaultBackdrops");
+
+    public static string Workflows() => Path.Combine(Root(), ".github", "workflows");
 }

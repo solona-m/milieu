@@ -3,4 +3,33 @@
     <DALAMUD_HOME Condition="'$(DALAMUD_HOME)' == ''">$(AppData)\XIVLauncher\addon\Hooks\dev</DALAMUD_HOME>
     <DalamudLibPath>$(DALAMUD_HOME)\</DalamudLibPath>
   </PropertyGroup>
+
+  <!-- Every build is stamped yyMM.<git commit count> (UTC), as Proteus does (ComputeProteusVersion), so a tag name,
+       the manifest's AssemblyVersion and the listing all agree. release.yml rejects a v-tag that differs from the built
+       version (docs/adr/0007-plugin-releases-and-listing.md). -->
+  <Target Name="ComputeMilieuVersion" BeforeTargets="GetAssemblyVersion;GenerateNuspec;Build" Condition="'$(MilieuVersion)' == ''">
+    <!-- stderr is redirected because ConsoleToMsBuild captures BOTH streams and joins the lines with ';', so a git
+         warning (a corrupt commit-graph cache, a detached-HEAD note) would be spliced into the version. Exec shells
+         through cmd.exe on Windows and this project is win-x64 only, so 2>NUL is safe. -->
+    <Exec Command="git rev-list --count HEAD 2&gt;NUL" ConsoleToMsBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitCount" />
+    </Exec>
+    <!-- Fail here, saying what happened, rather than handing the compiler a malformed version: with no git on PATH,
+         or outside a checkout, the count comes back empty. A shallow clone undercounts, so CI checks out with
+         fetch-depth: 0. -->
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(GitCommitCount)', '^\d+$'))"
+           Text="ComputeMilieuVersion: could not read a commit count from git (got '$(GitCommitCount)'). Is git on PATH, and is this a git checkout?" />
+    <CreateProperty Value="$([System.DateTime]::UtcNow.ToString('yyMM')).$(GitCommitCount)">
+      <Output TaskParameter="Value" PropertyName="MilieuVersion" />
+    </CreateProperty>
+    <CreateProperty Value="$(MilieuVersion)">
+      <Output TaskParameter="Value" PropertyName="Version" />
+    </CreateProperty>
+    <CreateProperty Value="$(MilieuVersion)">
+      <Output TaskParameter="Value" PropertyName="AssemblyVersion" />
+    </CreateProperty>
+    <CreateProperty Value="$(MilieuVersion)">
+      <Output TaskParameter="Value" PropertyName="FileVersion" />
+    </CreateProperty>
+  </Target>
 </Project>

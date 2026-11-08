@@ -16,11 +16,21 @@ tests; for a rule backed by a test, a diff that weakens the test is `FAIL`.
   `dome_*.avfx`, `*.tmp`) into `<Penumbra ModDirectory>\_milieu_sync\` and nowhere else under the mod directory; cleanup
   touches only those patterns, and stable builds never create the folder. Any other write there is still `FAIL`.
 - `TreatWarningsAsErrors` stays on in `Milieu.csproj`. `FAIL` if a diff turns it off or adds a blanket `NoWarn`.
+- Workflows (`.github/workflows/`, ADR 0007): every action is pinned to a full commit SHA with a `# vX.Y.Z` comment;
+  only `release.yml` and `testing-release.yml` may hold `contents: write`, `secrets.` or a release action; no guard is
+  ever disabled (`continue-on-error`, step-level `if:`, `catch`, `trap`, `|| true`, `-ErrorAction`,
+  `$ErrorActionPreference`, `-SkipHttpErrorCheck`); every native command in a `run:` block is its last line or is
+  followed by an exit-code check; the package guards stay in `tools/check-package.ps1`. Backed by `WorkflowTests` and
+  `PackageCheckScriptTests`. `FAIL` if a diff weakens any of this.
 
 ## Privacy anchors
 
 - **Sensitive categories**: character names and full local paths of user images; neither goes to chat (beyond the file name) or to logs at Information level or above.
-- **Public surfaces**: none inbound. Outbound only: HTTPS GETs for the bundled backdrops (`Milieu/Assets/`), which send no user data.
+- **Public surfaces**: none inbound. Outbound only: HTTPS GETs for the bundled backdrops (`Milieu/Assets/`), to the
+  `dl.solona.info/milieu/` mirror first and GitHub second, which send no user data (Cloudflare sees the IP and the
+  `Milieu-Plugin` user agent). The repo itself has two live surfaces: the dl.solona.info worker serves `README.md` and
+  `Milieu/images/icon.png` from the `test` branch (`https://dl.solona.info/milieu`, `/milieu/icon.png`), so a `test`
+  push publishes them within minutes (ADR 0007).
 - **User images leaving the machine**: only through synced delivery (ADR 0006, testing/dev builds): PSync uploads the
   shown image to its server and sends it to the user's pairs. Milieu must show the one-time notice before the first
   user image is shared (the image goes only on the next click); a diff that can upload a user image without that gate
@@ -38,3 +48,5 @@ tests; for a rule backed by a test, a diff that weakens the test is `FAIL`.
 - [ ] No writes outside the plugin config directory (except `_milieu_sync`, ADR 0006)
 - [ ] No user image reaches PSync before the first-upload notice
 - [ ] Warnings-as-errors untouched
+- [ ] Workflows: SHA-pinned, write/secrets only in the release workflows, no disabled guard, native exit codes checked
+- [ ] A change to `README.md` or `Milieu/images/icon.png` is fit to go live on the next `test` push

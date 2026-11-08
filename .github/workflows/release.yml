@@ -1,0 +1,150 @@
+name: Release
+
+# A stable build: the tag must be annotated (its message is the changelog) and equal v<the built AssemblyVersion>,
+# both checked before any release exists. Marked "Latest". Asset tags (backdrops-v<N>) match no trigger here.
+# Guards and conventions: docs/adr/0007-plugin-releases-and-listing.md (pinned by WorkflowTests).
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      # Full history: the version is yyMM.<commit count>, and a shallow clone would undercount.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          # Nothing here pushes, so the token isn't left in .git/config for later steps; the repo is public, so the
+          # tag fetch below works without it.
+          persist-credentials: false
+
+      # A stable release is cut from main (the release commit is merged there first); a v-tag anywhere else, say on a
+      # feature branch, must not publish to every user. main is fetched explicitly so the check never depends on what
+      # the checkout happened to fetch.
+      - name: Check the tag is on main
+        shell: pwsh
+        run: |
+          git fetch --force origin "+refs/heads/main:refs/remotes/origin/main"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { Write-Error "Stable tags must be on main: $env:GITHUB_REF_NAME ($env:GITHUB_SHA) is not on origin/main. Merge the release commit into main first, then tag it."; exit 1 }
+
+      - name: Download Dalamud
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://goatcorp.github.io/dalamud-distrib/stg/latest.zip' -OutFile dalamud.zip
+          Expand-Archive dalamud.zip -DestinationPath dalamud_dist
+          "DALAMUD_HOME=$env:GITHUB_WORKSPACE\dalamud_dist" | Out-File -Append $env:GITHUB_ENV
+
+      # Staging Dalamud can move to a new API before release Dalamud does; building against it would ship a zip
+      # labelled with our DalamudApiLevel but compiled against another.
+      - name: Check the Dalamud API level
+        shell: pwsh
+        run: |
+          $dalamud = [Reflection.AssemblyName]::GetAssemblyName("$env:DALAMUD_HOME\Dalamud.dll").Version.Major
+          $level = [regex]::Match((Get-Content Milieu/Milieu.csproj -Raw), '<DalamudApiLevel>(\d+)</DalamudApiLevel>').Groups[1].Value
+          if ("$dalamud" -ne "$level") {
+            Write-Error "Staging Dalamud.dll is API $dalamud but Milieu/Milieu.csproj says DalamudApiLevel $level."
+            exit 1
+          }
+          Write-Host "Dalamud API $dalamud matches DalamudApiLevel $level."
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.x'
+
+      # actions/checkout flattens the annotated tag into a lightweight one, so it is fetched again before its type
+      # and message are read. The message goes to GITHUB_ENV so every later build (the test step rebuilds Milieu too)
+      # packs the same Changelog; the delimiter is random so no tag message can end the block.
+      - name: Read the changelog
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          git fetch --force --tags origin
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((git cat-file -t $tag) -ne 'tag') {
+            throw "$tag is a lightweight tag and carries no changelog. Re-tag it with: git tag -a $tag -F notes.md"
+          }
+          $changelog = ((git tag -l --format='%(contents)' $tag) -join "`n").Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $delimiter = "MILIEU_CHANGELOG_$([guid]::NewGuid().ToString('N'))"
+          "Changelog<<$delimiter`n$changelog`n$delimiter" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Quick suite
+        shell: pwsh
+        run: dotnet test Milieu.Tests/Milieu.Tests.csproj -c Release --filter "Speed!=Slow"
+
+      # The last build before packaging, so the zip is this build's.
+      - name: Build
+        shell: pwsh
+        run: dotnet build Milieu/Milieu.csproj -c Release
+
+      # A month rollover between tagging and this build, or a mistyped count, would publish a zip whose version
+      # differs from its tag; fail before any release exists.
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $manifest = Get-Content "Milieu\bin\Release\win-x64\Milieu.json" | ConvertFrom-Json
+          $version = $manifest.AssemblyVersion
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -ne "v$version") {
+            throw "$tag does not match the built version $version. Tag the commit as v$version instead (git tag -a v$version -F notes.md); never reuse a tag."
+          }
+          "version=$version" | Out-File -Append $env:GITHUB_OUTPUT
+
+      # Ship the SDK's own package rather than re-zipping the build output.
+      - name: Package
+        shell: pwsh
+        run: Copy-Item "Milieu\bin\Release\win-x64\Milieu\latest.zip" -Destination latest.zip
+
+      - name: Check the package
+        shell: pwsh
+        run: |
+          & ./tools/check-package.ps1 -Zip latest.zip -Version "${{ steps.version.outputs.version }}" -Changelog "$env:Changelog" -MaxBytes 4MB
+
+      - name: Create release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: latest.zip
+          make_latest: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Without the token the release still exists and the plugins repo's nightly sync lists it, so a missing token
+      # warns; a rejected one (any non-2xx) fails the step.
+      - name: Notify plugins repo
+        shell: pwsh
+        env:
+          PLUGINS_REPO_TOKEN: ${{ secrets.PLUGINS_REPO_TOKEN }}
+        run: |
+          if (-not $env:PLUGINS_REPO_TOKEN) {
+            Write-Host "::warning::PLUGINS_REPO_TOKEN is not set: the plugins repo was not notified. Its nightly sync lists this release."
+            exit 0
+          }
+          $headers = @{
+            Authorization = "Bearer $env:PLUGINS_REPO_TOKEN"
+            Accept        = "application/vnd.github+json"
+          }
+          $body = @{
+            event_type     = "plugin-released"
+            client_payload = @{
+              plugin  = "Milieu"
+              version = "${{ steps.version.outputs.version }}"
+            }
+          } | ConvertTo-Json
+          Invoke-RestMethod -Method Post `
+            -Uri "https://api.github.com/repos/solona-m/plugins/dispatches" `
+            -Headers $headers `
+            -Body $body `
+            -ContentType "application/json"
