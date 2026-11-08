@@ -142,7 +142,9 @@ public class WorkflowTests
         {
             if (!NativeStatement.IsMatch(lines[i])) continue;
             if (i == lines.Count - 1) continue;
-            if (lines[i + 1].Trim() == ExitCheck) continue;
+            var next = lines[i + 1].Trim();
+            // The plain check, or one that names the failure first: if ($LASTEXITCODE -ne 0) { ...; exit ... }
+            if (next == ExitCheck || (next.StartsWith("if ($LASTEXITCODE -ne 0) {", StringComparison.Ordinal) && Regex.IsMatch(next, @"\bexit\b"))) continue;
             bad.Add(lines[i].Trim());
         }
         return bad;
@@ -253,6 +255,19 @@ public class WorkflowTests
         var permLines = code.Skip(perms + 1).TakeWhile(l => l.Length == 0 || char.IsWhiteSpace(l[0])).Where(l => l.Trim().Length > 0).ToList();
         Assert.Equal(["contents: read"], permLines.Select(l => l.Trim()));
         Assert.Contains(Quick, CodeText("test.yml"));
+    }
+
+    [Fact] // [AC-plugin-release-2] [AC-plugin-release-10]
+    public void Release_rejects_a_tag_that_is_not_on_main()
+    {
+        var code = Code("release.yml");
+        var fetch = IndexOf(code, "git fetch --force origin \"+refs/heads/main:refs/remotes/origin/main\"");
+        var check = IndexOf(code, "git merge-base --is-ancestor $env:GITHUB_SHA origin/main");
+        var firstDotnet = code.FindIndex(l => Regex.IsMatch(l, @"\bdotnet\s"));
+        Assert.True(fetch >= 0 && check > fetch, $"{fetch} {check}");
+        Assert.StartsWith("if ($LASTEXITCODE -ne 0)", code[check + 1].Trim());
+        Assert.Contains("Stable tags must be on main", code[check + 1]);
+        Assert.True(check < firstDotnet, $"{check} {firstDotnet}");
     }
 
     [Fact] // [EDGE-plugin-release-1]
@@ -477,6 +492,8 @@ public class WorkflowTests
         { "$env:Changelog = ((git tag -l --format='%(contents)' $tag) -join \"`n\").Trim()\nWrite-Host x", false },
         { "if ((git cat-file -t $tag) -ne 'tag') {\n  throw \"no\"\n}\nWrite-Host x", true },
         { "& ./tools/check-package.ps1 -Zip latest.zip\nWrite-Host after", false },
+        { "git merge-base --is-ancestor $a $b\nif ($LASTEXITCODE -ne 0) { Write-Error \"not on main\"; exit 1 }\nWrite-Host ok", true },
+        { "git merge-base --is-ancestor $a $b\nif ($LASTEXITCODE -ne 0) { Write-Error \"not on main\" }\nWrite-Host ok", false },
     };
 
     [Theory] // [EDGE-plugin-release-24]

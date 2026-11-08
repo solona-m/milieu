@@ -26,6 +26,17 @@ jobs:
           # tag fetch below works without it.
           persist-credentials: false
 
+      # A stable release is cut from main (the release commit is merged there first); a v-tag anywhere else, say on a
+      # feature branch, must not publish to every user. main is fetched explicitly so the check never depends on what
+      # the checkout happened to fetch.
+      - name: Check the tag is on main
+        shell: pwsh
+        run: |
+          git fetch --force origin "+refs/heads/main:refs/remotes/origin/main"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { Write-Error "Stable tags must be on main: $env:GITHUB_REF_NAME ($env:GITHUB_SHA) is not on origin/main. Merge the release commit into main first, then tag it."; exit 1 }
+
       - name: Download Dalamud
         shell: pwsh
         run: |

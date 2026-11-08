@@ -60,11 +60,13 @@ Facts found while planning (they shape the gates below):
 - **Listing:** a `PLUGINS` row `Milieu|solona-m/milieu|Milieu.json|milieu/|https://dl.solona.info/milieu/icon.png` in
   the plugins `sync.yml`, plus a hand-seeded `repo.json` entry (the sync only updates existing entries), inserted as
   text, `IsTestingExclusive: true` until a stable release is verified. `tests/test_listing.py` in that repo checks the
-  invariants, including that a non-testing-exclusive Milieu entry installs from a `v` build. It deliberately pins only
-  fields the sync never rewrites (identity, `IconUrl`, `RepoUrl`, `ApplicableVersion`, the API levels, `IsHide`, the
-  link shape): `Description`, `Punchline` and the tags are merged from each release's manifest, and the versions,
-  `LastUpdate` and `DownloadCount` are the sync's. The publish run checks the versions itself (both equal to the
-  `testing-1` build's at P7). Run it with `python -B` so no `__pycache__` lands in that repo.
+  invariants, including that a non-testing-exclusive Milieu entry installs from a `v` build. The sync merges the whole
+  manifest over the entry, so identity, the API levels, `ApplicableVersion` and `RepoUrl` are manifest-sourced too; the
+  test pins the values the manifest carries today and must be updated with it (an API bump, for one). `IsHide`,
+  `IsTestingExclusive` and `IconUrl` are repo.json's own. It deliberately does not pin what changes from release to
+  release: `Description`, `Punchline` and the tags, and the sync's versions, `LastUpdate` and `DownloadCount`. The
+  publish run checks the versions itself (both equal to the `testing-1` build's at P7). Run it with `python -B` so no
+  `__pycache__` lands in that repo.
 - **Publishing is a gated runbook,** run by the agent under the owner's authorisation ("No do it all for me. Notify on
   discord when done"; "Once this is done, push a main release as well"): the canary, `testing-1`, its verification, the
   listing and sync, then the full suite on the release commit, `main`, the stable tag, its verification and the stable
@@ -84,3 +86,8 @@ Harder:
 - With the mirror down, each scene spends about 1.5–2.5 minutes on mirror retries before GitHub (accepted; rare).
 - Any `test` push republishes the README page and icon; a bad README edit there is public within minutes.
 - The two release workflows duplicate their setup steps (parity with Proteus); the guards live once, in the script.
+- Tech debt (accepted for Proteus parity): each release workflow is one job, so the build and test steps run in a job
+  whose `GITHUB_TOKEN` has `contents: write`, and the dispatch secret is in the same job's environment (only in its
+  last step). Follow-up: split into a read-only build job that uploads `latest.zip` and a publish job that holds the
+  write token and the secret.
+- `release.yml` refuses a `v` tag whose commit is not on `main` (stable releases are cut from `main`).
