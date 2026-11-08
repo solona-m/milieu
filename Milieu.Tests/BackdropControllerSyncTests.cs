@@ -89,7 +89,7 @@ public sealed class BackdropControllerSyncTests : IDisposable
 
     /// <summary>Gated jobs continue on the thread pool once released: wait for every synced job before ticking.</summary>
     private void WaitJobs(int stillGated = 0) =>
-        Assert.True(SpinWait.SpinUntil(() => c.StagingJobTasks.Count(t => !t.IsCompleted) <= stillGated, 5000), "synced jobs finished");
+        Assert.True(Eventually.Holds(() => c.StagingJobTasks.Count(t => !t.IsCompleted) <= stillGated), "synced jobs finished");
 
     private void ShowSynced(DeliveryMode mode = DeliveryMode.MadBirdRing)
     {

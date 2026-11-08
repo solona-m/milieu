@@ -92,7 +92,7 @@ public sealed class ResilientDownloaderTests : IDisposable
         using (var d1 = Downloader(h1))
         {
             var t = Fetch(d1, dest, cts.Token);
-            Assert.True(SpinWait.SpinUntil(() => body.Hanging, 5000));   // half delivered, the read now stalls
+            Assert.True(Eventually.Holds(() => body.Hanging));   // half delivered, the read now stalls
             cts.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => t);
         }
