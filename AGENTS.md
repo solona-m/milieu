@@ -66,14 +66,15 @@ Milieu/            the Dalamud plugin (Plugin.cs: services, events, /milieu, dis
   Backdrop/        lifecycle controller, background converter, cache, config types, messages
   GameFiles/       AVFX chunk I/O, dome sphere mesh, dome .avfx builder, BC7 .atex writer
   Imaging/         header probes, decode budget, tone mapping, resampling, band fill, seam check, mips, BC7
-  Interop/         native signatures, static VFX spawner + remove hook, Penumbra IPC, game state
+  Interop/         native signatures, static VFX spawner + remove hook, Penumbra IPC, game state, game data
+  Sync/            synced delivery (testing builds): item targets, IMC parsing, Penumbra meta, planning, staging, lifecycle
   Assets/          bundled-backdrop downloads (pinned release assets, resilient downloader)
   Gui/             main window and its pure view models
   DefaultBackdrops/  committed source JPEGs of the bundled scenes (NOT shipped; pre-converted .atex are built into artifacts/backdrops and published with tools/publish-backdrops.ps1)
   Resources/Thumbs/  embedded 256x128 previews of the bundled scenes
 Milieu.Tests/      xunit tests (Support/: fakes, synthetic images, reference-file facts)
 tools/PrepareBackdrops/  offline tool that produces Milieu/DefaultBackdrops
-docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops), agent guidance
+docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery), agent guidance
 ```
 
 ## Testing
@@ -88,6 +89,7 @@ tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 - Binary game-file writers (`.avfx`, `.atex`/`.tex` output) — a malformed VFX or texture can crash the game
 - Native interop: function signatures, hooks, unsafe struct access, VFX spawn/remove — a wrong signature or a dangling VFX pointer crashes the game
 - Penumbra IPC (temporary mods/redirects) — must be removed on dispose and never touch the user's own mods
+- Synced delivery (`Milieu/Sync/`, ADR 0006): writes into Penumbra's mod directory (`_milieu_sync`), an IMC manipulation and the `MilieuSync` temp mod in the player's collection, and the user's image leaving the machine via PSync (notice first); offered on testing/dev builds only
 - `Milieu/Configuration.cs` migrations — a mistake loses user settings
 - Downloads (`Milieu/Assets/`) and `tools/publish-backdrops.ps1` — outbound GETs that write into the config directory, downloaded textures handed to the game; pinned size + header + SHA-256 before use; the publish script's guards keep pins and release assets identical
 - `.claude/settings.json` — loaded by every agent session in the repo
