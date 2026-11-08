@@ -176,6 +176,7 @@ public sealed class MainWindow : Window
         }
         if (!ImGui.IsItemDeactivatedAfterEdit()) return;
         save();
-        if (BackdropViewModel.ApplyOf(key) == SliderApply.OnRelease) controller.Post(controller.ApplyRebuild);
+        if (key is "Yaw" or "Height") controller.Post(controller.ApplyLive);
+        else controller.Post(controller.ApplyRebuild);
     }
 }

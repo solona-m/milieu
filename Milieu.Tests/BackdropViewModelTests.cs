@@ -25,9 +25,8 @@ public class BackdropViewModelTests
     [Fact] // [AC-hdri-backdrop-3]
     public void SliderBehaviour_Flags()
     {
-        Assert.Equal(SliderApply.Live, BackdropViewModel.ApplyOf("Yaw"));
-        Assert.Equal(SliderApply.Live, BackdropViewModel.ApplyOf("Height"));
-        foreach (var s in new[] { "Radius", "VerticalScale", "HorizontalRepeat", "VerticalRepeat", "Brightness" })
+        // All on release: yaw/height respawn the dome, the rest rebuild it (a live move leaves the particle behind).
+        foreach (var s in new[] { "Yaw", "Height", "Radius", "VerticalScale", "HorizontalRepeat", "VerticalRepeat", "Brightness" })
             Assert.Equal(SliderApply.OnRelease, BackdropViewModel.ApplyOf(s));
     }
 

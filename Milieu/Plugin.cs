@@ -29,7 +29,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static ISigScanner SigScanner { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 3;
+    public const int BuildNumber = 4;
 
     private const string CommandName = "/milieu";
 

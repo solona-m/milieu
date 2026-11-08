@@ -99,14 +99,20 @@ public sealed class BackdropControllerTests : IDisposable
     {
         var h = ShowAndSpawn();
         var sets = penumbra.Sets.Count;
+        var avfx = spawner.Spawns[0].Path;
         config.Sky.YawDegrees = 90;
         config.Sky.HeightOffset = 5;
+        spawner.Calls.Clear();
         c.ApplyLive();
-        var move = Assert.Single(spawner.Moves);
-        Assert.Same(h, move.Handle);
-        Assert.Equal(MathF.PI / 2, move.Yaw, 4);
-        Assert.Equal(game.PlayerPosition!.Value.Y + 5, move.Pos.Y, 4);
-        Assert.Equal(sets, penumbra.Sets.Count);
+        // Respawned at the new placement (new first, then the old removed); never just moved.
+        Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
+        Assert.Empty(spawner.Moves);
+        var spawn = spawner.Spawns[^1];
+        Assert.Equal(avfx, spawn.Path);
+        Assert.Equal(MathF.PI / 2, spawn.Yaw, 4);
+        Assert.Equal(game.PlayerPosition!.Value.Y + 5, spawn.Pos.Y, 4);
+        Assert.True(h.IsDead);
+        Assert.Equal(sets, penumbra.Sets.Count);   // no new files, no IPC
         Assert.Equal(1, preparer.Calls);
     }
 

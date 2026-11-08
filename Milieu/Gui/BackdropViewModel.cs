@@ -45,7 +45,8 @@ public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker,
 
     public static SliderApply ApplyOf(string slider) => slider switch
     {
-        "Yaw" or "Height" => SliderApply.Live,
-        _ => SliderApply.OnRelease,   // Radius, VerticalScale, HorizontalRepeat, VerticalRepeat, Brightness
+        // Every slider applies on release: yaw and height respawn the dome (a moved emitter leaves its particle behind),
+        // the rest rebuild the VFX.
+        _ => SliderApply.OnRelease,
     };
 }

@@ -18,7 +18,7 @@ public sealed class DomeSettings
     public static DomeSettings RoomDefaults() => new() { Radius = 10f, VerticalScale = 1f, HeightOffset = 1.6f, YawDegrees = 0f };
 
     public static (float Min, float Max) RadiusRange(DomeMode mode) => mode == DomeMode.Sky ? (200f, 20000f) : (1f, 100f);
-    public static (float Min, float Max) HeightRange(DomeMode mode) => mode == DomeMode.Sky ? (-500f, 500f) : (-10f, 10f);
+    public static (float Min, float Max) HeightRange(DomeMode mode) => mode == DomeMode.Sky ? (-2000f, 2000f) : (-10f, 10f);
     public static readonly (float Min, float Max) VerticalScaleRange = (0.25f, 2f);
     public static readonly (float Min, float Max) YawRange = (-180f, 180f);
 

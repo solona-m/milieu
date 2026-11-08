@@ -155,10 +155,19 @@ public sealed class BackdropController
         message = StatusMessage.None;
     }
 
-    /// <summary>Yaw/height changed: move the live dome (no rebuild, no IPC). Saved settings apply on the next spawn otherwise.</summary>
+    /// <summary>
+    /// Yaw/height changed: respawn the dome at its new placement (no rebuild, no IPC). Moving the VFX object is not
+    /// enough: its one particle is emitted at spawn and stays where it was born, so a moved emitter leaves the visible
+    /// dome behind (seen in game, build 3). The new dome is spawned before the old one is removed, so it never flickers.
+    /// Saved settings apply on the next spawn otherwise.
+    /// </summary>
     public void ApplyLive()
     {
-        if (state == BackdropState.Shown && handle is { IsDead: false } h) spawner.Move(h, SpawnPosition(), YawRadians());
+        if (state != BackdropState.Shown || handle is not { IsDead: false } old || shownAvfxGamePath == null) return;
+        var spawned = spawner.Spawn(shownAvfxGamePath, SpawnPosition(), YawRadians());
+        if (spawned == null) return;
+        spawner.Remove(old);
+        handle = spawned;
     }
 
     /// <summary>Radius, vertical scale, repeats, flip or brightness changed: rebuild the VFX and swap it in.</summary>
