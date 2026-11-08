@@ -138,7 +138,7 @@ public sealed class BackdropControllerTests : IDisposable
         preparer.Gate = new TaskCompletionSource<PreparedTexture>();
         var asyncController = new BackdropController(spawner, penumbra, game, preparer, cache, config, log);
         asyncController.Show();
-        Assert.True(SpinWait.SpinUntil(() => preparer.Calls == 1, TimeSpan.FromSeconds(5)));
+        Assert.True(Eventually.Holds(() => preparer.Calls == 1));
         Assert.NotEqual(Environment.CurrentManagedThreadId, preparer.Threads.Single());   // on a worker, not the caller
         asyncController.Tick();
         asyncController.Tick();

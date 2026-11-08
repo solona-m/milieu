@@ -35,7 +35,7 @@ public sealed class DefaultBackdropsDownloadServiceTests : IDisposable
     private DefaultBackdropsDownloadService Service(DefaultBackdropsDownloadService.Fetch f) => new(log, dir.Path, f);
 
     private static void WaitIdle(DefaultBackdropsDownloadService s) =>
-        Assert.True(SpinWait.SpinUntil(() => !s.IsRunActive, TimeSpan.FromSeconds(10)));
+        Assert.True(Eventually.Holds(() => !s.IsRunActive));
 
     private static FetchResult Http(int code) => new(false, FetchFailure.Http, code, 0, $"HTTP {code}");
 
@@ -93,7 +93,7 @@ public sealed class DefaultBackdropsDownloadServiceTests : IDisposable
         var release = new TaskCompletionSource();
         using var s = Service(Recording(gate: async (_, progress, _) => { progress?.Invoke(1000); await release.Task; }));
         s.Request("forest");
-        Assert.True(SpinWait.SpinUntil(() => s.StatusOf("forest").Bytes == 1000, 5000));
+        Assert.True(Eventually.Holds(() => s.StatusOf("forest").Bytes == 1000));
         Assert.Equal(EntryState.Downloading, s.StatusOf("forest").State);
         s.Request("galaxy");
         Assert.Equal(EntryState.Queued, s.StatusOf("galaxy").State);
@@ -155,11 +155,11 @@ public sealed class DefaultBackdropsDownloadServiceTests : IDisposable
         }));
         s.Request("forest");
         s.Request("galaxy");
-        Assert.True(SpinWait.SpinUntil(() => !calls.IsEmpty, 5000));
+        Assert.True(Eventually.Holds(() => !calls.IsEmpty));
         var sw = System.Diagnostics.Stopwatch.StartNew();
         s.Dispose();
         Assert.True(sw.Elapsed < DefaultBackdropsDownloadService.DisposeWait + TimeSpan.FromSeconds(1));
-        Assert.True(SpinWait.SpinUntil(() => !s.IsRunActive, 5000));
+        Assert.True(Eventually.Holds(() => !s.IsRunActive));
         Assert.True(sawCancel);
         Assert.NotEqual(EntryState.Failed, s.StatusOf("forest").State);
         Assert.Single(calls);
