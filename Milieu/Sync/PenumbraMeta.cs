@@ -20,21 +20,27 @@ public static class PenumbraMeta
     private const int MaxDecompressed = 16 << 20;
 
     /// <summary>The IMC overrides in a v1 string; anything else (empty, v0, v2, bad base64, truncated) → empty. Never throws.</summary>
-    public static Dictionary<ImcKey, ImcEntry> ReadImcOverrides(string? manipBase64)
+    public static Dictionary<ImcKey, ImcEntry> ReadImcOverrides(string? manipBase64) => TryReadImcOverrides(manipBase64, out var map) ? map : map;
+
+    /// <summary>
+    /// As <see cref="ReadImcOverrides"/>, with a status: false when a non-empty string couldn't be read as v1 (the caller
+    /// logs it at Debug and falls back to vanilla). An empty string is readable: no overrides.
+    /// </summary>
+    public static bool TryReadImcOverrides(string? manipBase64, out Dictionary<ImcKey, ImcEntry> result)
     {
-        var result = new Dictionary<ImcKey, ImcEntry>();
-        if (string.IsNullOrEmpty(manipBase64)) return result;
+        result = new Dictionary<ImcKey, ImcEntry>();
+        if (string.IsNullOrEmpty(manipBase64)) return true;
         try
         {
             var raw = Convert.FromBase64String(manipBase64);
             var data = Gunzip(raw);
-            if (data == null || data.Length < 1 + V1Prefix.Length + 4 || data[0] != 1) return result;
+            if (data == null || data.Length < 1 + V1Prefix.Length + 4 || data[0] != 1) return false;
             var span = data.AsSpan(1);
-            if (!span.StartsWith(V1Prefix)) return result;
+            if (!span.StartsWith(V1Prefix)) return false;
             span = span[V1Prefix.Length..];
             var count = BinaryPrimitives.ReadInt32LittleEndian(span);
             span = span[4..];
-            if (count < 0 || (long)count * ImcRecordSize > span.Length) return result;
+            if (count < 0 || (long)count * ImcRecordSize > span.Length) return false;
             for (var i = 0; i < count; i++)
             {
                 var rec = span.Slice(i * ImcRecordSize, ImcRecordSize);
@@ -42,11 +48,12 @@ public static class PenumbraMeta
                                      BinaryPrimitives.ReadUInt16LittleEndian(rec[4..]), rec[6], rec[7]);
                 result[key] = ImcEntry.Read(rec[8..]);
             }
-            return result;
+            return true;
         }
         catch (Exception e) when (e is FormatException or InvalidDataException or ArgumentException or IOException)
         {
-            return new Dictionary<ImcKey, ImcEntry>();
+            result = new Dictionary<ImcKey, ImcEntry>();
+            return false;
         }
     }
 

@@ -68,6 +68,25 @@ Penumbra re-init cleanup still run on stable (removal only; the staging folder i
 - If another plugin assigned a temporary collection to the player while the user has an individual collection,
   synced show fails closed with `SyncRedirectTimeout`.
 
+- Switching from Only me to a PSync option while a synced blocker applies (e.g. no mod directory) leaves the local
+  dome up until the blocker clears; accepted (nothing is half-registered).
+- Wiring: the controller takes the synced dependencies as optional constructor parameters, and without them (or with
+  synced delivery unavailable) it behaves exactly as local delivery: a fail-safe default.
+- Tech debt: `BackdropController` now holds both deliveries' lifecycles; splitting the synced branch into its own
+  coordinator is a follow-up.
+
+## When the dome doesn't show
+
+The dome is the item's own VFX, so it shows only while the game draws that item for that character:
+
+- The item isn't drawn: the ring isn't equipped on the **right** hand (a left-hand Mad Bird Ring doesn't carry it), or
+  glamour tools hide it; the cushion isn't out, or the game dismissed it (mounting, some zones and duties).
+- The character isn't drawn: culled by distance or the game's character limit, or hidden by a plugin.
+- Pairs: they paused the user in PSync, filter VFX in PSync's settings, or haven't synced since the change.
+- The ornament has its own individual Penumbra collection: it resolves there, not in the player's collection that holds
+  `MilieuSync`.
+- Penumbra didn't pick up the files in time: `SyncRedirectTimeout`; try again.
+
 Open in-game questions (UNVERIFIED): the dome loads on the cushion and on the ring; it follows when walking and doesn't
 swing with emotes (else try `PICd 2`); item VFX culling with a 20000-unit sky dome; what a pair outside the dome radius
 sees (room mode); two synced Milieu users near each other; whether `IsTesting`/`IsDev` gate as expected.

@@ -156,4 +156,16 @@ public sealed class SyncStagingTests : IDisposable
         Assert.Equal(0, s.Store.Cleanup(new HashSet<string>()));
         Assert.False(s.Exists);
     }
+
+    [Fact] // [EDGE-synced-delivery-22]
+    public void Stage_SkippedFileRemovedConcurrently_Recopies()
+    {
+        var s = new SyncStaging(dir.File("mods"));
+        var tex = Source();
+        var staged = s.StageAtex(tex, default);
+        s.AfterSkipCheck = path => File.Delete(path);   // another job's cleanup removes it right after the skip check
+        var again = s.StageAtex(tex, default);
+        Assert.Equal(staged.DiskPath, again.DiskPath);
+        Assert.Equal(File.ReadAllBytes(tex.DiskPath), File.ReadAllBytes(again.DiskPath));
+    }
 }

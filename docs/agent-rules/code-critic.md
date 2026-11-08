@@ -12,12 +12,19 @@ tests; for a rule backed by a test, a diff that weakens the test is `FAIL`.
 - Heavy work (HDRI decode, tone mapping, resize, BC compression) runs off the framework/draw thread. `FAIL` if it can block a frame.
 - Native signatures and offsets live in one interop file with a comment naming their source (FFXIVClientStructs, VFXEditor, …). `NEEDS_DECISION` if a new signature has no source.
 - User images are read only from paths the user chose; nothing is written outside the plugin's config directory. `FAIL`.
+  Exemption (ADR 0006): synced delivery, on testing/dev builds only, writes Milieu's own files (`sky_*.atex`,
+  `dome_*.avfx`, `*.tmp`) into `<Penumbra ModDirectory>\_milieu_sync\` and nowhere else under the mod directory; cleanup
+  touches only those patterns, and stable builds never create the folder. Any other write there is still `FAIL`.
 - `TreatWarningsAsErrors` stays on in `Milieu.csproj`. `FAIL` if a diff turns it off or adds a blanket `NoWarn`.
 
 ## Privacy anchors
 
 - **Sensitive categories**: character names and full local paths of user images; neither goes to chat (beyond the file name) or to logs at Information level or above.
 - **Public surfaces**: none inbound. Outbound only: HTTPS GETs for the bundled backdrops (`Milieu/Assets/`), which send no user data.
+- **User images leaving the machine**: only through synced delivery (ADR 0006, testing/dev builds): PSync uploads the
+  shown image to its server and sends it to the user's pairs. Milieu must show the one-time notice before the first
+  user image is shared (the image goes only on the next click); a diff that can upload a user image without that gate
+  having fired is `FAIL`. Milieu itself never sends the image anywhere.
 - **Identifier exemptions**: none.
 - **Privacy tests**: none yet.
 
@@ -28,5 +35,6 @@ tests; for a rule backed by a test, a diff that weakens the test is `FAIL`.
 - [ ] Game memory and native calls only on the framework thread
 - [ ] Image processing off the framework/draw thread
 - [ ] New native signatures centralised with a source comment (if applicable)
-- [ ] No writes outside the plugin config directory
+- [ ] No writes outside the plugin config directory (except `_milieu_sync`, ADR 0006)
+- [ ] No user image reaches PSync before the first-upload notice
 - [ ] Warnings-as-errors untouched

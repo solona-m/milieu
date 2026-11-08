@@ -44,6 +44,7 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
             if (resolved == null) return (failure, StatusMessage.Of(failure, ("item", target.DisplayName)));
             b = resolved;
             baseCache[key] = b;
+            if (b.MetaUnreadable) log.Debug("[Milieu] Couldn't read the player's meta manipulations; using the game's IMC entries.");
         }
         var (plan, buildFailure) = SyncPlanner.Build(b, staged.GamePath, staged.DiskPath, avfxDisk);
         if (plan == null)
@@ -53,8 +54,9 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
         }
 
         // A live registration in another collection (the player's collection changed) comes out of that collection first.
+        var clearedOld = false;
         foreach (var old in new[] { Pending, Shown })
-            if (old != null && old.Collection != player.Id) sync.ClearSynced(old.Collection);
+            if (old != null && old.Collection != player.Id) { sync.ClearSynced(old.Collection); clearedOld = true; }
         if (Pending != null && Pending.Collection != player.Id) { baseCache.Remove((Pending.Collection, Pending.Target.Mode)); Pending = null; }
         if (Shown != null && Shown.Collection != player.Id) { baseCache.Remove((Shown.Collection, Shown.Target.Mode)); Shown = null; }
 
@@ -64,6 +66,7 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
         {
             log.Warning($"[Milieu] Penumbra refused the synced backdrop (code {code}).");
             DropUnlessHeld(key);
+            if (clearedOld) sync.RedrawPlayer();   // the item still carried the old dome: reload it without
             return (MessageKey.SyncRefused, StatusMessage.Of(MessageKey.SyncRefused, ("code", code)));
         }
         Pending = new Registration(player.Id, player.IndividualSet, target, plan);

@@ -31,7 +31,9 @@ public readonly record struct ImcEntry(byte MaterialId, byte DecalId, ushort Att
 
 /// <summary>
 /// A bounds-checked reader for the game's <c>.imc</c> files: a header (u16 variant count, u16 part mask), then the
-/// default variant 0 and variants 1..count, each holding one 6-byte entry per part present in the mask.
+/// default variant 0 and variants 1..count, each holding one 6-byte entry per part present in the mask. An entry is
+/// addressed exactly as Penumbra's <c>ImcFile.VariantPtr</c> does: <c>variant × popcount(mask) + partIndex</c> (the raw
+/// part index, not its rank among the set bits), so Milieu reads the entry Penumbra and the game read.
 /// </summary>
 public static class ImcFile
 {
@@ -44,14 +46,14 @@ public static class ImcFile
         var mask = data[2] | (data[3] << 8);
         if (count < 1 || (mask & (1 << partIndex)) == 0) return false;
         var parts = BitOperations.PopCount((uint)mask);
-        var rank = BitOperations.PopCount((uint)(mask & ((1 << partIndex) - 1)));
         long needed = 4L + (long)ImcEntry.Size * parts * (count + 1);
         if (data.Length < needed) return false;
         var list = new List<ImcEntry>(count);
         for (var v = 1; v <= count; v++)
         {
-            var offset = 4 + ImcEntry.Size * (v * parts + rank);
-            list.Add(ImcEntry.Read(data.AsSpan(offset, ImcEntry.Size)));
+            long offset = 4L + (long)ImcEntry.Size * ((long)v * parts + partIndex);
+            if (offset + ImcEntry.Size > data.Length) return false;
+            list.Add(ImcEntry.Read(data.AsSpan((int)offset, ImcEntry.Size)));
         }
         variants = list;
         return true;

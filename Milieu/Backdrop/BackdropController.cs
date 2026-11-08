@@ -224,10 +224,19 @@ public sealed class BackdropController : Gui.IGridController
         // 1. A live delivery of the other kind comes down first: never both at once.
         if (LiveDelivery is { } live && live != EffectiveDelivery) TearDownLive();
 
+        // A pending synced registration is superseded by this Show: take it out (the shown one, if any, is put back).
+        if (synced?.Pending != null) synced.AbortPending();
+
         // 2. First-upload gate: nothing personal leaves the machine before the user has been told, whatever the trigger.
         if (IsSynced && !BackdropPins.IsBundledId(config.ImagePath) && !config.SyncUploadNoticeShown)
         {
             CancelJob();
+            // Another image shown through the item comes down too, so the state is Hidden and the next click shows.
+            if (synced is { HasRegistration: true })
+            {
+                synced.RemoveAll(redraw: true);
+                CleanupStaging(keepShown: false);
+            }
             message = StatusMessage.Of(MessageKey.SyncUploadNotice, ("file", Path.GetFileName(config.ImagePath)));
             config.SyncUploadNoticeShown = true;
             save();
@@ -313,12 +322,8 @@ public sealed class BackdropController : Gui.IGridController
         if (shownSet != null || pendingSet != null) penumbra.Clear();
         shownSet = null; shownAvfxGamePath = null;
         pendingSet = null; pendingAvfxGamePath = null;
-        if (synced is { HasRegistration: true })
-        {
-            synced.RemoveAll(redraw: true);
-            CleanupStaging(keepShown: false);
-        }
-        else if (IsSynced) CleanupStaging(keepShown: false);
+        if (synced is { HasRegistration: true }) synced.RemoveAll(redraw: true);
+        CleanupStaging(keepShown: false);   // whenever the folder exists (e.g. a failed registration's atex); never creates it
         state = BackdropState.Hidden;
         message = StatusMessage.None;
     }
@@ -383,7 +388,7 @@ public sealed class BackdropController : Gui.IGridController
 
     public void OnLogout()
     {
-        if (state == BackdropState.Hidden && handle == null) return;
+        if (state == BackdropState.Hidden && handle == null && !SyncedLive) return;
         Hide();
         log.Information("[Milieu] Logged out; backdrop hidden.");
     }
@@ -510,6 +515,7 @@ public sealed class BackdropController : Gui.IGridController
 
     private BackdropState FallbackState() =>
         handle is { IsDead: false } || synced?.Shown != null ? BackdropState.Shown
+        : synced?.Pending != null ? BackdropState.AwaitingRedirect   // still registered: TickAwaiting resolves or aborts it
         : shownSet != null ? BackdropState.Suspended
         : BackdropState.Hidden;
 

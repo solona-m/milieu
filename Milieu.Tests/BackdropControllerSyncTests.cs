@@ -697,4 +697,104 @@ public sealed class BackdropControllerSyncTests : IDisposable
         Assert.Empty(Directory.EnumerateFileSystemEntries(Staging));
         Assert.Empty(pen.RegistrationCalls);
     }
+
+    // ---------------------------------------------------------------- review fixes
+
+    [Fact] // [AC-synced-delivery-10] [EDGE-synced-delivery-32]
+    public void GridClick_AfterNoticeOverSyncedBundled_NextClickShows()
+    {
+        config.SyncUploadNoticeShown = false;
+        config.UserImages = [userImage];
+        config.ImagePath = "bundled:moon";
+        ShowSynced();                                          // a bundled scene shown through the ring
+        var grid = new Milieu.Gui.SceneGridViewModel(config, () => saves++, c.Post, c, new FakeGridDownloads { Unpublished = false },
+                                                     p => p == userImage);
+        var tile = grid.Tiles.Single(t => t.Id == userImage);
+        grid.Click(tile);
+        c.Tick();                                              // the posted click runs: notice
+        Assert.Equal(MessageKey.SyncUploadNotice, c.Status.Message.Key);
+        Assert.Equal(BackdropState.Hidden, c.State);           // the bundled dome came down too
+        Assert.Single(pen.SyncClears);
+        Assert.Equal(2, pen.Redraws);
+        Assert.Single(pen.SyncSets);                           // nothing of the user image registered
+        grid.Click(grid.Tiles.Single(t => t.Id == userImage)); // the next click is not swallowed
+        Ticks(2);
+        Assert.Equal(2, pen.SyncSets.Count);
+        Assert.Equal(BackdropState.Shown, c.State);
+    }
+
+    [Fact] // [AC-synced-delivery-10] [EDGE-synced-delivery-32]
+    public void Reconvert_AfterNotice_DoesNotUpload()
+    {
+        config.SyncUploadNoticeShown = false;
+        config.ImagePath = "bundled:moon";
+        ShowSynced();
+        config.ImagePath = userImage;
+        c.Show();
+        Assert.Equal(MessageKey.SyncUploadNotice, c.Status.Message.Key);
+        var sets = pen.SyncSets.Count;
+        c.RequestReconvert();
+        now += TimeSpan.FromSeconds(1);
+        Ticks(3);
+        Assert.Equal(sets, pen.SyncSets.Count);
+        Assert.Equal(BackdropState.Hidden, c.State);
+    }
+
+    [Fact] // [EDGE-synced-delivery-5]
+    public void Show_WithPendingOnly_AbortsItFirst()
+    {
+        pen.ResolvePlayerWorks = false;
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        c.Tick();
+        Assert.Equal(BackdropState.AwaitingRedirect, c.State);
+        config.SyncUploadNoticeShown = false;                 // the next Show hits the notice gate
+        c.Show();
+        Assert.Single(pen.SyncClears);
+        Assert.Empty(pen.Synced);
+        Assert.Equal(BackdropState.Hidden, c.State);
+    }
+
+    [Fact] // [EDGE-synced-delivery-13]
+    public void Logout_WithPendingOnly_RemovesIt()
+    {
+        pen.ResolvePlayerWorks = false;
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        c.Tick();
+        c.OnLogout();
+        Assert.Single(pen.SyncClears);
+        Assert.Empty(pen.Synced);
+        Assert.Equal(BackdropState.Hidden, c.State);
+    }
+
+    [Fact] // [EDGE-synced-delivery-4] [EDGE-synced-delivery-5]
+    public void FailedRebuildWithPendingOnly_StaysAwaiting_ThenTimesOutClean()
+    {
+        pen.ResolvePlayerWorks = false;
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        c.Tick();
+        pen.SetSyncedResult = 11;
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();                                      // refused: the earlier pending one is still registered
+        Assert.Equal(BackdropState.AwaitingRedirect, c.State);
+        Ticks(BackdropController.RedirectTimeoutTicks + 1);
+        Assert.Empty(pen.Synced);
+        Assert.Equal(BackdropState.Hidden, c.State);
+    }
+
+    [Fact] // [EDGE-synced-delivery-2] [EDGE-synced-delivery-16]
+    public void Hide_CleansStagingWheneverItExists_NeverCreatesIt()
+    {
+        config.Delivery = DeliveryMode.Local;
+        c.Hide();
+        Assert.False(Directory.Exists(Staging));
+        Directory.CreateDirectory(Staging);
+        File.WriteAllBytes(Path.Combine(Staging, "sky_left.atex"), [1]);
+        File.WriteAllBytes(Path.Combine(Staging, "notes.txt"), [1]);
+        c.Hide();
+        Assert.Equal(["notes.txt"], StagedFiles());
+        Assert.Empty(pen.RegistrationCalls);
+    }
 }

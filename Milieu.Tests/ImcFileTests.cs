@@ -40,4 +40,21 @@ public class ImcFileTests
         Assert.Equal(5, e.SoundId);
         Assert.Equal(e with { VfxId = 200 }, e.WithVfx(200));
     }
+
+    [Fact] // [EDGE-synced-delivery-8]
+    public void TryRead_NonContiguousMask_MatchesPenumbraIndexing()
+    {
+        // Mask 0x5 (parts 0 and 2): Penumbra's ImcFile.VariantPtr addresses variant v, part p at v × popcount(mask) + p,
+        // the raw part index. Milieu must read the same 6 bytes.
+        var data = new byte[4 + 6 * 2 * 3 + 6];   // count 2, two parts per variant, plus room past the table
+        data[0] = 2; data[2] = 0x5;
+        for (var i = 4; i < data.Length; i++) data[i] = (byte)i;
+        Assert.True(ImcFile.TryRead(data, 2, out var entries));
+        for (var v = 1; v <= 2; v++)
+        {
+            var offset = 4 + 6 * (v * 2 + 2);
+            Assert.Equal(ImcEntry.Read(data.AsSpan(offset, 6)), entries[v - 1]);
+        }
+        Assert.False(ImcFile.TryRead(data.AsSpan(0, 4 + 6 * (2 * 2 + 2)).ToArray(), 2, out _));   // last entry out of bounds
+    }
 }

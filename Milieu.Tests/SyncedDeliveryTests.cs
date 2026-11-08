@@ -164,4 +164,31 @@ public class SyncedDeliveryTests
         Assert.Equal(b, pen.SyncSets[^1].Collection);
         Assert.Equal(2, pen.MetaReads);
     }
+
+    [Fact] // [EDGE-synced-delivery-7]
+    public void UnreadableMeta_LogsDebug_UsesVanilla()
+    {
+        pen.Meta = "not base64 !!";
+        Assert.Equal(MessageKey.None, Begin());
+        Assert.Contains(log.Lines, l => l.Level == "Debug" && l.Text.Contains("meta manipulations"));
+        pen.Meta = "";
+        d.RemoveAll(redraw: false);
+        var lines = log.Lines.Count;
+        Begin();
+        Assert.Equal(lines, log.Lines.Count);   // an empty meta is readable: nothing logged
+    }
+
+    [Fact] // [EDGE-synced-delivery-10] [EDGE-synced-delivery-4]
+    public void CollectionMoved_NewAddRefused_RedrawsAfterClearingOld()
+    {
+        Begin(); d.Commit();
+        var redraws = pen.Redraws;
+        pen.Player = new PlayerCollectionInfo(Guid.NewGuid(), true);
+        pen.SetSyncedResult = 11;
+        Assert.Equal(MessageKey.SyncRefused, Begin());
+        Assert.Equal(A, pen.SyncClears.Single());
+        Assert.Equal(redraws + 1, pen.Redraws);
+        Assert.Null(d.Shown);
+        Assert.Null(d.Pending);
+    }
 }

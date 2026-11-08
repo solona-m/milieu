@@ -5,7 +5,7 @@ using Milieu.Backdrop;
 namespace Milieu.Sync;
 
 /// <summary>The effective IMC entries of the target's variants (the user's override, else vanilla) and every VFX id in use.</summary>
-public sealed record SyncBase(SyncTarget Target, IReadOnlyList<ImcEntry> Entries, IReadOnlySet<byte> UsedVfxIds);
+public sealed record SyncBase(SyncTarget Target, IReadOnlyList<ImcEntry> Entries, IReadOnlySet<byte> UsedVfxIds, bool MetaUnreadable = false);
 
 /// <summary>What one synced registration hands Penumbra: redirects, the IMC manipulation string, and the chosen VFX id.</summary>
 public sealed record SyncPlan(IReadOnlyDictionary<string, string> Paths, string Manips, byte VfxId, string AvfxGamePath);
@@ -21,7 +21,7 @@ public static class SyncPlanner
     public static (SyncBase? Base, MessageKey Failure) ResolveBase(SyncTarget target, byte[]? vanillaImc, string? playerMeta, byte? ignoreVfxId = null)
     {
         if (!ImcFile.TryRead(vanillaImc, target.PartIndex, out var vanilla)) return (null, MessageKey.SyncGameDataUnreadable);
-        var overrides = PenumbraMeta.ReadImcOverrides(playerMeta);
+        var metaReadable = PenumbraMeta.TryReadImcOverrides(playerMeta, out var overrides);
         var used = new HashSet<byte>();
         var entries = new List<ImcEntry>(vanilla.Count);
         for (var i = 0; i < vanilla.Count; i++)
@@ -36,7 +36,7 @@ public static class SyncPlanner
             }
             entries.Add(entry);
         }
-        return (new SyncBase(target, entries, used), MessageKey.None);
+        return (new SyncBase(target, entries, used, !metaReadable), MessageKey.None);
     }
 
     /// <summary>Chooses the VFX id, sets it on every variant and builds the manipulation string and the redirects.</summary>

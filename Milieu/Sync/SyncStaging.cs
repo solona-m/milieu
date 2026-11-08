@@ -29,6 +29,9 @@ public sealed class SyncStaging
     /// <summary>Test seam: opens the source texture for the staging copy.</summary>
     internal Func<string, Stream> OpenSource { get; set; } = File.OpenRead;
 
+    /// <summary>Test seam: runs after the "already staged" check, before the re-check (a concurrent cleanup).</summary>
+    internal Action<string>? AfterSkipCheck { get; set; }
+
     public bool Exists => Directory.Exists(Root);
 
     /// <summary>Creates the folder (if needed) and marks it Hidden, also when it exists without the attribute.</summary>
@@ -55,7 +58,14 @@ public sealed class SyncStaging
         var target = TexturePath(tex.Key);
         var sourceLength = new FileInfo(tex.DiskPath).Length;
         var existing = new FileInfo(target);
-        if (!(existing.Exists && existing.Length == sourceLength))
+        var skip = existing.Exists && existing.Length == sourceLength;
+        if (skip)
+        {
+            // Another job's cleanup may have removed the file since the check: re-check, and copy if it's gone.
+            AfterSkipCheck?.Invoke(target);
+            skip = File.Exists(target);
+        }
+        if (!skip)
         {
             Store.WriteAtomic(target, dst =>
             {
