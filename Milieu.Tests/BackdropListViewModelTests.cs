@@ -20,9 +20,9 @@ public class BackdropListViewModelTests
     [Fact] // [AC-hdri-backdrop-11]
     public void ListsFiveBundledBackdrops_WithDisplayNames()
     {
-        // The pack holds every image the user supplied (seven), each with a display name.
+        // The pack holds every image the user supplied (eight), each with a display name.
         var names = new Fake().Vm().Entries(null).Select(e => e.DisplayName).ToArray();
-        Assert.Equal(new[] { "Forest", "Galaxy", "Living Room", "Living Room 2", "Lodge", "Sunset", "Warehouse" }, names);
+        Assert.Equal(new[] { "Forest", "Galaxy", "Living Room", "Living Room 2", "Lodge", "Moon", "Sunset", "Warehouse" }, names);
     }
 
     [Fact] // [AC-hdri-backdrop-11]
@@ -52,7 +52,7 @@ public class BackdropListViewModelTests
         vm.TryAgain();
         Assert.Equal(new[] { true }, f.Ensures);
         f.Status = f.Status with { State = PackState.Downloading, Have = 3 };
-        Assert.Equal("Downloading backdrops… 3/7", vm.StatusLine);
+        Assert.Equal("Downloading backdrops… 3/8", vm.StatusLine);
     }
 
     [Fact] // [AC-hdri-backdrop-11] [EDGE-hdri-backdrop-59]
@@ -69,7 +69,7 @@ public class BackdropListViewModelTests
     public void Header_ShowsPinnedTotalSize()
     {
         var mb = DefaultBackdropsDownloadService.Backdrops.Sum(b => b.Bytes) / 1048576.0;
-        Assert.Equal($"Backdrops (7 · {mb.ToString("0.0", CultureInfo.InvariantCulture)} MB)", BackdropListViewModel.Header);
+        Assert.Equal($"Backdrops (8 · {mb.ToString("0.0", CultureInfo.InvariantCulture)} MB)", BackdropListViewModel.Header);
     }
 
     [Fact] // [AC-hdri-backdrop-10]

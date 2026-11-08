@@ -29,7 +29,7 @@ public sealed class BackdropListViewModel
     public static BackdropListViewModel For(DefaultBackdropsDownloadService s) =>
         new(() => s.Status, s.IsDownloaded, s.PathOf, retry => s.EnsureAsync(retry));
 
-    /// <summary>"Backdrops (7 · 50.4 MB)", from the pinned table, shown before anything is downloaded.</summary>
+    /// <summary>"Backdrops (8 · 55.1 MB)", from the pinned table, shown before anything is downloaded.</summary>
     public static string Header =>
         $"Backdrops ({DefaultBackdropsDownloadService.Backdrops.Length} · " +
         (DefaultBackdropsDownloadService.TotalBytes / 1048576.0).ToString("0.0", CultureInfo.InvariantCulture) + " MB)";

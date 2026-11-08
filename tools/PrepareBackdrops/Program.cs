@@ -26,6 +26,7 @@ internal static class Program
         new("livingroom.jpeg", Mode.Equirect),
         new("livingroom2.jpeg", Mode.Equirect),
         new("lodge.jpeg", Mode.Equirect),
+        new("moon.jpeg", Mode.Equirect),
         new("sunset.jpeg", Mode.Strip, 0.9),
         new("warehouse.jpeg", Mode.Equirect),
     ];

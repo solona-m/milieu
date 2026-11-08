@@ -12,6 +12,7 @@ not require attribution. No attribution is therefore listed. The processed files
 | livingroom.jpeg | Downscaled from 12000x6000 to 8192x4096 |
 | livingroom2.jpeg | Downscaled from 10000x5000 to 8192x4096 |
 | lodge.jpeg | Unchanged (8192x4096) |
+| moon.jpeg | Downscaled from 12000x6000 to 8192x4096 |
 | sunset.jpeg | 21184x3848 strip scaled to 4096x744, mirror-tiled to 8192 wide so it wraps, horizon placed at eye level, sky and ground faded to an even colour |
 | warehouse.jpeg | Downscaled from 11801x5900 to 8192x4096 |
 

@@ -42,6 +42,7 @@ public sealed class DefaultBackdropsDownloadService : IDisposable
         ("livingroom.jpeg", "Living Room", 6014821L, "63010dea376a722b331256c0a93fdb4266bde072ee228f4c69e87a821641840a"),
         ("livingroom2.jpeg", "Living Room 2", 5701238L, "bf80174da981527a7f250f6d4b2e552d79deb3b587671028896363b969c7bee6"),
         ("lodge.jpeg", "Lodge", 14927085L, "0a2bde2818f55b08b422f508494880a273398543b133ecd72254bc5107245fec"),
+        ("moon.jpeg", "Moon", 4964229L, "ae1bb9ba8d66dc58b121c5fbd3b8cb3ee88bd16190cc012269cea2621878cfe7"),
         ("sunset.jpeg", "Sunset", 2175541L, "19583850892488e1d60f0220393140e7e4a43d8233b870dc8b8ff51702789dee"),
         ("warehouse.jpeg", "Warehouse", 7416775L, "7fb67402575e408b303730c21a606e43d4a3d0c95673a93c15da6c8130f7886a"),
     ];
