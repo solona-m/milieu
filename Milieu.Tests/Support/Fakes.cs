@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,6 +25,8 @@ public sealed class FakeSpawner : IVfxSpawner
     public readonly List<(VfxHandle Handle, Vector3 Pos, float Yaw)> Moves = [];
     public readonly List<VfxHandle> Removes = [];
     public readonly List<string> Calls = [];
+    /// <summary>Optional log shared with FakePenumbra, to assert the order of calls across both.</summary>
+    public List<string>? Order;
     public int NativeCalls => Spawns.Count + Moves.Count + Removes.Count;
     public int Ticks;
     public Func<DateTime> Clock = () => DateTime.UtcNow;
@@ -35,6 +38,7 @@ public sealed class FakeSpawner : IVfxSpawner
         var h = new VfxHandle(Spawns.Count + 1, gamePath, Clock());
         Spawns.Add((gamePath, position, yawRadians, h));
         Calls.Add("Spawn");
+        Order?.Add("Spawn");
         return h;
     }
 
@@ -53,6 +57,7 @@ public sealed class FakeSpawner : IVfxSpawner
         if (!handle.MarkDead()) throw new InvalidOperationException("Remove on a dead handle");
         Removes.Add(handle);
         Calls.Add("Remove");
+        Order?.Add("Remove");
         return true;
     }
 
@@ -66,7 +71,7 @@ public sealed class FakeSpawner : IVfxSpawner
     }
 }
 
-public sealed class FakePenumbra : IPenumbraRedirects
+public sealed class FakePenumbra : IPenumbraRedirects, IPenumbraSync
 {
     public PenumbraState State { get; set; } = PenumbraState.Available;
     public Dictionary<string, string>? Current;
@@ -76,22 +81,92 @@ public sealed class FakePenumbra : IPenumbraRedirects
     public bool ResolveWorks = true;
     public bool SetSucceeds = true;
     public readonly List<string> Calls = [];
+    public List<string>? Order;
 
     public void Refresh() => Refreshes++;
 
     public bool Set(IReadOnlyDictionary<string, string> redirects)
     {
         Calls.Add("Set");
+        Order?.Add("Set");
         if (!SetSucceeds) return false;
         Sets.Add(redirects);
         Current = new Dictionary<string, string>(redirects);
         return true;
     }
 
-    public void Clear() { Calls.Add("Clear"); Clears++; Current = null; }
+    public void Clear() { Calls.Add("Clear"); Order?.Add("Clear"); Clears++; Current = null; }
 
     public string Resolve(string gamePath) =>
         ResolveWorks && Current != null && Current.TryGetValue(gamePath, out var disk) ? disk : gamePath;
+
+    // ---------------------------------------------------------------- IPenumbraSync
+
+    public string? ModDirectory { get; set; }
+    public PlayerCollectionInfo? Player = new(Guid.Parse("11111111-1111-1111-1111-111111111111"), true);
+    public Guid? Base = Guid.Parse("00000000-0000-0000-0000-0000000000ba");
+    public Guid[] Listed = [];
+    public int SetSyncedResult;
+    public bool SetSyncedThrows;
+    public bool ResolvePlayerWorks = true;
+    public string Meta = "";
+    public int MetaReads;
+    public int Redraws;
+    /// <summary>Every synced call, in order: "SetSynced", "ClearSynced", "Redraw", "ClearEverywhere", "Meta".</summary>
+    public readonly List<string> SyncCalls = [];
+    public readonly List<(Guid Collection, IReadOnlyDictionary<string, string> Paths, string Manips)> SyncSets = [];
+    public readonly List<Guid> SyncClears = [];
+    public readonly List<Guid[]> ClearEverywhereCalls = [];
+    public readonly Dictionary<Guid, Dictionary<string, string>> Synced = [];
+
+    public PlayerCollectionInfo? PlayerCollection() => Player;
+
+    public Guid? BaseCollection() => Base;
+
+    public int SetSynced(Guid collection, IReadOnlyDictionary<string, string> paths, string manips)
+    {
+        SyncCalls.Add("SetSynced");
+        Order?.Add("SetSynced");
+        if (SetSyncedThrows) return -1;   // the real wrapper maps a throw to -1
+        if (SetSyncedResult != 0) return SetSyncedResult;
+        SyncSets.Add((collection, paths, manips));
+        Synced[collection] = new Dictionary<string, string>(paths);
+        return 0;
+    }
+
+    public void ClearSynced(Guid collection)
+    {
+        SyncCalls.Add("ClearSynced");
+        Order?.Add("ClearSynced");
+        SyncClears.Add(collection);
+        Synced.Remove(collection);
+    }
+
+    public void ClearSyncedEverywhere(IEnumerable<Guid> alsoClear)
+    {
+        var also = alsoClear.ToArray();
+        SyncCalls.Add("ClearEverywhere");
+        ClearEverywhereCalls.Add(also);
+        foreach (var id in Listed.Concat(also).Distinct()) Synced.Remove(id);
+    }
+
+    public string ResolvePlayer(string gamePath) =>
+        ResolvePlayerWorks && Player is { } p && Synced.TryGetValue(p.Id, out var set) && set.TryGetValue(gamePath, out var disk) ? disk : gamePath;
+
+    public string PlayerMeta() { MetaReads++; SyncCalls.Add("Meta"); return Meta; }
+
+    public void RedrawPlayer() { Redraws++; SyncCalls.Add("Redraw"); Order?.Add("Redraw"); }
+
+    /// <summary>The synced calls that change state (no reads, no startup cleanup).</summary>
+    public IEnumerable<string> RegistrationCalls => SyncCalls.Where(c => c is "SetSynced" or "ClearSynced" or "Redraw");
+}
+
+/// <summary>Vanilla game files by path.</summary>
+public sealed class FakeGameData : IGameData
+{
+    public readonly Dictionary<string, byte[]> Files = [];
+    public int Reads;
+    public byte[]? ReadVanilla(string gamePath) { Reads++; return Files.TryGetValue(gamePath, out var d) ? d : null; }
 }
 
 public sealed class FakeGame : IGameState

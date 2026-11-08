@@ -40,6 +40,12 @@ public sealed class Configuration : IPluginConfiguration
 
     public int MaxTextureWidth { get; set; } = 8192;
 
+    /// <summary>Who sees the backdrop: only the user (default), or PSync pairs through an item (experimental, testing builds).</summary>
+    public Sync.DeliveryMode Delivery { get; set; } = Sync.DeliveryMode.Local;
+
+    /// <summary>The one-time notice that a user image is uploaded through PSync has been shown.</summary>
+    public bool SyncUploadNoticeShown { get; set; }
+
     public static readonly (float Min, float Max) RepeatRange = (0.5f, 4f);
     public static readonly (float Min, float Max) BrightnessRange = (0f, 2f);
     public static readonly (float Min, float Max) ExposureRange = (-10f, 10f);
@@ -92,8 +98,10 @@ public sealed class Configuration : IPluginConfiguration
         if (Version < CurrentVersion) Version = CurrentVersion;
     }
 
-    public void Clamp()
+    /// <param name="syncedAvailable">False on stable builds: a saved synced choice then falls back to Only me.</param>
+    public void Clamp(bool syncedAvailable = true)
     {
+        if (!Enum.IsDefined(Delivery) || (!syncedAvailable && Delivery != Sync.DeliveryMode.Local)) Delivery = Sync.DeliveryMode.Local;
         if (!Enum.IsDefined(Mode)) Mode = DomeMode.Sky;
         Sky ??= DomeSettings.SkyDefaults();
         Room ??= DomeSettings.RoomDefaults();

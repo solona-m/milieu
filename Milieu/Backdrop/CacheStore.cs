@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using Milieu.Imaging;
 
 namespace Milieu.Backdrop;
@@ -52,13 +53,20 @@ public sealed class CacheStore(string root)
     }
 
     /// <summary>Writes through a tmp file and moves it into place; on any failure the tmp is deleted and nothing remains.</summary>
-    public void WriteAtomic(string path, Action<Stream> write)
+    public void WriteAtomic(string path, Action<Stream> write) => WriteAtomic(path, write, CancellationToken.None);
+
+    /// <summary>
+    /// As <see cref="WriteAtomic(string, Action{Stream})"/>, and the token is checked after the write and before the move,
+    /// so a cancelled write never leaves a final file (synced staging: a superseded job must not publish its file).
+    /// </summary>
+    public void WriteAtomic(string path, Action<Stream> write, CancellationToken ct)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var tmp = path + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
         try
         {
             using (var s = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) write(s);
+            ct.ThrowIfCancellationRequested();
             File.Move(tmp, path, overwrite: true);
         }
         catch

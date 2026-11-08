@@ -5,8 +5,10 @@ using System.Linq;
 namespace Milieu.GameFiles;
 
 /// <summary>
-/// What gets baked into the dome VFX. Yaw and height are applied at spawn, not here. <see cref="FloorY"/> is the
-/// ground-projection floor in unit-radius space (null = plain sphere).
+/// What gets baked into the dome VFX. In local mode yaw and height are applied at spawn, not here. <see cref="FloorY"/> is
+/// the ground-projection floor in unit-radius space (null = plain sphere). Synced delivery (the game places an item's VFX,
+/// not Milieu) bakes height and yaw into the particle's Pos/Rot Y curves and binds the emitter to its owner
+/// (<see cref="AttachToOwner"/>). All defaults give byte-identical local output.
 /// </summary>
 internal sealed record DomeAvfxParams(
     string TextureGamePath,
@@ -16,7 +18,10 @@ internal sealed record DomeAvfxParams(
     float VRepeat,
     bool Flip,
     float Brightness,
-    float? FloorY = null);
+    float? FloorY = null,
+    float BakedHeight = 0f,
+    float BakedYawRadians = 0f,
+    bool AttachToOwner = false);
 
 /// <summary>
 /// Authors the dome <c>.avfx</c> in code: one scheduler item → one timeline → one emitter → one model particle →
@@ -30,6 +35,15 @@ internal static class DomeAvfxBuilder
     public const int Version = 0x20110913;
     public const int TriggerCount = 12;
 
+    /// <summary>
+    /// Synced delivery's emitter parent influence: InitialPosition_WithOptions (PICd 1) with position on and rotation and
+    /// scale off, so the dome follows its carrier's position but not its rotation (VFXEditor's own child-emitter default).
+    /// The alternative AllAlways (PICd 2) is recorded in docs/adr/0006. Local mode keeps the reference's 3/1/1/1.
+    /// </summary>
+    public static readonly (int PICd, int ICbS, int ICbR, int ICbP) SyncedAttach = (1, 0, 0, 1);
+
+    public static readonly (int PICd, int ICbS, int ICbR, int ICbP) LocalAttach = (3, 1, 1, 1);
+
     private const int Pi = 1078530011; // the bit pattern of (float)Math.PI, as the reference stores AFXi etc.
 
     public static byte[] Build(DomeAvfxParams p)
@@ -41,7 +55,7 @@ internal static class DomeAvfxBuilder
         Root(w);
         Scheduler(w);
         Timeline(w);
-        Emitter(w);
+        Emitter(w, p);
         Particle(w, p);
         w.CString("Tex", p.TextureGamePath);
         w.Begin("Modl").Bytes("VDrw", mesh.VertexBytes()).Bytes("VIdx", mesh.IndexBytes()).End();
@@ -53,6 +67,8 @@ internal static class DomeAvfxBuilder
 
     private static void Validate(DomeAvfxParams p)
     {
+        if (!float.IsFinite(p.BakedHeight) || !float.IsFinite(p.BakedYawRadians))
+            throw new ArgumentOutOfRangeException(nameof(p), "Baked height and yaw must be finite.");
         if (string.IsNullOrEmpty(p.TextureGamePath) || p.TextureGamePath.Any(c => c is < (char)0x20 or > (char)0x7E))
             throw new ArgumentException("Texture game path must be non-empty printable ASCII.", nameof(p));
         foreach (var (name, v) in new[] { ("Radius", p.Radius), ("VerticalScale", p.VerticalScale), ("URepeat", p.URepeat),
@@ -110,8 +126,9 @@ internal static class DomeAvfxBuilder
         w.End();
     }
 
-    private static void Emitter(AvfxChunkWriter w)
+    private static void Emitter(AvfxChunkWriter w, DomeAvfxParams p)
     {
+        var a = p.AttachToOwner ? SyncedAttach : LocalAttach;
         w.Begin("Emit").Int("SdNo", -1).Int("LpSt", 0).Int("LpEd", 0).Int("ClCn", 30).Int("EfNo", -1).Byte("bAD", 0)
          .Int("EVT", 0).Int("RBDT", 2).Int("CCOT", 0).Int("ROT", 2).Int("PrCn", 1).Int("EmCn", 0);
         w.Begin("Life").Float("Val", 60).Float("ValR", 0).Int("Type", 0).End();
@@ -125,7 +142,7 @@ internal static class DomeAvfxBuilder
         Axes(w, "Rot", 0);
         Axes(w, "Scl", 1);
         w.Begin("ItPr").Int("bEnb", 1).Int("TgtB", 0).Int("LoDr", 0).Int("CrTm", 1).Int("CrCn", 1).Int("CrPr", 100)
-         .Int("PICd", 3).Int("PICo", 0).Int("ICbS", 1).Int("ICbR", 1).Int("ICbP", 1).Int("ICbB", 0).Int("ICSK", 0)
+         .Int("PICd", a.PICd).Int("PICo", 0).Int("ICbS", a.ICbS).Int("ICbR", a.ICbR).Int("ICbP", a.ICbP).Int("ICbB", 0).Int("ICSK", 0)
          .Int("IPbV", 0).Int("IPbL", 0).Int("bOvr", 0).Int("OvrV", 60).Int("OvrR", 0).Int("PrLk", -1).Int("StFr", 0)
          .Int("bStN", 0).Int("BIAX", 0).Int("BIAY", 0).Int("BIAZ", 0).Int("GenD", 0).Int("bGD", 0).End();
         w.End();
@@ -149,8 +166,8 @@ internal static class DomeAvfxBuilder
         Curve(w, "X", p.Radius);
         Curve(w, "Y", p.Radius * p.VerticalScale);
         w.End();
-        Axes(w, "Rot", 0);   // yaw is applied at runtime
-        Axes(w, "Pos", 0);   // height is applied at runtime
+        AxesY(w, "Rot", p.BakedYawRadians);   // local: yaw is applied at spawn (0 here)
+        AxesY(w, "Pos", p.BakedHeight);       // local: height is applied at spawn (0 here)
         w.Begin("Col");
         Curve(w, "Bri", p.Brightness);
         w.End();
@@ -231,6 +248,14 @@ internal static class DomeAvfxBuilder
     private static void Axes(AvfxChunkWriter w, string tag, int act) =>
         w.Begin(tag).Int("ACT", act).Int("ACTR", 0).End();
 
+    /// <summary>A 3-axis curve with no keys, or with a one-key Y curve when <paramref name="y"/> is non-zero.</summary>
+    private static void AxesY(AvfxChunkWriter w, string tag, float y)
+    {
+        w.Begin(tag).Int("ACT", 0).Int("ACTR", 0);
+        if (y != 0) Curve(w, "Y", y);
+        w.End();
+    }
+
     /// <summary>Parses the output back and throws on anything that would make the chain inconsistent.</summary>
     internal static void SelfCheck(byte[] bytes, DomeAvfxParams p, SphereMesh mesh)
     {
@@ -249,10 +274,16 @@ internal static class DomeAvfxBuilder
         Expect(schd.Need("Item").Children.Single(c => c.Tag == "TlNo").AsInt() == 0, "scheduler item → timeline 0");
         Expect(schd.All("Trgr").Count() == TriggerCount, "12 triggers");
         Expect(root.Need("TmLn").Need("Item").Need("EmNo").AsInt() == 0, "timeline → emitter 0");
-        Expect(root.Need("Emit").Need("ItPr").Need("TgtB").AsInt() == 0, "emitter → particle 0");
+        var itpr = root.Need("Emit").Need("ItPr");
+        Expect(itpr.Need("TgtB").AsInt() == 0, "emitter → particle 0");
+        var attach = p.AttachToOwner ? SyncedAttach : LocalAttach;
+        Expect((itpr.Need("PICd").AsInt(), itpr.Need("ICbS").AsInt(), itpr.Need("ICbR").AsInt(), itpr.Need("ICbP").AsInt()) == attach,
+               "emitter parent influence");
 
         var ptcl = root.Need("Ptcl");
         Expect(ptcl.Need("PrVT").AsInt() == 5, "model particle");
+        Expect(BakedY(ptcl.Need("Pos")) == p.BakedHeight, "baked height");
+        Expect(BakedY(ptcl.Need("Rot")) == p.BakedYawRadians, "baked yaw");
         Expect(ptcl.Need("Data").Need("MdNo") is { Size: 1 } md && md.AsInt() == 0, "particle → model 0");
         var tc1 = ptcl.Need("TC1");
         Expect(tc1.Need("bEna").AsInt() == 1 && tc1.Need("TLst") is { Size: 1 } tl && tl.AsInt() == 0 && tc1.Child("TxNo") == null,
@@ -268,4 +299,7 @@ internal static class DomeAvfxBuilder
         Expect(modl.Need("VIdx").Size == mesh.Indices.Length * 2, "index buffer size");
         Expect(mesh.Indices.All(i => i < mesh.Vertices.Length), "indices in range");
     }
+
+    /// <summary>The value of an axis curve's one-key Y curve, or 0 when it has none.</summary>
+    private static float BakedY(ChunkNode axes) => axes.Child("Y") is { } y ? y.CurveValue() : 0f;
 }

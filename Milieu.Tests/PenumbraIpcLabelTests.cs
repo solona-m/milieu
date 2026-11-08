@@ -57,4 +57,21 @@ public class PenumbraIpcLabelTests
         Assert.Equal(Milieu.Backdrop.PenumbraState.NoBaseCollection, PenumbraIpc.Classify(() => V(5), () => E(true), () => C((Guid.Empty, "None"))));
         Assert.Equal(Milieu.Backdrop.PenumbraState.Available, PenumbraIpc.Classify(() => V(5), () => E(true), () => C(ok)));
     }
+
+    [Fact] // [AC-synced-delivery-5]
+    public void SyncTagAndPriority_Pinned()
+    {
+        Assert.Equal("MilieuSync", PenumbraIpc.SyncTag);
+        Assert.Equal(1_000_000, PenumbraIpc.SyncPriority);
+        Assert.Equal("Milieu", PenumbraIpc.Tag);
+        Assert.Equal(0, PenumbraIpc.Priority);
+        Assert.Equal("Penumbra.GetModDirectory", PenumbraIpc.LabelGetModDirectory);
+        Assert.Equal("Penumbra.GetCollectionForObject.V5", PenumbraIpc.LabelGetCollectionForObject);
+        Assert.Equal("Penumbra.GetCollections.V5", PenumbraIpc.LabelGetCollections);
+        Assert.Equal("Penumbra.AddTemporaryMod.V5", PenumbraIpc.LabelAddTemporaryMod);
+        Assert.Equal("Penumbra.RemoveTemporaryMod.V5", PenumbraIpc.LabelRemoveTemporaryMod);
+        Assert.Equal("Penumbra.ResolvePlayerPath", PenumbraIpc.LabelResolvePlayerPath);
+        Assert.Equal("Penumbra.GetPlayerMetaManipulations", PenumbraIpc.LabelGetPlayerMetaManipulations);
+        Assert.Equal("Penumbra.RedrawObject.V5", PenumbraIpc.LabelRedrawObject);
+    }
 }

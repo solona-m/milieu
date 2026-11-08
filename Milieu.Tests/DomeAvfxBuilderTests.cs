@@ -183,4 +183,41 @@ public class DomeAvfxBuilderTests
         Assert.Null(ptcl.Need("Pos").Child("Y"));
         Assert.Null(ptcl.Need("Rot").Child("Y"));
     }
+
+    [Fact] // [EDGE-synced-delivery-27]
+    public void DefaultParams_ByteIdenticalToLegacy()
+    {
+        // Golden SHA-256 of the local dome for default params, captured before synced delivery changed the builder.
+        var bytes = DomeAvfxBuilder.Build(Params());
+        Assert.Equal("6FABACD8C01AA63616DB60AD36B6C5806C68B15F9E871B351DFEA9A0744AC24F", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)));
+        var itpr = AvfxChunkReader.Parse(bytes).Need("Emit").Need("ItPr");
+        Assert.Equal((3, 1, 1, 1), (itpr.Need("PICd").AsInt(), itpr.Need("ICbS").AsInt(), itpr.Need("ICbR").AsInt(), itpr.Need("ICbP").AsInt()));
+    }
+
+    [Fact] // [AC-synced-delivery-3]
+    public void AttachToOwner_SetsItPrFlags_SelfChecked()
+    {
+        Assert.Equal((1, 0, 0, 1), DomeAvfxBuilder.SyncedAttach);
+        var p = Params() with { AttachToOwner = true };
+        var bytes = DomeAvfxBuilder.Build(p);
+        var itpr = AvfxChunkReader.Parse(bytes).Need("Emit").Need("ItPr");
+        Assert.Equal(DomeAvfxBuilder.SyncedAttach, (itpr.Need("PICd").AsInt(), itpr.Need("ICbS").AsInt(), itpr.Need("ICbR").AsInt(), itpr.Need("ICbP").AsInt()));
+        // SelfCheck rejects bytes that don't match the params (local bytes checked as synced, and the other way round).
+        var mesh = SphereMesh.Build(floorY: p.FloorY);
+        Assert.Throws<InvalidDataException>(() => DomeAvfxBuilder.SelfCheck(DomeAvfxBuilder.Build(Params()), p, mesh));
+        Assert.Throws<InvalidDataException>(() => DomeAvfxBuilder.SelfCheck(bytes, Params(), mesh));
+    }
+
+    [Fact] // [AC-synced-delivery-6]
+    public void BakedPlacement_WritesPosAndRotYCurves()
+    {
+        var p = Params() with { BakedHeight = 1.6f, BakedYawRadians = 0.5f };
+        var ptcl = Build(p).Need("Ptcl");
+        Assert.Equal(1.6f, ptcl.Need("Pos").Need("Y").CurveValue());
+        Assert.Equal(0.5f, ptcl.Need("Rot").Need("Y").CurveValue());
+        Assert.Equal(["ACT", "ACTR", "Y"], ptcl.Need("Pos").Children.Select(c => c.Tag).ToArray());
+        Assert.Equal(["ACT", "ACTR", "Y"], ptcl.Need("Rot").Children.Select(c => c.Tag).ToArray());
+        var mesh = SphereMesh.Build(floorY: p.FloorY);
+        Assert.Throws<InvalidDataException>(() => DomeAvfxBuilder.SelfCheck(DomeAvfxBuilder.Build(Params()), p, mesh));
+    }
 }
