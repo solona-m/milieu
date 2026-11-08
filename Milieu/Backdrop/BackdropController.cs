@@ -212,7 +212,9 @@ public sealed class BackdropController : Gui.IGridController
     /// </summary>
     public void ApplyHeight()
     {
-        if (config.Current.FloorY() != shownFloorY) ApplyRebuild();
+        // While a rebuild is pending, the VFX about to appear is the pending one: compare against its floor.
+        var current = pendingSet != null ? pendingFloorY : shownFloorY;
+        if (config.Current.FloorY() != current) ApplyRebuild();
         else ApplyPlacement();
     }
 

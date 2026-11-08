@@ -72,8 +72,7 @@ public sealed class BackdropControllerTests : IDisposable
         Assert.Equal(game.PlayerPosition!.Value + new Vector3(0, config.Sky.HeightOffset, 0), spawn.Pos);
         Assert.Equal(BackdropState.Shown, c.State);
         var vm = new Gui.BackdropViewModel(c.Status, c.Blocker(), config);
-        Assert.Equal("Apply", vm.ShowButtonLabel);
-        Assert.True(vm.CanHide);
+        Assert.Equal(BackdropState.Shown, vm.Status.Key == MessageKey.None ? c.State : BackdropState.Hidden);
     }
 
     [Fact] // [AC-hdri-backdrop-2]
@@ -162,7 +161,6 @@ public sealed class BackdropControllerTests : IDisposable
         Assert.Equal(BackdropState.Hidden, c.State);
         var vm = new Gui.BackdropViewModel(c.Status, c.Blocker(), config);
         Assert.True(vm.CanShow);
-        Assert.False(vm.CanHide);
     }
 
     [Fact] // [AC-hdri-backdrop-7]
@@ -766,5 +764,129 @@ public sealed class BackdropControllerTests : IDisposable
         d.GroundProjection = false;
         Assert.False(d.ProjectionInactive);
         Assert.StartsWith("Off:", d.ProjectionStatus());
+    }
+
+    private BackdropController WithBundled(FakeBundled bundled) =>
+        new(spawner, penumbra, game, preparer, cache, config, log, run: f => f(), utcNow: () => now, bundled: bundled);
+
+    [Fact] // [AC-hdri-backdrop-13]
+    public void Show_Bundled_RegistersDownloadedFileDirectly_WithLoadingStatus()
+    {
+        var bdir = dir.File("bundled");
+        Directory.CreateDirectory(bdir);
+        var bundled = new FakeBundled(bdir);
+        File.WriteAllBytes(bundled.PathOf("moon"), [1]);
+        var ctl = WithBundled(bundled);
+        config.ImagePath = "bundled:moon";
+        preparer.Gate = new TaskCompletionSource<PreparedTexture>();
+        ctl.Show();
+        Assert.Equal(BackdropState.Preparing, ctl.State);
+        Assert.Equal(MessageKey.LoadingBundled, ctl.Status.Message.Key);
+        Assert.Equal("Loading Moon…", ctl.Status.Message.Text);
+        var tex = new PreparedTexture("ae1bb9ba8d66dc58", bundled.PathOf("moon"), CacheStore.TextureGamePath("ae1bb9ba8d66dc58"), 8192, 4096,
+                                      Milieu.Imaging.ImageKind.Jpeg, [], Preconverted: true);
+        preparer.Gate.SetResult(tex);
+        ctl.Tick();
+        Assert.Equal(bundled.PathOf("moon"), penumbra.Current![tex.GamePath]);
+        ctl.Tick();
+        Assert.Equal(BackdropState.Shown, ctl.State);
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-61]
+    public void Show_BundledNotDownloaded_IsNoOpWithMessage()
+    {
+        var bundled = new FakeBundled(dir.File("bundled"));
+        var ctl = WithBundled(bundled);
+        config.ImagePath = "bundled:forest";
+        ctl.Show();
+        Assert.Equal(0, preparer.Calls);
+        Assert.Equal(BackdropState.Hidden, ctl.State);
+        Assert.Equal("Forest isn't downloaded yet.", ctl.Status.Message.Text);
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-62]
+    public void BundledCorrupt_RegistersNothing()
+    {
+        config.ImagePath = "bundled:moon";
+        preparer.Throw = new MilieuException(StatusMessage.Of(MessageKey.BundledCorrupt, ("name", "Moon")));
+        c.Show();
+        c.Tick();
+        Assert.Empty(penumbra.Sets);
+        Assert.Empty(spawner.Spawns);
+        Assert.Equal(MessageKey.BundledCorrupt, c.Status.Message.Key);
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-77]
+    public void ConversionSettingChange_DebouncedReconvert()
+    {
+        config.ImagePath = dir.File("mine.jpg");
+        ShowAndSpawn();
+        var calls = preparer.Calls;
+        // Three changes within 500 ms → one re-run, 500 ms after the last.
+        c.RequestReconvert(); now += TimeSpan.FromMilliseconds(200);
+        c.RequestReconvert(); now += TimeSpan.FromMilliseconds(200);
+        c.RequestReconvert();
+        c.Tick();
+        Assert.Equal(calls, preparer.Calls);
+        now += TimeSpan.FromMilliseconds(499); c.Tick();
+        Assert.Equal(calls, preparer.Calls);
+        now += TimeSpan.FromMilliseconds(2); c.Tick();
+        Assert.Equal(calls + 1, preparer.Calls);
+
+        // Hidden → nothing; bundled → nothing.
+        c.Hide();
+        c.RequestReconvert(); now += TimeSpan.FromSeconds(1); c.Tick();
+        Assert.Equal(calls + 1, preparer.Calls);
+        config.ImagePath = "bundled:moon";
+        c.RequestReconvert(); now += TimeSpan.FromSeconds(1); c.Tick();
+        Assert.Equal(calls + 1, preparer.Calls);
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-77]
+    public void ConversionSettingChange_WhilePreparingOrAwaiting_RestartsLatestWins()
+    {
+        config.ImagePath = dir.File("mine.jpg");
+        preparer.Gate = new TaskCompletionSource<PreparedTexture>();
+        c.Show();
+        var first = preparer.LastToken;
+        var firstGate = preparer.Gate;
+        preparer.Gate = null;
+        c.RequestReconvert();
+        now += TimeSpan.FromMilliseconds(600);
+        c.Tick();                                        // debounced Show(): the running job is cancelled, a new one starts
+        Assert.True(first.IsCancellationRequested);
+        Assert.Equal(2, preparer.Calls);
+        firstGate.SetResult(FakePreparer.Make(cache, "x", "aaaaaaaaaaaaaaaa"));
+        c.Tick(); c.Tick();
+        Assert.DoesNotContain(penumbra.Current!.Keys, k => k.Contains("aaaaaaaaaaaaaaaa"));   // only the latest registers
+
+        // The same while waiting for Penumbra.
+        penumbra.ResolveWorks = false;
+        config.Sky.Radius = 4000;
+        c.ApplyRebuild();
+        Assert.Equal(BackdropState.AwaitingRedirect, c.State);
+        c.RequestReconvert();
+        now += TimeSpan.FromMilliseconds(600);
+        c.Tick();
+        Assert.Equal(3, preparer.Calls);
+    }
+
+    [Fact] // [AC-hdri-backdrop-3] [EDGE-hdri-backdrop-84]
+    public void HeightRelease_DuringPendingRebuild_ComparesPendingFloor()
+    {
+        config.Mode = DomeMode.Room;          // r 10, h 1.6 → floor 0.16
+        ShowAndSpawn();
+        penumbra.ResolveWorks = false;
+        config.Room.Radius = 20;              // pending rebuild with floor 0.08
+        c.ApplyRebuild();
+        Assert.Equal(BackdropState.AwaitingRedirect, c.State);
+        var sets = penumbra.Sets.Count;
+        config.Room.HeightOffset = 3.2f;      // floor back to 0.16 = the SHOWN floor, but not the pending one
+        c.ApplyHeight();
+        Assert.Equal(sets + 1, penumbra.Sets.Count);   // rebuilt for the new floor, not a no-op placement
+        penumbra.ResolveWorks = true;
+        c.Tick();
+        Assert.Equal(game.PlayerPosition!.Value.Y + 3.2f, spawner.Spawns[^1].Pos.Y, 4);
+        Assert.Equal(0.16f, SpawnedFloorY(), 2);
     }
 }

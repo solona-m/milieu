@@ -5,7 +5,7 @@ namespace Milieu.Assets;
 /// <summary>
 /// Where Milieu's release assets live. GitHub is always a source; an edge mirror, when one is configured, is tried
 /// first. The mirror is empty for now: the shared dl.solona.info worker lives in the Proteus repo, and a new plugin
-/// gets its own path prefix there (docs/adr/0004-bundled-backdrops-as-release-assets.md).
+/// routes Milieu under its own prefix, `/milieu/` (docs/adr/0005-pre-converted-bundled-backdrops.md).
 /// </summary>
 public static class MilieuAssets
 {

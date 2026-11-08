@@ -17,12 +17,9 @@ public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker,
 
     public bool CanShow => blocker == MessageKey.None && HasImage;
 
-    public bool CanHide => status.State != BackdropState.Hidden;
 
     public bool CanRecenter => status.State == BackdropState.Shown;
 
-    public string ShowButtonLabel => status.State is BackdropState.Shown or BackdropState.Suspended or BackdropState.AwaitingRedirect
-        ? "Apply" : "Show";
 
     public bool HdrControlsEnabled => config.ImagePath != null && !Assets.BackdropPins.IsBundledId(config.ImagePath)
                                       && ImageLoader.KindOf(config.ImagePath) == ImageKind.Hdr;

@@ -98,7 +98,7 @@ public sealed class SceneGridViewModel(Configuration config, Action save, Action
                 };
                 list.Add(new Tile(id, TileKind.Bundled, pin.DisplayName, ThumbResource(pin.Stem), selected, state, progress, false));
             }
-            foreach (var path in config.UserImages)
+            foreach (var path in config.UserImages.ToArray())
             {
                 var selected = string.Equals(config.ImagePath, path, StringComparison.OrdinalIgnoreCase);
                 var (state, progress) = fileExists(path) ? SelectedState(selected, bundled: false) : (TileState.Missing, 0f);

@@ -10,7 +10,7 @@ using Milieu.Imaging;
 namespace Milieu;
 
 /// <summary>
-/// Persisted settings (Version 1). The shown state and the dome centre are deliberately NOT saved: the backdrop is
+/// Persisted settings (versioned; see <see cref="CurrentVersion"/> and <see cref="Migrate"/>). The shown state and the dome centre are deliberately NOT saved: the backdrop is
 /// never shown automatically on load. Values are clamped on load, NaN replaced with defaults.
 /// </summary>
 [Serializable]
@@ -49,8 +49,8 @@ public sealed class Configuration : IPluginConfiguration
     public DomeSettings Current => ForMode(Mode);
 
     /// <summary>
-    /// Upgrades older versions in place, as ordered steps (a later version adds its own step). Values the user set are
-    /// never overwritten.
+    /// Upgrades older versions in place, as ordered steps (a later version adds its own step). Steps change only
+    /// untouched defaults, except v3/v4, which apply defaults chosen in game to configs written by unreleased dev builds.
     /// </summary>
     public void Migrate(string configDirectory)
     {

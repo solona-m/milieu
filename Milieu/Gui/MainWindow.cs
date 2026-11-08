@@ -73,7 +73,7 @@ public sealed class MainWindow : Window, IDisposable
         var pad = ImGui.GetStyle().FramePadding * 2;
         var perRow = Math.Max(1, (int)((ImGui.GetContentRegionAvail().X + spacing) / (size.X + pad.X + spacing)));
         var tiles = grid.Tiles;
-        thumbs.Retain(config.UserImages);
+        thumbs.Retain(config.UserImages.ToArray());
         for (var i = 0; i < tiles.Count; i++)
         {
             if (i % perRow != 0) ImGui.SameLine();

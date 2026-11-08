@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Milieu.Assets;
 using Milieu.Backdrop;
 using Milieu.GameFiles;
 using Milieu.Imaging;
@@ -233,5 +234,112 @@ public sealed class BackdropPreparerTests : IDisposable
         release.SetResult();
         await Task.WhenAll(first, second);
         Assert.Equal(2, p.DecodeCount);
+    }
+
+    /// <summary>A real-sized fake bundled texture (correct header, zero blocks) and a pin that matches it.</summary>
+    private (BackdropPreparer P, StubEncoder E, FakeBundled B, BackdropPin Pin) Bundled(string stem = "moon")
+    {
+        var dirB = dir.File("bundled");
+        Directory.CreateDirectory(dirB);
+        var path = Path.Combine(dirB, stem + ".atex");
+        using (var fs = File.Create(path))
+        {
+            fs.Write(AtexWriter.ExpectedHeader(8192, 4096));
+            fs.SetLength(AtexWriter.Layout(8192, 4096).TotalLength);
+        }
+        string sha;
+        using (var fs = File.OpenRead(path)) sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(fs)).ToLowerInvariant();
+        var pin = new BackdropPin(stem, "Moon", new FileInfo(path).Length, sha);
+        var e = new StubEncoder();
+        var b = new FakeBundled(dirB);
+        var p = new BackdropPreparer(cache, e, b) { PinLookup = s => s == stem ? pin : null };
+        return (p, e, b, pin);
+    }
+
+    [Fact] // [AC-hdri-backdrop-13]
+    public async Task Bundled_UsesDownloadedAtex_NoDecodeNoEncode()
+    {
+        var (p, e, b, pin) = Bundled();
+        var t = await p.PrepareTextureAsync(new BackdropRequest("bundled:moon", 8192, 0, ToneMapOperator.Aces), null, default);
+        Assert.True(t.Preconverted);
+        Assert.Equal(b.PathOf("moon"), t.DiskPath);
+        Assert.Equal(pin.Sha256[..16], t.Key);
+        Assert.Equal($"vfx/milieu/{pin.Sha256[..16]}/sky.atex", t.GamePath);
+        Assert.Equal((8192, 4096), (t.Width, t.Height));
+        Assert.Equal(0, p.DecodeCount);
+        Assert.Equal(0, e.Calls);
+        Assert.False(Directory.Exists(cache.Root) && Directory.EnumerateFiles(cache.Root).Any());   // no copy into the cache
+    }
+
+    [Fact] // [AC-hdri-backdrop-13] [EDGE-hdri-backdrop-67]
+    public async Task Bundled_IgnoresMaxWidthAndHdrSettings()
+    {
+        var (p, _, b, _) = Bundled();
+        var t = await p.PrepareTextureAsync(new BackdropRequest("bundled:moon", 4096, 5, ToneMapOperator.None), null, default);
+        Assert.Equal((8192, 4096), (t.Width, t.Height));
+        Assert.Equal(b.PathOf("moon"), t.DiskPath);
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-61]
+    public async Task Bundled_NotDownloaded_RefusedWithMessage()
+    {
+        var (p, _, b, _) = Bundled();
+        File.Delete(b.PathOf("moon"));
+        var ex = await Assert.ThrowsAsync<MilieuException>(() => p.PrepareTextureAsync(new BackdropRequest("bundled:moon", 8192, 0, ToneMapOperator.Aces), null, default));
+        Assert.Equal(MessageKey.BundledNotDownloaded, ex.Status.Key);
+        Assert.Equal("Moon isn't downloaded yet.", ex.Status.Text);
+    }
+
+    [Theory] // [EDGE-hdri-backdrop-62]
+    [InlineData("length")]
+    [InlineData("header")]
+    [InlineData("sha")]
+    public async Task Bundled_BadHeaderOrSha_MarksCorrupt_NoRegistration(string damage)
+    {
+        var (p, _, b, _) = Bundled();
+        var path = b.PathOf("moon");
+        switch (damage)
+        {
+            case "length": using (var fs = File.OpenWrite(path)) fs.SetLength(1000); break;
+            case "header": using (var fs = File.OpenWrite(path)) { fs.Position = 8; fs.WriteByte(0x55); } break;
+            case "sha": using (var fs = File.OpenWrite(path)) { fs.Position = 5000; fs.WriteByte(1); } break;
+        }
+        // Each damage is caught by the preparer's own checks (the service would already treat a wrong length as missing).
+        var ex = await Assert.ThrowsAsync<MilieuException>(() => p.PrepareTextureAsync(new BackdropRequest("bundled:moon", 8192, 0, ToneMapOperator.Aces), null, default));
+        Assert.Equal(MessageKey.BundledCorrupt, ex.Status.Key);
+        Assert.Equal(new[] { "moon" }, b.Corrupt);
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact] // [EDGE-hdri-backdrop-62]
+    public async Task Bundled_ShaVerifiedOncePerSession()
+    {
+        var (p, _, b, _) = Bundled();
+        var req = new BackdropRequest("bundled:moon", 8192, 0, ToneMapOperator.Aces);
+        await p.PrepareTextureAsync(req, null, default);
+        var path = b.PathOf("moon");
+        var mtime = File.GetLastWriteTimeUtc(path);
+        // Same length, same mtime, different bytes: not re-hashed this session, so still accepted…
+        using (var fs = File.OpenWrite(path)) { fs.Position = 5000; fs.WriteByte(1); }
+        File.SetLastWriteTimeUtc(path, mtime);
+        await p.PrepareTextureAsync(req, null, default);
+        Assert.Empty(b.Corrupt);
+        // …but a new file version (mtime) is hashed again and the damage is caught.
+        File.SetLastWriteTimeUtc(path, mtime.AddMinutes(1));
+        await Assert.ThrowsAsync<MilieuException>(() => p.PrepareTextureAsync(req, null, default));
+        Assert.Equal(new[] { "moon" }, b.Corrupt);
+    }
+
+    [Fact] // [AC-hdri-backdrop-14]
+    public async Task Conversion_WritesThumbFrom256x128Mip()
+    {
+        var thumbs = new ThumbStore(dir.File("thumbs"));
+        var p = new BackdropPreparer(cache, new StubEncoder(), null, thumbs);
+        var png = SyntheticImages.WritePng(dir.Path, "mine.png", 512, 256);
+        Assert.Null(thumbs.TryLoad(png));
+        await p.PrepareTextureAsync(Req(png), null, default);
+        var thumb = thumbs.TryLoad(png);
+        Assert.NotNull(thumb);
+        Assert.Equal(256 * 128 * 4, thumb!.Length);
     }
 }

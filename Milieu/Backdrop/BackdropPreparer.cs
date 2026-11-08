@@ -23,6 +23,9 @@ public interface IBackdropPreparer
 public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IBundledBackdrops? bundled = null, ThumbStore? thumbs = null) : IBackdropPreparer
 {
     private readonly HashSet<string> verified = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Test seam: the pins a bundled scene is checked against (BackdropPins in the plugin).</summary>
+    internal Func<string, BackdropPin?> PinLookup { get; set; } = BackdropPins.Find;
     private readonly SemaphoreSlim oneAtATime = new(1, 1);
     private int decodes, encodes;
 
@@ -53,7 +56,8 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
     /// </summary>
     private PreparedTexture PrepareBundled(string id, IProgress<float>? progress)
     {
-        if (!BackdropPins.TryParseId(id, out var pin) || bundled == null)
+        var pin = BackdropPins.IsBundledId(id) ? PinLookup(id[BackdropPins.IdPrefix.Length..]) : null;
+        if (pin == null || bundled == null)
             throw new MilieuException(StatusMessage.Of(MessageKey.FileMissing, ("file", id)));
         var name = pin.DisplayName;
         if (!bundled.IsDownloaded(pin.Stem)) throw new MilieuException(StatusMessage.Of(MessageKey.BundledNotDownloaded, ("name", name)));

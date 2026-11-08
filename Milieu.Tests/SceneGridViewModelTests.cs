@@ -39,7 +39,7 @@ public sealed class SceneGridViewModelTests
         Assert.All(bundled, t => Assert.Equal(TileState.NotDownloaded, t.State));
     }
 
-    [Fact] // [AC-hdri-backdrop-11]
+    [Fact] // [AC-hdri-backdrop-11] [EDGE-hdri-backdrop-59]
     public void Header_DerivedFromPins()
     {
         Assert.Equal(357_914_496L, BackdropPins.TotalBytes);
@@ -313,7 +313,7 @@ public sealed class SceneGridViewModelTests
         Assert.Equal(@"C:\pics\My Room.hdr", t.ThumbKey);   // ThumbnailCache falls back to the label when no thumbnail exists
     }
 
-    [Fact] // [EDGE-hdri-backdrop-44]
+    [Fact] // [EDGE-hdri-backdrop-44] [EDGE-hdri-backdrop-59]
     public void CreditsLink_HiddenWhileUnpublished()
     {
         Assert.True(vm.ShowCreditsLink);

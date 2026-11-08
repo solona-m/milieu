@@ -25,6 +25,10 @@ param(
 # Explicit exit-code checks below; not 'Stop', which in Windows PowerShell 5.1 turns a native command's stderr (e.g. "release not found") into a fatal error.
 $ErrorActionPreference = 'Continue'
 $PSNativeCommandUseErrorActionPreference = $false
+# Any script (not native) error stops the run: an irreversible upload must fail closed.
+trap { Write-Error $_; exit 1 }
+# Relative paths (pins, artifacts, the tool) are repository paths.
+Set-Location (Split-Path -Parent $PSScriptRoot)
 
 function Fail([string]$message) { Write-Error $message; exit 1 }
 

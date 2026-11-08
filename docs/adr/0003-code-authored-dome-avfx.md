@@ -26,6 +26,9 @@ every value mirrors the reference element chain (`Schd`, `TmLn#2`, `Emit#5`, `Pt
 - Brightness defaults to 1.0 (reference 0.798).
 - UV set 0 scale X = ±horizontal repeat (default 2.0, negative when flipped), Y = vertical repeat (default 1.0).
 - Unused texture slots point nowhere (`TxNo -1`); the colour slot uses `TLst` (a byte list) as the reference does.
+- Ground projection (on by default for both domes): vertices below the floor plane are pulled along their own ray onto
+  it (`SphereMesh.Build(floorY)`), so the default mesh positions differ from model 7; UVs, normals, tangents, indices
+  and winding stay the reference's. With projection off the mesh is the reference layout exactly.
 
 The sphere is generated to the reference layout exactly (tested against model 7: positions and UVs to half precision, normal and tangent bytes within 1), so the seam,
 U direction, poles and winding are the proven ones. Every generated file is parsed back before it is written.

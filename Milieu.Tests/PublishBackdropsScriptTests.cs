@@ -25,6 +25,8 @@ public class PublishBackdropsScriptTests
                      "--verify-tag",
                      "--latest=false",
                      "-Filter *.atex",
+                     "trap { Write-Error $_; exit 1 }",
+                     "Set-Location (Split-Path -Parent $PSScriptRoot)",
                  })
             Assert.Contains(required, script);
         Assert.DoesNotContain(".jpeg", script);

@@ -34,8 +34,8 @@ workflow for the repository. The cause is unknown.
   file is deleted and downloaded again. Texture size and HDR settings don't apply to bundled scenes.
 - The grid's bundled previews are 256x128 JPEGs (`PrepareBackdrops thumbs`) embedded in the plugin, so they show
   before anything is downloaded.
-- Downloads go through `dl.solona.info/milieu/` (the Proteus repo's worker, route added for this) with GitHub as the
-  fallback.
+- The mirror route `dl.solona.info/milieu/` exists (the Proteus repo's worker); downloads go through it once
+  `MilieuAssets.MirrorBase` is set (the release feature), with GitHub as the fallback. Until then: GitHub only.
 
 ## Consequences
 

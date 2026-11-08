@@ -73,7 +73,18 @@ public class BackdropViewModelTests
         Assert.Equal("pano.jpg", vm.ImageFileName);
         var ex = Assert.Throws<MilieuException>(() => Milieu.Imaging.ImageLoader.Probe(c.ImagePath!));
         Assert.DoesNotContain("secret", ex.Status.Text);
-        Assert.Equal("Show", vm.ShowButtonLabel);
-        Assert.Equal("Apply", new BackdropViewModel(St(BackdropState.Shown), MessageKey.None, c).ShowButtonLabel);
+
+    }
+
+    [Fact] // [AC-hdri-backdrop-13]
+    public void Bundled_ShowsNote_DisablesSizeCombo()
+    {
+        var c = Cfg("bundled:moon");
+        var vm = new BackdropViewModel(St(BackdropState.Shown), MessageKey.None, c);
+        Assert.True(vm.IsBundledSelection);
+        Assert.False(vm.HdrControlsEnabled);
+        Assert.Equal("Bundled scenes come pre-converted at 8192x4096, so the texture size and HDR settings don't apply.",
+                     Messages.Template(MessageKey.BundledNote));
+        Assert.False(new BackdropViewModel(St(BackdropState.Shown), MessageKey.None, Cfg(@"C:\a.hdr")).IsBundledSelection);
     }
 }
