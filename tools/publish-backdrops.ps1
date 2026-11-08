@@ -22,7 +22,8 @@ param(
     [string]$Dir = "artifacts/backdrops"
 )
 
-$ErrorActionPreference = 'Stop'
+# Explicit exit-code checks below; not 'Stop', which in Windows PowerShell 5.1 turns a native command's stderr (e.g. "release not found") into a fatal error.
+$ErrorActionPreference = 'Continue'
 $PSNativeCommandUseErrorActionPreference = $false
 
 function Fail([string]$message) { Write-Error $message; exit 1 }
