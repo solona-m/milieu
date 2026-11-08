@@ -1,0 +1,57 @@
+using System.Collections.Generic;
+using System.Linq;
+using Milieu.Backdrop;
+using Milieu.Imaging;
+
+namespace Milieu.Gui;
+
+/// <summary>How a settings change is applied, always once (single-swap rule).</summary>
+public enum SliderApply { Placement, Rebuild, Height }
+
+/// <summary>Pure UI state for the main window, derived from the controller status and the config (unit-tested).</summary>
+public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker, Configuration config)
+{
+    public const string RoomHint = "Keep the camera inside the dome for an undistorted view.";
+
+    public bool HasImage => !string.IsNullOrEmpty(config.ImagePath);
+
+    public bool CanShow => blocker == MessageKey.None && HasImage;
+
+
+    public bool CanRecenter => status.State == BackdropState.Shown;
+
+
+    public bool HdrControlsEnabled => config.ImagePath != null && !Assets.BackdropPins.IsBundledId(config.ImagePath)
+                                      && ImageLoader.KindOf(config.ImagePath) == ImageKind.Hdr;
+
+    /// <summary>A bundled scene is selected: texture size and HDR settings don't apply (pre-converted).</summary>
+    public bool IsBundledSelection => Assets.BackdropPins.IsBundledId(config.ImagePath);
+
+    public bool ShowRoomHint => config.Mode == DomeMode.Room;
+
+    public string ImageFileName => HasImage ? System.IO.Path.GetFileName(config.ImagePath!) : "(none)";
+
+    /// <summary>The blocker if any, otherwise the controller's message.</summary>
+    public StatusMessage Status => blocker != MessageKey.None ? StatusMessage.Of(blocker) : status.Message;
+
+    public string StatusText => Status.Text;
+
+    public Severity StatusSeverity => Status.Severity;
+
+    public IReadOnlyList<string> WarningTexts => status.Warnings.Select(w => w.Text).ToList();
+
+    public float Progress => status.Progress;
+
+    public bool IsConverting => status.State == BackdropState.Preparing;
+
+    /// <summary>
+    /// Every change applies once, on release: yaw respawns the same VFX at the new placement; height lets the controller
+    /// choose (rebuild if the ground-projection floor moves, otherwise respawn); everything else rebuilds the VFX.
+    /// </summary>
+    public static SliderApply ApplyOf(string setting) => setting switch
+    {
+        "Yaw" => SliderApply.Placement,
+        "Height" => SliderApply.Height,
+        _ => SliderApply.Rebuild,   // Radius, VerticalScale, HorizontalRepeat, VerticalRepeat, Flip, Brightness, Mode, GroundProjection
+    };
+}

@@ -21,7 +21,44 @@
     <DalamudApiLevel>15</DalamudApiLevel>
     <Tags>hdri;skybox;backdrop;gpose;screenshot;vfx</Tags>
     <CategoryTags>utility</CategoryTags>
+    <RepoUrl>https://github.com/solona-m/milieu</RepoUrl>
+    <!-- Dalamud reads images\icon.png next to the DLL for dev plugins only; installs from a plugin repo fetch this URL,
+         so the file must exist on main at this exact path. -->
+    <IconUrl>https://raw.githubusercontent.com/solona-m/milieu/main/Milieu/images/icon.png</IconUrl>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lands at bin\...\images\icon.png, where Dalamud looks for a dev plugin's icon. Square, at most 512x512. -->
+    <None Include="images\icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Plain versions (no floats or ranges), the same ones Proteus ships, so packages.lock.json stays a reviewable diff. -->
+  <ItemGroup>
+    <PackageReference Include="StbImageSharp" Version="2.30.16" />
+    <PackageReference Include="BCnEncoder.Net" Version="2.3.0" />
+    <PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Milieu.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 256x128 previews of the bundled scenes (tools/PrepareBackdrops thumbs), embedded so the grid shows before any download. -->
+    <EmbeddedResource Include="Resources\Thumbs\*.jpg" LogicalName="Milieu.Resources.Thumbs.%(Filename).jpg" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\THIRD_PARTY_NOTICES.txt" Link="THIRD_PARTY_NOTICES.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- The bundled backdrops are NOT shipped in the plugin zip: they are published as pinned release assets under the
+         backdrops-* tag (upload-backdrops.yml) and downloaded on demand by DefaultBackdropsDownloadService. -->
+    <None Remove="DefaultBackdrops\**" />
+    <Content Remove="DefaultBackdrops\**" />
+  </ItemGroup>
 
   <Import Project="Sdk.targets" Sdk="Dalamud.NET.Sdk" />
 </Project>
