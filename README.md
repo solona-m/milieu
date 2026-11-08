@@ -5,10 +5,17 @@ Use the large sky dome for outdoor skies, or the small room dome to put yourself
 
 Type `/milieu` in game to open the window, and `/milieu off` to hide the backdrop.
 
-## Requirements
+## Install
 
-- [Penumbra](https://github.com/xivdev/Penumbra), with mods enabled and a Base collection assigned. Milieu hands
-  the game its generated files through a Penumbra temporary mod.
+Milieu needs [Penumbra](https://github.com/xivdev/Penumbra), with mods enabled and a Base collection assigned
+(Milieu hands the game its files through a Penumbra temporary mod).
+
+1. In game, type `/xlsettings` and open **Experimental**.
+2. Under **Custom Plugin Repositories**, add `https://dl.solona.info/repo.json`, tick **Enabled**, and save.
+3. While Milieu is in testing, also turn on **Get plugin testing builds** on the same tab.
+4. Type `/xlplugins`, search for **Milieu**, and install it.
+
+Only you see the backdrop; other players see the normal game world.
 
 ## Using it
 
@@ -50,7 +57,17 @@ where the photo was taken from.
 - HDR images up to 8192x4096; PNG/JPG up to 134 megapixels when the conversion fits in memory.
 - The texture the game sees is BC7, 8192x4096 (or 4096x2048), power-of-two on both sides.
 
-## Building
+## Troubleshooting
+
+- **"Penumbra isn't running"**: install or enable Penumbra.
+- **"Mods are disabled in Penumbra"**: turn mods back on in Penumbra's settings.
+- **"Base collection is set to None"** or **"Penumbra didn't pick up the backdrop files"**: assign a Base
+  collection in Penumbra, then click the scene again.
+- **A download keeps failing**: click the scene again; it resumes where it stopped.
+
+Problems or ideas: [open an issue](https://github.com/solona-m/milieu/issues).
+
+## Building (developers)
 
 - `dotnet build Milieu/Milieu.csproj -c Release`
 - `dotnet test Milieu.Tests/Milieu.Tests.csproj -c Release`
