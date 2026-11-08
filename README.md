@@ -21,12 +21,11 @@ Milieu needs [Penumbra](https://github.com/xivdev/Penumbra), with mods enabled a
 
 ### Install Milieu
 
-1. While Milieu is in testing, turn on **Get plugin testing builds** in `/xlsettings` → **Experimental**.
-2. Type `/xlplugins`, search for **Milieu**, and install it.
+Type `/xlplugins`, search for **Milieu**, and install it.
 
 Only you see the backdrop; other players see the normal game world.
 
-> Milieu isn't listed in the repository just yet. The first testing build is on its way; until then
+> Milieu isn't listed in the repository just yet. The first release is on its way; until then
 > `/xlplugins` won't find it.
 
 ## Using it
