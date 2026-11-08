@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- One-off offline tool: turns the source panoramas into the committed Milieu/DefaultBackdrops images.
+       It links Milieu's pure imaging helpers, so the committed images are produced by the same code the plugin uses,
+       and has no Dalamud dependency. Usage is in AGENTS.md (Commands). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\Milieu\Imaging\BackdropSizing.cs" Link="Imaging\BackdropSizing.cs" />
+    <Compile Include="..\..\Milieu\Imaging\EquirectResampler.cs" Link="Imaging\EquirectResampler.cs" />
+    <Compile Include="..\..\Milieu\Imaging\EquirectLayout.cs" Link="Imaging\EquirectLayout.cs" />
+    <Compile Include="..\..\Milieu\Imaging\BandFill.cs" Link="Imaging\BandFill.cs" />
+    <Compile Include="..\..\Milieu\Imaging\SeamDetector.cs" Link="Imaging\SeamDetector.cs" />
+    <Compile Include="..\..\Milieu\Imaging\ToneMapper.cs" Link="Imaging\ToneMapper.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="StbImageSharp" Version="2.30.16" />
+    <PackageReference Include="StbImageWriteSharp" Version="1.16.7" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,110 @@
+name: Upload Bundled Backdrops
+
+# Publishes Milieu's bundled backdrops (Milieu/DefaultBackdrops) as pinned release assets. They never ride in the
+# plugin zip: DefaultBackdropsDownloadService fetches them once per machine into the config directory, the first time
+# the Backdrops list is shown.
+#
+# Loose files rather than one zip on purpose: zip bytes are not reproducible, so a checksum pinned in the client would
+# break; loose files are uploaded verbatim and hash exactly.
+#
+# Tag pushes only (no manual dispatch): the files uploaded are always the tagged commit's.
+#
+# ORDER MATTERS. Push the backdrops-* tag BEFORE the plugin release that pins it. A plugin whose tag has no release
+# yet shows "Backdrops aren't published yet." until the tag exists:
+#   1. change the images  ->  2. paste the new checksums + bump BackdropsTag  ->  3. push backdrops-vN at that commit
+#   ->  4. release the plugin
+
+on:
+  push:
+    tags:
+      - 'backdrops-*'
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The tag reaches the script through the environment, never pasted into it, and must look like backdrops-v<number>.
+      # Assets are immutable: the client pins a tag plus a SHA-256 per file, so revised images mean a NEW tag.
+      - name: Check the tag and refuse to overwrite an existing release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $tag = $env:REF_NAME
+          if ($tag -cnotmatch '^backdrops-v\d+\z') {
+            Write-Error "Tag '$tag' is not of the form backdrops-v<number>."
+            exit 1
+          }
+          $PSNativeCommandUseErrorActionPreference = $false
+          gh release view $tag *> $null
+          $exists = ($LASTEXITCODE -eq 0)
+          $global:LASTEXITCODE = 0
+          if ($exists) {
+            Write-Error "Release $tag already exists. Its assets are immutable because the client pins their checksums - push a new tag (e.g. backdrops-v2) and bump BackdropsTag in DefaultBackdropsDownloadService instead."
+            exit 1
+          }
+          "TAG=$tag" | Out-File -Append $env:GITHUB_ENV
+
+      # Licences first: nothing is published while the credits still hold a [TODO].
+      - name: Refuse while CREDITS.md has TODOs
+        shell: pwsh
+        run: |
+          $credits = Get-Content "Milieu\DefaultBackdrops\CREDITS.md" -Raw
+          if ($credits -match '\[TODO\]') {
+            Write-Error "Milieu\DefaultBackdrops\CREDITS.md still contains [TODO]. Fill in every source, author and licence first."
+            exit 1
+          }
+
+      # Every file a real JPEG, so nothing else (a pointer file, a stray document) is ever published.
+      - name: Sanity-check the files are JPEGs
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem "Milieu\DefaultBackdrops" -File -Filter *.jpeg
+          if ($files.Count -eq 0) { Write-Error "No .jpeg files in Milieu\DefaultBackdrops"; exit 1 }
+          foreach ($f in $files) {
+            $b = [System.IO.File]::ReadAllBytes($f.FullName)
+            if ($b.Length -lt 3 -or $b[0] -ne 0xFF -or $b[1] -ne 0xD8 -or $b[2] -ne 0xFF) {
+              Write-Error "$($f.Name) is not a JPEG."
+              exit 1
+            }
+          }
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $files = Get-ChildItem "Milieu\DefaultBackdrops" -File -Filter *.jpeg
+          Write-Host "Uploading $($files.Count) file(s), $([math]::Round(($files | Measure-Object Length -Sum).Sum/1MB,1)) MB total"
+          # GitHub rewrites spaces in asset names: stage with spaces replaced by dots, the same substitution
+          # DefaultBackdropsDownloadService.RemoteName makes.
+          $stage = Join-Path $env:RUNNER_TEMP "backdrops"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          foreach ($f in $files) { Copy-Item $f.FullName (Join-Path $stage ($f.Name -replace ' ', '.')) }
+          # --latest=false: an asset release must never become the repo's "Latest" release.
+          gh release create $env:TAG `
+            --latest=false `
+            --title "Bundled Backdrops ($env:TAG)" `
+            --notes "Backdrops for Milieu, downloaded automatically when the Backdrops list is first shown - do not install manually. Credits and licences: Milieu/DefaultBackdrops/CREDITS.md at this tag." `
+            @((Get-ChildItem $stage -File).FullName)
+
+      - name: Emit checksums for the client
+        shell: pwsh
+        run: |
+          $lines = @()
+          $lines += "Must equal DefaultBackdropsDownloadService.Backdrops, with BackdropsTag = ""$env:TAG"":"
+          $lines += '```csharp'
+          foreach ($i in (Get-ChildItem "Milieu\DefaultBackdrops" -File -Filter *.jpeg | Sort-Object Name)) {
+            $h = (Get-FileHash $i.FullName -Algorithm SHA256).Hash.ToLower()
+            $lines += '        ("{0}", "<display name>", {1}L, "{2}"),' -f $i.Name, $i.Length, $h
+          }
+          $lines += '```'
+          $lines | ForEach-Object { Write-Host $_ }
+          $lines | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
