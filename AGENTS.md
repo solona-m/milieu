@@ -57,6 +57,7 @@ Architecture decision records are in `docs/adr/`.
 - single test: `dotnet test Milieu.Tests/Milieu.Tests.csproj -c Release --filter "FullyQualifiedName~PluginManifestTests"`
 - reference-parity tests (run before code review): set `MILIEU_REFERENCE_AVFX` / `MILIEU_REFERENCE_ATEX` to an extracted "Pickles Venue" `ve0002.avfx` / `Sky1.atex` and `MILIEU_HDRI_SOURCE_DIR` to the source images, then filter `FullyQualifiedName~Reference|FullyQualifiedName~WhenSourcePresent|FullyQualifiedName~BundledBackdropsTests|FullyQualifiedName~CancelInsideMip0`; report pass/skip counts
 - prepare bundled backdrops (rarely): `dotnet run --project tools/PrepareBackdrops -c Release -- <source dir> Milieu/DefaultBackdrops`, then `-- atex Milieu/DefaultBackdrops artifacts/backdrops`, paste the printed pins into `Milieu/Assets/BackdropPins.cs` and bump its `Tag`, `-- verify artifacts/backdrops --tag <tag>`, `-- thumbs Milieu/DefaultBackdrops Milieu/Resources/Thumbs`; publish (the owner): tag that commit, push the tag, `powershell -File tools/publish-backdrops.ps1 -Tag <tag>` (ADR 0005)
+- release (ADR 0007): annotated tags only. Testing: `git tag -a testing-<n> -F notes.md` (a sequence; the mirror serves only that shape). Stable: run the full suite, merge `test` into `main`, then `git tag -a v<yyMM>.<git rev-list --count HEAD>.0.0 -F notes.md` in the same UTC month as the CI build. Pushing the tag builds and publishes; never reuse a tag
 - default branch: `test` — reviews diff against it; work merges into it (`main` is the stable release branch)
 
 ## Architecture
@@ -74,7 +75,9 @@ Milieu/            the Dalamud plugin (Plugin.cs: services, events, /milieu, dis
   Resources/Thumbs/  embedded 256x128 previews of the bundled scenes
 Milieu.Tests/      xunit tests (Support/: fakes, synthetic images, reference-file facts)
 tools/PrepareBackdrops/  offline tool that produces Milieu/DefaultBackdrops
-docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery), agent guidance
+tools/check-package.ps1  the release workflows' package guards (size, root manifest, version, changelog)
+.github/workflows/ test.yml (quick suite, read-only), testing-release.yml (testing-<n>), release.yml (v<version>)
+docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery, 0007 releases and listing), agent guidance
 ```
 
 ## Testing
@@ -92,6 +95,8 @@ tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 - Synced delivery (`Milieu/Sync/`, ADR 0006): writes into Penumbra's mod directory (`_milieu_sync`), an IMC manipulation and the `MilieuSync` temp mod in the player's collection, and the user's image leaving the machine via PSync (notice first); offered on testing/dev builds only
 - `Milieu/Configuration.cs` migrations — a mistake loses user settings
 - Downloads (`Milieu/Assets/`) and `tools/publish-backdrops.ps1` — outbound GETs that write into the config directory, downloaded textures handed to the game; pinned size + header + SHA-256 before use; the publish script's guards keep pins and release assets identical
+- `.github/workflows/` and `tools/check-package.ps1` — publish to every user and hold the plugins-repo dispatch secret; SHA-pinned actions, no disabled guards (ADR 0007, `WorkflowTests`)
+- `README.md` and `Milieu/images/icon.png` on `test` — live: the dl.solona.info worker serves them from `test`, so a `test` push publishes them
 - `.claude/settings.json` — loaded by every agent session in the repo
 
 ## Review & Planning Guidance

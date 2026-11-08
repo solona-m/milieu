@@ -3,9 +3,10 @@ using System.Collections.Generic;
 namespace Milieu.Assets;
 
 /// <summary>
-/// Where Milieu's release assets live. GitHub is always a source; an edge mirror, when one is configured, is tried
-/// first. The mirror is empty for now: the shared dl.solona.info worker lives in the Proteus repo, and a new plugin
-/// routes Milieu under its own prefix, `/milieu/` (docs/adr/0005-pre-converted-bundled-backdrops.md).
+/// Where Milieu's release assets live: the dl.solona.info edge mirror first, then GitHub. The mirror is the shared
+/// Cloudflare worker in the Proteus repo, which routes Milieu under its own prefix (`/milieu/&lt;tag&gt;/latest.zip`,
+/// `/milieu/backdrops-v&lt;N&gt;/&lt;stem&gt;.atex`; docs/adr/0005-pre-converted-bundled-backdrops.md, ADR 0007). GitHub always
+/// stays in the list behind it, so a mirror outage means a slower download, never a broken one.
 /// </summary>
 public static class MilieuAssets
 {
@@ -14,8 +15,8 @@ public static class MilieuAssets
 
     public const string GitHubBase = "https://github.com/" + Repo + "/releases/download/";
 
-    /// <summary>Mirror base with a trailing slash, e.g. "https://dl.solona.info/milieu/". Empty = GitHub only.</summary>
-    public const string MirrorBase = "";
+    /// <summary>Mirror base with a trailing slash. Empty would mean GitHub only.</summary>
+    public const string MirrorBase = "https://dl.solona.info/milieu/";
 
     public static string[] BaseUrls(string tag) => BaseUrls(tag, MirrorBase);
 

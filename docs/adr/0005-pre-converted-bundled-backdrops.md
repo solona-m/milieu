@@ -3,6 +3,8 @@
 ## Status
 
 Accepted. Partly supersedes ADR 0004 (what is published and how; the pinned, on-demand download pattern stays).
+The workflow facts (Actions enabled, but no workflow ever registered) and the plugin release workflows are in ADR 0007;
+`MilieuAssets.MirrorBase` is now set, so downloads go mirror first.
 
 ## Context
 

@@ -1,0 +1,52 @@
+name: Test
+
+# The quick suite on every push and PR to test and main. Read-only and secret-free: it publishes nothing. It is also
+# the canary the agent's publish sequence waits on before pushing a tag (docs/adr/0007-plugin-releases-and-listing.md).
+# Note: a push to test still updates two live surfaces, README.md and Milieu/images/icon.png, which the dl.solona.info
+# worker serves from the test branch.
+on:
+  push:
+    branches: [ test, main ]
+  pull_request:
+    branches: [ test, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      # Full history: the version is yyMM.<commit count>, and a shallow clone would undercount.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Download Dalamud
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://goatcorp.github.io/dalamud-distrib/stg/latest.zip' -OutFile dalamud.zip
+          Expand-Archive dalamud.zip -DestinationPath dalamud_dist
+          "DALAMUD_HOME=$env:GITHUB_WORKSPACE\dalamud_dist" | Out-File -Append $env:GITHUB_ENV
+
+      - name: Check the Dalamud API level
+        shell: pwsh
+        run: |
+          $dalamud = [Reflection.AssemblyName]::GetAssemblyName("$env:DALAMUD_HOME\Dalamud.dll").Version.Major
+          $level = [regex]::Match((Get-Content Milieu/Milieu.csproj -Raw), '<DalamudApiLevel>(\d+)</DalamudApiLevel>').Groups[1].Value
+          if ("$dalamud" -ne "$level") {
+            Write-Error "Staging Dalamud.dll is API $dalamud but Milieu/Milieu.csproj says DalamudApiLevel $level."
+            exit 1
+          }
+          Write-Host "Dalamud API $dalamud matches DalamudApiLevel $level."
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.x'
+
+      - name: Quick suite
+        shell: pwsh
+        run: dotnet test Milieu.Tests/Milieu.Tests.csproj -c Release --filter "Speed!=Slow"
