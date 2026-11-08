@@ -129,6 +129,9 @@ public class WorkflowTests
 
     private static readonly Regex NativeStatement = new(@"^\s*(\$[\w:]+\s*=\s*)?\(*\s*(git|dotnet|&)\s");
 
+    /// <summary>A check that names the failure first and then really exits: <c>if ($LASTEXITCODE -ne 0) { ...; exit 1 }</c>.</summary>
+    private static readonly Regex NamedExitCheck = new(@"^if \(\$LASTEXITCODE -ne 0\) \{.*;\s*exit\s+(1|\$LASTEXITCODE)\s*\}$");
+
     /// <summary>
     /// Native commands in statement position (incl. assignments) that are neither the block's last line nor followed
     /// by an exit-code check. pwsh carries on past a failing native command, so those would be silently ignored.
@@ -144,7 +147,7 @@ public class WorkflowTests
             if (i == lines.Count - 1) continue;
             var next = lines[i + 1].Trim();
             // The plain check, or one that names the failure first: if ($LASTEXITCODE -ne 0) { ...; exit ... }
-            if (next == ExitCheck || (next.StartsWith("if ($LASTEXITCODE -ne 0) {", StringComparison.Ordinal) && Regex.IsMatch(next, @"\bexit\b"))) continue;
+            if (next == ExitCheck || NamedExitCheck.IsMatch(next)) continue;
             bad.Add(lines[i].Trim());
         }
         return bad;
@@ -494,6 +497,7 @@ public class WorkflowTests
         { "& ./tools/check-package.ps1 -Zip latest.zip\nWrite-Host after", false },
         { "git merge-base --is-ancestor $a $b\nif ($LASTEXITCODE -ne 0) { Write-Error \"not on main\"; exit 1 }\nWrite-Host ok", true },
         { "git merge-base --is-ancestor $a $b\nif ($LASTEXITCODE -ne 0) { Write-Error \"not on main\" }\nWrite-Host ok", false },
+        { "git merge-base --is-ancestor $a $b\nif ($LASTEXITCODE -ne 0) { Write-Warning \"will exit\" }\nWrite-Host ok", false },
     };
 
     [Theory] // [EDGE-plugin-release-24]
