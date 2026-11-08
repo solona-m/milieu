@@ -58,3 +58,43 @@ public interface IGameState
     bool BetweenAreas { get; }
     Vector3? PlayerPosition { get; }
 }
+
+/// <summary>The player's effective Penumbra collection and whether it is assigned to the character individually.</summary>
+public readonly record struct PlayerCollectionInfo(Guid Id, bool IndividualSet);
+
+/// <summary>
+/// Synced delivery's Penumbra calls: one temporary mod (tag "MilieuSync", priority 1,000,000) in the local player's
+/// collection only, carrying the IMC VFX id and the redirects. Every member swallows IPC exceptions.
+/// </summary>
+public interface IPenumbraSync
+{
+    /// <summary>Penumbra's mod directory as of the last refresh; null when unset or not an existing directory.</summary>
+    string? ModDirectory { get; }
+
+    /// <summary>The local player's effective collection; null when there is no valid player object or the Guid is empty.</summary>
+    PlayerCollectionInfo? PlayerCollection();
+
+    /// <summary>The Base (default) collection's Guid; null when unset.</summary>
+    Guid? BaseCollection();
+
+    /// <summary>Adds or replaces the synced temp mod in one collection. Penumbra's code (0 = success), or -1 when the call throws.</summary>
+    int SetSynced(Guid collection, IReadOnlyDictionary<string, string> paths, string manips);
+
+    void ClearSynced(Guid collection);
+
+    /// <summary>Removes the synced temp mod from every listed collection and from <paramref name="alsoClear"/>.</summary>
+    void ClearSyncedEverywhere(IEnumerable<Guid> alsoClear);
+
+    string ResolvePlayer(string gamePath);
+
+    /// <summary>The player collection's meta manipulations (Penumbra's v1 string); "" on failure.</summary>
+    string PlayerMeta();
+
+    void RedrawPlayer();
+}
+
+/// <summary>Read access to the game's own files (vanilla, before any mod).</summary>
+public interface IGameData
+{
+    byte[]? ReadVanilla(string gamePath);
+}

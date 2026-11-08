@@ -169,4 +169,43 @@ public class ConfigurationTests
         ok.Clamp();
         Assert.Equal("bundled:moon", ok.ImagePath);
     }
+
+    [Fact] // [AC-synced-delivery-1]
+    public void Delivery_DefaultsToLocal_AndRoundTrips()
+    {
+        Assert.Equal(Milieu.Sync.DeliveryMode.Local, new Configuration().Delivery);
+        Assert.Equal(Milieu.Sync.DeliveryMode.Local, JsonConvert.DeserializeObject<Configuration>("{\"Version\":4}")!.Delivery);
+        var c = new Configuration { Delivery = Milieu.Sync.DeliveryMode.Cushion };
+        Assert.Equal(Milieu.Sync.DeliveryMode.Cushion, JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(c))!.Delivery);
+    }
+
+    [Fact] // [AC-synced-delivery-1] [EDGE-synced-delivery-35]
+    public void Clamp_SyncedUnavailable_MapsToLocal()
+    {
+        foreach (var m in new[] { Milieu.Sync.DeliveryMode.Cushion, Milieu.Sync.DeliveryMode.MadBirdRing })
+        {
+            var off = new Configuration { Delivery = m };
+            off.Clamp(false);
+            Assert.Equal(Milieu.Sync.DeliveryMode.Local, off.Delivery);
+            var on = new Configuration { Delivery = m };
+            on.Clamp(true);
+            Assert.Equal(m, on.Delivery);
+        }
+    }
+
+    [Fact] // [EDGE-synced-delivery-25]
+    public void Clamp_UndefinedDelivery_Local()
+    {
+        var c = JsonConvert.DeserializeObject<Configuration>("{\"Delivery\":7}")!;
+        c.Clamp();
+        Assert.Equal(Milieu.Sync.DeliveryMode.Local, c.Delivery);
+    }
+
+    [Fact] // [EDGE-synced-delivery-32]
+    public void SyncUploadNoticeShown_RoundTrips()
+    {
+        Assert.False(new Configuration().SyncUploadNoticeShown);
+        var c = new Configuration { SyncUploadNoticeShown = true };
+        Assert.True(JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(c))!.SyncUploadNoticeShown);
+    }
 }

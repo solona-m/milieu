@@ -32,6 +32,16 @@ public enum MessageKey
     BundledCorrupt,
     LoadingBundled,
     BundledNote,
+    SyncNoModDirectory,
+    SyncNoPlayerCollection,
+    SyncGameDataUnreadable,
+    SyncNoFreeVfxId,
+    SyncRefused,
+    SyncRedirectTimeout,
+    SyncShownCushion,
+    SyncShownRing,
+    SyncUploadNotice,
+    SyncSharedCollection,
 }
 
 public enum Severity { Info, Warning, Error }
@@ -88,14 +98,25 @@ public static class Messages
         [MessageKey.BundledCorrupt] = "{name} was damaged on disk; download it again.",
         [MessageKey.LoadingBundled] = "Loading {name}…",
         [MessageKey.BundledNote] = "Bundled scenes come pre-converted at 8192x4096, so the texture size and HDR settings don't apply.",
+        [MessageKey.SyncNoModDirectory] = "Penumbra's mod directory isn't set, so Milieu can't store a synced backdrop. Set it in Penumbra's settings.",
+        [MessageKey.SyncNoPlayerCollection] = "Penumbra has no collection for your character yet. Try again in a moment.",
+        [MessageKey.SyncGameDataUnreadable] = "Milieu couldn't read the game's data for the {item}.",
+        [MessageKey.SyncNoFreeVfxId] = "The {item} has no free effect slot for the backdrop.",
+        [MessageKey.SyncRefused] = "Penumbra refused the synced backdrop (code {code}).",
+        [MessageKey.SyncRedirectTimeout] = "Penumbra didn't pick up the synced backdrop in your character's collection. Try again.",
+        [MessageKey.SyncShownCushion] = "Shown on your Plush Cushion. Summon it if it isn't out.",
+        [MessageKey.SyncShownRing] = "Shown on your Mad Bird Ring. Wear it on your right hand.",
+        [MessageKey.SyncUploadNotice] = "{file} isn't shared yet. Clicking its tile shows it through PSync, which uploads it to its server and sends it to all your pairs. Synced delivery is experimental.",
+        [MessageKey.SyncSharedCollection] = "Your character has no Penumbra collection of its own, so anyone else using the same collection who wears the {item} shows this backdrop on your screen too. Assign your character its own collection in Penumbra to avoid that.",
     };
 
     public static string Template(MessageKey key) => Texts[key];
 
     public static Severity SeverityOf(MessageKey key) => key switch
     {
-        MessageKey.None or MessageKey.Converting or MessageKey.LoadingBundled or MessageKey.BundledNote => Severity.Info,
-        MessageKey.LargeImage or MessageKey.NoWrap or MessageKey.NotTwoToOne => Severity.Warning,
+        MessageKey.None or MessageKey.Converting or MessageKey.LoadingBundled or MessageKey.BundledNote
+            or MessageKey.SyncShownCushion or MessageKey.SyncShownRing or MessageKey.SyncUploadNotice => Severity.Info,
+        MessageKey.LargeImage or MessageKey.NoWrap or MessageKey.NotTwoToOne or MessageKey.SyncSharedCollection => Severity.Warning,
         _ => Severity.Error,
     };
 

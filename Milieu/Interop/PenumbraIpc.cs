@@ -7,11 +7,12 @@ using Milieu.Backdrop;
 namespace Milieu.Interop;
 
 /// <summary>
-/// Penumbra IPC by label (labels and signatures copied from Penumbra.Api's IpcSubscribers, MIT). Milieu creates one
-/// temporary mod, tag "Milieu", priority 0, in all collections, and only reads Penumbra's enabled state and Base
-/// collection. It never calls a mod-settings or mod-management API.
+/// Penumbra IPC by label (labels and signatures copied from Penumbra.Api's IpcSubscribers, MIT). Local delivery creates
+/// one temporary mod, tag "Milieu", priority 0, in all collections. Synced delivery (docs/adr/0006) creates one temporary
+/// mod, tag "MilieuSync", priority 1,000,000, in the local player's collection only. Milieu reads Penumbra's enabled
+/// state, collections, mod directory and the player's meta; it never calls a mod-settings or mod-management API.
 /// </summary>
-public sealed class PenumbraIpc : IPenumbraRedirects, IDisposable
+public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
 {
     public const string LabelApiVersion = "Penumbra.ApiVersion.V5";
     public const string LabelGetEnabledState = "Penumbra.GetEnabledState";
@@ -21,9 +22,19 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IDisposable
     public const string LabelResolveDefaultPath = "Penumbra.ResolveDefaultPath";
     public const string LabelInitialized = "Penumbra.Initialized";
     public const string LabelDisposed = "Penumbra.Disposed";
+    public const string LabelGetModDirectory = "Penumbra.GetModDirectory";
+    public const string LabelGetCollectionForObject = "Penumbra.GetCollectionForObject.V5";
+    public const string LabelGetCollections = "Penumbra.GetCollections.V5";
+    public const string LabelAddTemporaryMod = "Penumbra.AddTemporaryMod.V5";
+    public const string LabelRemoveTemporaryMod = "Penumbra.RemoveTemporaryMod.V5";
+    public const string LabelResolvePlayerPath = "Penumbra.ResolvePlayerPath";
+    public const string LabelGetPlayerMetaManipulations = "Penumbra.GetPlayerMetaManipulations";
+    public const string LabelRedrawObject = "Penumbra.RedrawObject.V5";
 
     public const string Tag = "Milieu";
     public const int Priority = 0;
+    public const string SyncTag = "MilieuSync";
+    public const int SyncPriority = 1_000_000;
     public const int RequiredBreaking = 5;
     public const byte BaseCollectionType = 0xE0;   // ApiCollectionType.Default
 
@@ -37,6 +48,14 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IDisposable
     private readonly ICallGateSubscriber<string, string> resolveDefault;
     private readonly ICallGateSubscriber<object> initialized;
     private readonly ICallGateSubscriber<object> disposed;
+    private readonly ICallGateSubscriber<string> getModDirectory;
+    private readonly ICallGateSubscriber<int, (bool, bool, (Guid, string))> getCollectionForObject;
+    private readonly ICallGateSubscriber<Dictionary<Guid, string>> getCollections;
+    private readonly ICallGateSubscriber<string, Guid, Dictionary<string, string>, string, int, int> addMod;
+    private readonly ICallGateSubscriber<string, Guid, int, int> removeMod;
+    private readonly ICallGateSubscriber<string, string> resolvePlayer;
+    private readonly ICallGateSubscriber<string> playerMeta;
+    private readonly ICallGateSubscriber<int, int, object> redrawObject;
     private readonly Action onInitialized;
     private readonly Action onDisposed;
 
@@ -57,6 +76,14 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IDisposable
         resolveDefault = pi.GetIpcSubscriber<string, string>(LabelResolveDefaultPath);
         initialized = pi.GetIpcSubscriber<object>(LabelInitialized);
         disposed = pi.GetIpcSubscriber<object>(LabelDisposed);
+        getModDirectory = pi.GetIpcSubscriber<string>(LabelGetModDirectory);
+        getCollectionForObject = pi.GetIpcSubscriber<int, (bool, bool, (Guid, string))>(LabelGetCollectionForObject);
+        getCollections = pi.GetIpcSubscriber<Dictionary<Guid, string>>(LabelGetCollections);
+        addMod = pi.GetIpcSubscriber<string, Guid, Dictionary<string, string>, string, int, int>(LabelAddTemporaryMod);
+        removeMod = pi.GetIpcSubscriber<string, Guid, int, int>(LabelRemoveTemporaryMod);
+        resolvePlayer = pi.GetIpcSubscriber<string, string>(LabelResolvePlayerPath);
+        playerMeta = pi.GetIpcSubscriber<string>(LabelGetPlayerMetaManipulations);
+        redrawObject = pi.GetIpcSubscriber<int, int, object>(LabelRedrawObject);
         onInitialized = () => Initialized?.Invoke();
         onDisposed = () => Disposed?.Invoke();
         initialized.Subscribe(onInitialized);
@@ -91,6 +118,93 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IDisposable
     public void Refresh()
     {
         State = Classify(() => apiVersion.InvokeFunc(), () => enabledState.InvokeFunc(), () => getCollection.InvokeFunc(BaseCollectionType));
+        ModDirectory = State == PenumbraState.Missing ? null : ReadModDirectory();
+    }
+
+    // ---------------------------------------------------------------- synced delivery (IPenumbraSync)
+
+    public string? ModDirectory { get; private set; }
+
+    private string? ReadModDirectory()
+    {
+        try
+        {
+            var dir = getModDirectory.InvokeFunc();
+            return !string.IsNullOrWhiteSpace(dir) && System.IO.Directory.Exists(dir) ? dir : null;
+        }
+        catch (Exception) { return null; }
+    }
+
+    private string?[] Sensitive => [sensitiveDir, ModDirectory];
+
+    public PlayerCollectionInfo? PlayerCollection()
+    {
+        try
+        {
+            var (valid, individual, (id, _)) = getCollectionForObject.InvokeFunc(0);
+            return valid && id != Guid.Empty ? new PlayerCollectionInfo(id, individual) : null;
+        }
+        catch (Exception e)
+        {
+            log.Debug("[Milieu] GetCollectionForObject failed: " + LogText.Describe(e, Sensitive));
+            return null;
+        }
+    }
+
+    public Guid? BaseCollection()
+    {
+        try
+        {
+            var c = getCollection.InvokeFunc(BaseCollectionType);
+            return IsMissingCollection(c) ? null : c!.Value.Item1;
+        }
+        catch (Exception) { return null; }
+    }
+
+    public int SetSynced(Guid collection, IReadOnlyDictionary<string, string> paths, string manips)
+    {
+        try { return addMod.InvokeFunc(SyncTag, collection, new Dictionary<string, string>(paths), manips, SyncPriority); }
+        catch (Exception e)
+        {
+            log.Warning("[Milieu] AddTemporaryMod failed: " + LogText.Describe(e, Sensitive));
+            return -1;
+        }
+    }
+
+    public void ClearSynced(Guid collection)
+    {
+        try { removeMod.InvokeFunc(SyncTag, collection, SyncPriority); }
+        catch (Exception e) { log.Debug("[Milieu] RemoveTemporaryMod failed: " + LogText.Describe(e, Sensitive)); }
+    }
+
+    public void ClearSyncedEverywhere(IEnumerable<Guid> alsoClear)
+    {
+        var all = new HashSet<Guid>(alsoClear);
+        try { foreach (var id in getCollections.InvokeFunc().Keys) all.Add(id); }
+        catch (Exception e) { log.Debug("[Milieu] GetCollections failed: " + LogText.Describe(e, Sensitive)); }
+        foreach (var id in all) ClearSynced(id);
+    }
+
+    public string ResolvePlayer(string gamePath)
+    {
+        try { return resolvePlayer.InvokeFunc(gamePath); }
+        catch (Exception) { return gamePath; }
+    }
+
+    public string PlayerMeta()
+    {
+        try { return playerMeta.InvokeFunc() ?? ""; }
+        catch (Exception e)
+        {
+            log.Debug("[Milieu] GetPlayerMetaManipulations failed: " + LogText.Describe(e, Sensitive));
+            return "";
+        }
+    }
+
+    public void RedrawPlayer()
+    {
+        try { redrawObject.InvokeAction(0, 0); }
+        catch (Exception e) { log.Debug("[Milieu] RedrawObject failed: " + LogText.Describe(e, Sensitive)); }
     }
 
     public bool Set(IReadOnlyDictionary<string, string> redirects)

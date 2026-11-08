@@ -87,4 +87,85 @@ public class BackdropViewModelTests
                      Messages.Template(MessageKey.BundledNote));
         Assert.False(new BackdropViewModel(St(BackdropState.Shown), MessageKey.None, Cfg(@"C:\a.hdr")).IsBundledSelection);
     }
+
+    [Fact] // [AC-synced-delivery-1] [EDGE-synced-delivery-35]
+    public void DeliveryOptions_HiddenWhenUnavailable_ShownOnTestingOrDev()
+    {
+        var c = Cfg();
+        var stable = new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, c, syncedAvailable: false);
+        Assert.False(stable.SyncedAvailable);
+        Assert.Equal(["Only me"], stable.DeliveryLabels);
+        var testing = new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, c, syncedAvailable: true);
+        Assert.True(testing.SyncedAvailable);
+        Assert.Equal(3, testing.DeliveryLabels.Count);
+    }
+
+    [Fact] // [AC-synced-delivery-1] [AC-synced-delivery-10]
+    public void DeliveryLabels_TooltipsAndHints()
+    {
+        var c = Cfg();
+        var vm = new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, c, true);
+        Assert.Equal(["Only me", "PSync: Plush Cushion (experimental)", "PSync: Mad Bird Ring (right hand) (experimental)"], vm.DeliveryLabels);
+        const string tip = "Experimental. PSync uploads the image you show to its server and sends it to all your pairs, who see the dome around you after their next sync. Every change redraws your character.";
+        Assert.Equal(tip, BackdropViewModel.DeliveryTooltip(Milieu.Sync.DeliveryMode.Cushion));
+        Assert.Equal(tip, BackdropViewModel.DeliveryTooltip(Milieu.Sync.DeliveryMode.MadBirdRing));
+        Assert.Null(BackdropViewModel.DeliveryTooltip(Milieu.Sync.DeliveryMode.Local));
+        Assert.Equal("", vm.DeliveryHint);
+        c.Delivery = Milieu.Sync.DeliveryMode.Cushion;
+        Assert.Equal("Experimental. Summon your Plush Cushion. PSync uploads your image to its server and sends it to all your pairs, who see the dome around you after their next sync. Every change redraws your character.",
+                     vm.DeliveryHint);
+        c.Delivery = Milieu.Sync.DeliveryMode.MadBirdRing;
+        Assert.Equal("Experimental. Wear the Mad Bird Ring on your right hand. PSync uploads your image to its server and sends it to all your pairs, who see the dome around you after their next sync. Every change redraws your character.",
+                     vm.DeliveryHint);
+    }
+
+    [Fact] // [AC-synced-delivery-6]
+    public void Recenter_DisabledInSynced_WithTooltip()
+    {
+        var c = Cfg();
+        c.Delivery = Milieu.Sync.DeliveryMode.Cushion;
+        var synced = new BackdropViewModel(St(BackdropState.Shown), MessageKey.None, c, true);
+        Assert.False(synced.CanRecenter);
+        Assert.Equal("The item carries the dome; move to move it.", synced.RecenterTooltip);
+        c.Delivery = Milieu.Sync.DeliveryMode.Local;
+        var local = new BackdropViewModel(St(BackdropState.Shown), MessageKey.None, c, true);
+        Assert.True(local.CanRecenter);
+        Assert.Null(local.RecenterTooltip);
+    }
+
+    [Fact] // [AC-synced-delivery-9]
+    public void SyncMessages_TextAndSeverity()
+    {
+        var expected = new (MessageKey Key, Severity Sev)[]
+        {
+            (MessageKey.SyncNoModDirectory, Severity.Error), (MessageKey.SyncNoPlayerCollection, Severity.Error),
+            (MessageKey.SyncGameDataUnreadable, Severity.Error), (MessageKey.SyncNoFreeVfxId, Severity.Error),
+            (MessageKey.SyncRefused, Severity.Error), (MessageKey.SyncRedirectTimeout, Severity.Error),
+            (MessageKey.SyncShownCushion, Severity.Info), (MessageKey.SyncShownRing, Severity.Info),
+            (MessageKey.SyncUploadNotice, Severity.Info), (MessageKey.SyncSharedCollection, Severity.Warning),
+        };
+        foreach (var (key, sev) in expected)
+        {
+            Assert.False(string.IsNullOrEmpty(Messages.Template(key)));
+            Assert.Equal(sev, Messages.SeverityOf(key));
+        }
+        Assert.Equal("Milieu couldn't read the game's data for the Plush Cushion.",
+                     StatusMessage.Of(MessageKey.SyncGameDataUnreadable, ("item", "Plush Cushion")).Text);
+        Assert.Equal("Penumbra refused the synced backdrop (code 11).", StatusMessage.Of(MessageKey.SyncRefused, ("code", 11)).Text);
+        Assert.Equal("The Mad Bird Ring has no free effect slot for the backdrop.", StatusMessage.Of(MessageKey.SyncNoFreeVfxId, ("item", "Mad Bird Ring")).Text);
+        Assert.StartsWith("pano.jpg isn't shared yet.", StatusMessage.Of(MessageKey.SyncUploadNotice, ("file", "pano.jpg")).Text);
+    }
+
+    [Fact] // [AC-synced-delivery-1]
+    public void DeliveryChange_AppliedOnlyWhenThePostedActionRuns()
+    {
+        var c = Cfg();
+        var calls = new System.Collections.Generic.List<string>();
+        var action = BackdropViewModel.DeliveryChange(c, Milieu.Sync.DeliveryMode.MadBirdRing, () => calls.Add("save"), () => calls.Add("apply"));
+        Assert.Equal(Milieu.Sync.DeliveryMode.Local, c.Delivery);   // nothing changes during draw
+        Assert.Empty(calls);
+        action();
+        Assert.Equal(Milieu.Sync.DeliveryMode.MadBirdRing, c.Delivery);
+        Assert.Equal(["save", "apply"], calls);
+    }
 }

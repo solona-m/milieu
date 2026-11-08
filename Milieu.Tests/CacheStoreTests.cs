@@ -66,4 +66,16 @@ public class CacheStoreTests
         Assert.Matches("^vfx/milieu/[0-9a-f]{16}/sky\\.atex$", CacheStore.TextureGamePath(k));
         Assert.Matches("^vfx/milieu/[0-9a-f]{16}/dome\\.avfx$", CacheStore.AvfxGamePath(CacheStore.AvfxKey([1, 2])));
     }
+
+    [Fact] // [EDGE-synced-delivery-22]
+    public void WriteAtomic_TokenCancelledBeforeMove_NoFinalFile()
+    {
+        using var dir = new TempDir();
+        var store = new CacheStore(dir.File("c"));
+        var target = System.IO.Path.Combine(store.Root, "sky_x.atex");
+        using var cts = new System.Threading.CancellationTokenSource();
+        Assert.ThrowsAny<OperationCanceledException>(() => store.WriteAtomic(target, s => { s.Write(new byte[10]); cts.Cancel(); }, cts.Token));
+        Assert.False(File.Exists(target));
+        Assert.Empty(Directory.EnumerateFiles(store.Root));
+    }
 }

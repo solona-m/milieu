@@ -23,15 +23,18 @@ public sealed class MainWindow : Window, IDisposable
     private readonly Action save;
     private readonly SceneGridViewModel grid;
     private readonly ThumbnailCache thumbs;
+    private readonly Func<bool> syncedAvailable;
     private readonly FileDialogManager files = new();
 
     private static readonly Vector4 Red = new(1f, 0.4f, 0.4f, 1f);
     private static readonly Vector4 Yellow = new(1f, 0.85f, 0.3f, 1f);
     private static readonly Vector2 TileSize = new(176, 88);
 
-    public MainWindow(BackdropController controller, Configuration config, Action save, SceneGridViewModel grid, ThumbnailCache thumbs)
+    public MainWindow(BackdropController controller, Configuration config, Action save, SceneGridViewModel grid, ThumbnailCache thumbs,
+                      Func<bool>? syncedAvailable = null)
         : base($"Milieu (build {Plugin.BuildNumber})###MilieuMain")
     {
+        this.syncedAvailable = syncedAvailable ?? (() => false);
         this.controller = controller;
         this.config = config;
         this.save = save;
@@ -49,7 +52,7 @@ public sealed class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
-        var vm = new BackdropViewModel(controller.Status, controller.UiBlocker, config);
+        var vm = new BackdropViewModel(controller.Status, controller.UiBlocker, config, syncedAvailable());
         grid.OnDraw();
         DrawStatus(vm);
         DrawGrid();
@@ -133,6 +136,24 @@ public sealed class MainWindow : Window, IDisposable
             controller.Post(controller.ApplyRebuild);   // one swap at the new mode's settings and placement
         }
         if (vm.ShowRoomHint) ImGui.TextColored(Yellow, BackdropViewModel.RoomHint);
+        DrawDelivery(vm);
+    }
+
+    /// <summary>"Visible to": only on testing and dev builds (synced delivery is experimental and hidden on stable).</summary>
+    private void DrawDelivery(BackdropViewModel vm)
+    {
+        if (!vm.SyncedAvailable) return;
+        ImGui.TextUnformatted("Visible to:");
+        var current = (int)config.Delivery;
+        var changed = false;
+        var labels = vm.DeliveryLabels;
+        for (var i = 0; i < labels.Count; i++)
+        {
+            changed |= ImGui.RadioButton(labels[i], ref current, i);
+            if (BackdropViewModel.DeliveryTooltip((Sync.DeliveryMode)i) is { } tip && ImGui.IsItemHovered()) ImGui.SetTooltip(tip);
+        }
+        if (changed) controller.Post(BackdropViewModel.DeliveryChange(config, (Sync.DeliveryMode)current, save, controller.ApplyDelivery));
+        if (vm.DeliveryHint.Length > 0) ImGui.TextDisabled(vm.DeliveryHint);
     }
 
     private void DrawSettings(BackdropViewModel vm)
@@ -199,6 +220,7 @@ public sealed class MainWindow : Window, IDisposable
 
         ImGui.Separator();
         using (ImRaii.Disabled(!vm.CanRecenter)) if (ImGui.Button("Re-centre on me")) controller.Post(controller.Recenter);
+        if (vm.RecenterTooltip is { } recenterTip && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip(recenterTip);
         if (grid.ShowCreditsLink)
         {
             ImGui.SameLine();

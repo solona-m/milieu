@@ -30,9 +30,10 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IGameInteropProvider Hooks { get; private set; } = null!;
     [PluginService] public static ISigScanner SigScanner { get; private set; } = null!;
     [PluginService] public static ITextureProvider TextureProvider { get; private set; } = null!;
+    [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 12;
+    public const int BuildNumber = 15;
 
     private const string CommandName = "/milieu";
 
@@ -53,7 +54,7 @@ public sealed class Plugin : IDalamudPlugin
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var configDir = PluginInterface.GetPluginConfigDirectory();
         config.Migrate(configDir);
-        config.Clamp();
+        config.Clamp(SyncedAvailable());
         var cache = new CacheStore(Path.Combine(configDir, "cache"));
         var thumbStore = new ThumbStore(Path.Combine(configDir, "cache", "thumbs"));
         try { cache.Cleanup(new HashSet<string>()); }   // nothing is shown at startup, so nothing needs keeping
@@ -64,7 +65,8 @@ public sealed class Plugin : IDalamudPlugin
         downloads = new DefaultBackdropsDownloadService(log, configDir);
         controller = new BackdropController(vfx, penumbra, new GameState(ClientState, Condition, ObjectTable),
                                             new BackdropPreparer(cache, new Bc7(), downloads, thumbStore), cache, config, log,
-                                            bundled: downloads);
+                                            bundled: downloads, save: Save, syncedAvailable: SyncedAvailable,
+                                            sync: penumbra, gameData: new GameData(DataManager));
         var userImages = config.UserImages.ToArray();
         Task.Run(() =>
         {
@@ -82,7 +84,7 @@ public sealed class Plugin : IDalamudPlugin
         Framework.RunOnFrameworkThread(controller.OnPenumbraInitialized);   // clear a temp mod an earlier session left
 
         grid = new SceneGridViewModel(config, Save, controller.Post, controller, downloads, File.Exists);
-        mainWindow = new MainWindow(controller, config, Save, grid, new ThumbnailCache(TextureProvider, thumbStore));
+        mainWindow = new MainWindow(controller, config, Save, grid, new ThumbnailCache(TextureProvider, thumbStore), SyncedAvailable);
         windows.AddWindow(mainWindow);
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -104,6 +106,12 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private void Save() => PluginInterface.SavePluginConfig(config);
+
+    /// <summary>
+    /// Synced delivery (experimental, never tested in game yet) is offered on testing and dev builds only: on stable, PSync
+    /// pairs would receive untested VFX bytes without having opted in (docs/adr/0006). One line to enable it for stable.
+    /// </summary>
+    private static bool SyncedAvailable() => PluginInterface.IsTesting || PluginInterface.IsDev;
 
     private void OnUpdate(IFramework _) => controller.Tick();
 
