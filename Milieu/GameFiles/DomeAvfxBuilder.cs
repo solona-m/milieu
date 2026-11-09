@@ -50,7 +50,8 @@ internal static class DomeAvfxBuilder
     /// scene lighting to synced viewers. 0 off (the default; output byte-identical), 1 point light set up like the venue's (with shadows;
     /// red, A 1 and eye-height placement are ours),
     /// 2 the same with 10x the range and 3x the brightness (so a dark mode 1 isn't mistaken for "VFX lights don't work"),
-    /// 3 directional light. Set only by "/milieu vfxlight"; not saved.
+    /// 3 directional light set up like the game's own world-lighting directional lights (see <see cref="Effector"/>), 4 the same
+    /// but red, brighter and tilted so its shadows fall clearly to one side. Set only by "/milieu vfxlight"; not saved.
     /// </summary>
     public static int TestLightMode;
 
@@ -62,11 +63,13 @@ internal static class DomeAvfxBuilder
         var mesh = SphereMesh.Build(floorY: p.FloorY);
         var w = new AvfxChunkWriter();
         w.Begin("AVFX");
-        var light = p.TestLight is >= 1 and <= 3;
-        Root(w, light);
+        var light = IsLight(p.TestLight);
+        var directional = IsDirectional(p.TestLight);
+        Root(w, light, directional);
         Scheduler(w);
-        Timeline(w);
-        Emitter(w, p, light);
+        Timeline(w, directional);
+        Emitter(w, p, light && !directional);
+        if (directional) LightEmitter(w);
         Particle(w, p);
         if (light) Effector(w, p.TestLight);
         w.CString("Tex", p.TextureGamePath);
@@ -76,6 +79,11 @@ internal static class DomeAvfxBuilder
         SelfCheck(bytes, p, mesh);
         return bytes;
     }
+
+    private static bool IsLight(int mode) => mode is >= 1 and <= 4;
+
+    /// <summary>Modes 3 and 4: a directional light on its own particle-less emitter (the game's pattern), not the dome's.</summary>
+    private static bool IsDirectional(int mode) => mode is 3 or 4;
 
     private static void Validate(DomeAvfxParams p)
     {
@@ -89,7 +97,7 @@ internal static class DomeAvfxBuilder
                 throw new ArgumentOutOfRangeException(nameof(p), $"{name} must be finite and positive (got {v}).");
     }
 
-    private static void Root(AvfxChunkWriter w, bool light)
+    private static void Root(AvfxChunkWriter w, bool light, bool directional)
     {
         w.Int("Ver", Version).Int("bDFP", 1).Int("bFG", 0).Int("bTS", 0).Int("bASH", 0)
          // Deliberate difference: the reference culls with a 25-unit clip box (bCBC/bCul 1), which would cull a dome
@@ -103,7 +111,7 @@ internal static class DomeAvfxBuilder
          .Int("AFXe", 0).Int("AFXi", Pi).Int("AFXo", Pi).Int("AFYe", 0).Int("AFYi", Pi).Int("AFYo", Pi)
          .Int("AFZe", 0).Int("AFZi", Pi).Int("AFZo", Pi)
          .Int("bGFE", 0).Float("GFIM", 1).Int("bLTS", 0).Int("bAGS", 0).Int("APri", 5).Int("DPri", 5)
-         .Int("ScCn", 1).Int("TlCn", 1).Int("EmCn", 1).Int("PrCn", 1).Int("EfCn", light ? 1 : 0).Int("BdCn", 0)
+         .Int("ScCn", 1).Int("TlCn", 1).Int("EmCn", directional ? 2 : 1).Int("PrCn", 1).Int("EfCn", light ? 1 : 0).Int("BdCn", 0)
          .Int("TxCn", 1).Int("MdCn", 1);
     }
 
@@ -130,11 +138,48 @@ internal static class DomeAvfxBuilder
     private static void SchedulerItem(AvfxChunkWriter w, int timeline) =>
         w.Int("bEna", 1).Int("StTm", 0).Int("TlNo", timeline);
 
-    private static void Timeline(AvfxChunkWriter w)
+    /// <summary>
+    /// One item for the dome emitter; with a directional test light a second item runs the light's emitter. Item chunk i holds
+    /// items[0..i], as VFXEditor's AvfxTimeline writes them (and as the game's own files with several items do).
+    /// </summary>
+    private static void Timeline(AvfxChunkWriter w, bool directional)
     {
-        w.Begin("TmLn").Int("LpSt", 0).Int("LpEd", 0).Int("BnNo", -1).Int("TICn", 1).Int("CpCn", 0);
-        w.Begin("Item").Int("bEna", 1).Int("StTm", 0).Int("EdTm", -1).Int("BdNo", -1).Int("EfNo", -1).Int("EmNo", 0)
-         .Int("Plfm", 0).End();
+        w.Begin("TmLn").Int("LpSt", 0).Int("LpEd", 0).Int("BnNo", -1).Int("TICn", directional ? 2 : 1).Int("CpCn", 0);
+        w.Begin("Item");
+        TimelineItem(w, 0);
+        w.End();
+        if (directional)
+        {
+            w.Begin("Item");
+            TimelineItem(w, 0);
+            TimelineItem(w, 1);
+            w.End();
+        }
+        w.End();
+    }
+
+    private static void TimelineItem(AvfxChunkWriter w, int emitter) =>
+        w.Int("bEna", 1).Int("StTm", 0).Int("EdTm", -1).Int("BdNo", -1).Int("EfNo", -1).Int("EmNo", emitter).Int("Plfm", 0);
+
+    /// <summary>
+    /// The directional light's own emitter, copied from the game's world-lighting directional lights (e.g. the emitter carrying
+    /// the light in game file hash 2965227F157E314F): a plain emitter with no particles (PrCn 0) and no child emitters, linked to
+    /// effector 0. It has no ItPr (nothing to emit), so it follows the VFX root.
+    /// </summary>
+    private static void LightEmitter(AvfxChunkWriter w)
+    {
+        w.Begin("Emit").Int("SdNo", -1).Int("LpSt", 0).Int("LpEd", 0).Int("ClCn", 30).Int("EfNo", 0).Byte("bAD", 0)
+         .Int("EVT", 0).Int("RBDT", 2).Int("CCOT", 0).Int("ROT", 2).Int("PrCn", 0).Int("EmCn", 0);
+        w.Begin("Life").Float("Val", 60).Float("ValR", 0).Int("Type", 0).End();
+        Curve(w, "CrC", 1);
+        Curve(w, "CrI", 30);
+        Curve(w, "ARs", 1);
+        w.Begin("Col");
+        CurveRgb(w, "RGB", 1, 1, 1);
+        w.End();
+        Axes(w, "Pos", 0);
+        Axes(w, "Rot", 0);
+        Axes(w, "Scl", 0);
         w.End();
     }
 
@@ -144,11 +189,15 @@ internal static class DomeAvfxBuilder
     /// timeline item; header RoOT 2, bAOV 1, bAGm 1; colour as RGB + A with no Bri key; DstS 1; Attn 1; shadows with near 0.0001
     /// and far 20 (the near/far range Pickles says shadows depend on). Red so it stands out, offset 2.5 units ahead of and 1.5
     /// above the emitter (the dome origin, at eye height). bAOV 1 as the venue: the dome particle itself is unlit (bLgt 0).
+    /// Directional (modes 3, 4): set up like the 19 of the game's 506 directional effectors that light the world (bAGm 1; the
+    /// rest light only their own effect): bAOV 0, black ambient, colour as RGB + Bri (the point lights' A is not used), Pow 1,
+    /// on its own particle-less emitter (<see cref="LightEmitter"/>). Mode 3 copies the most common one exactly (warm
+    /// 1, 0.714, 0.388, Bri 3, Rot X 90 degrees); mode 4 is red, Bri 10, tilted.
     /// </summary>
     private static void Effector(AvfxChunkWriter w, int mode)
     {
-        var point = mode != 3;
-        w.Begin("Efct").Int("EfVT", point ? 0 : 1).Int("RoOT", 2).Int("CCOT", 0).Int("bAOV", 1).Int("bAGm", 1)
+        var point = !IsDirectional(mode);
+        w.Begin("Efct").Int("EfVT", point ? 0 : 1).Int("RoOT", 2).Int("CCOT", 0).Int("bAOV", point ? 1 : 0).Int("bAGm", 1)
          .Int("LpSt", 0).Int("LpEd", 0);
         w.Begin("Data");
         if (point)
@@ -173,13 +222,18 @@ internal static class DomeAvfxBuilder
             CurveRgb(w, "RGB", 0f, 0f, 0f);
             w.End();
             w.Begin("Col");
-            CurveRgb(w, "RGB", 1f, 0.15f, 0.15f);
-            Curve(w, "A", 1f);
+            if (mode == 3) CurveRgb(w, "RGB", 1f, 0.714f, 0.388f);
+            else CurveRgb(w, "RGB", 1f, 0.15f, 0.15f);
+            Curve(w, "Bri", mode == 3 ? 3f : 10f);
             w.End();
             Curve(w, "Pow", 1f);
             w.Begin("Rot").Int("ACT", 0).Int("ACTR", 0);
-            Curve(w, "X", -0.8f);
-            Curve(w, "Y", 0.6f);
+            if (mode == 3) Curve(w, "X", 1.5707964f);
+            else
+            {
+                Curve(w, "X", 0.8f);
+                Curve(w, "Y", 0.6f);
+            }
             w.End();
         }
         w.End();
@@ -324,11 +378,13 @@ internal static class DomeAvfxBuilder
 
         Expect(root.Need("ScCn").AsInt() == 1 && root.All("Schd").Count() == 1, "one scheduler");
         Expect(root.Need("TlCn").AsInt() == 1 && root.All("TmLn").Count() == 1, "one timeline");
-        Expect(root.Need("EmCn").AsInt() == 1 && root.All("Emit").Count() == 1, "one emitter");
+        var lights = IsLight(p.TestLight) ? 1 : 0;
+        var directional = IsDirectional(p.TestLight);
+        var emitters = directional ? 2 : 1;
+        Expect(root.Need("EmCn").AsInt() == emitters && root.All("Emit").Count() == emitters, "emitter count");
         Expect(root.Need("PrCn").AsInt() == 1 && root.All("Ptcl").Count() == 1, "one particle");
         Expect(root.Need("TxCn").AsInt() == 1 && root.All("Tex").Count() == 1, "one texture");
         Expect(root.Need("MdCn").AsInt() == 1 && root.All("Modl").Count() == 1, "one model");
-        var lights = p.TestLight is >= 1 and <= 3 ? 1 : 0;
         Expect(root.Need("EfCn").AsInt() == lights && root.All("Efct").Count() == lights && root.Need("BdCn").AsInt() == 0,
                "effectors match, no binders");
 
@@ -336,9 +392,17 @@ internal static class DomeAvfxBuilder
         Expect(schd.Need("Item").Children.Single(c => c.Tag == "TlNo").AsInt() == 0, "scheduler item → timeline 0");
         Expect(schd.All("Trgr").Count() == TriggerCount, "12 triggers");
         var tmln = root.Need("TmLn");
-        Expect(tmln.Need("TICn").AsInt() == 1 && tmln.All("Item").Count() == 1 && tmln.Need("Item").Need("EmNo").AsInt() == 0
-               && tmln.Need("Item").Need("EfNo").AsInt() == -1, "one timeline item → emitter 0, no effector");
-        Expect(root.Need("Emit").Need("EfNo").AsInt() == (lights == 1 ? 0 : -1), "emitter → effector link");
+        var lastItems = tmln.All("Item").Last().Children;
+        var emNos = lastItems.Where(c => c.Tag == "EmNo").Select(c => c.AsInt()).ToArray();
+        var itemEfNos = lastItems.Where(c => c.Tag == "EfNo").Select(c => c.AsInt()).ToArray();
+        Expect(tmln.Need("TICn").AsInt() == emitters && tmln.All("Item").Count() == emitters
+               && tmln.Need("Item").Need("EmNo").AsInt() == 0 && tmln.Need("Item").Children.Count(c => c.Tag == "EmNo") == 1
+               && emNos.SequenceEqual(Enumerable.Range(0, emitters)) && itemEfNos.All(e => e == -1),
+               "timeline items → emitters in order, no effector");
+        var emits = root.All("Emit").ToArray();
+        Expect(emits[0].Need("EfNo").AsInt() == (lights == 1 && !directional ? 0 : -1), "emitter → effector link");
+        Expect(!directional || (emits[1].Need("EfNo").AsInt() == 0 && emits[1].Need("PrCn").AsInt() == 0 && emits[1].Child("ItPr") == null),
+               "light emitter → effector 0, no particles");
         var itpr = root.Need("Emit").Need("ItPr");
         Expect(itpr.Need("TgtB").AsInt() == 0, "emitter → particle 0");
         var attach = p.AttachToOwner ? SyncedAttach : LocalAttach;
