@@ -107,6 +107,55 @@ public class LightingGoldenTests
             + "light rigs (PrepareBackdrops rigs) and capture this golden again.");
     }
 
+    /// <summary>
+    /// The fixed 8-bit source of the estimator golden (integer arithmetic only, 1024x512): a noisy sky over dark ground,
+    /// a white lamp with a warm glow, a yellow core (the warm-core clip branch) with its own glow, and a small speck.
+    /// </summary>
+    internal static byte[] EstimateGoldenSource(out int w, out int h)
+    {
+        w = 1024; h = 512;
+        var px = new byte[w * h * 3];
+        for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+        {
+            var o = (y * w + x) * 3;
+            var n = (int)Noise(x, y, 0, 11u);   // 0..9
+            if (y < h / 2) { px[o] = (byte)(80 + n); px[o + 1] = (byte)(120 + n); px[o + 2] = (byte)(200 + n); }
+            else { px[o] = (byte)(50 + n); px[o + 1] = (byte)(40 + n); px[o + 2] = (byte)(30 + n); }
+        }
+        void Disc(int cx, int cy, int r2, byte r, byte g, byte b)
+        {
+            for (var y = cy - 40; y <= cy + 40; y++)
+            for (var x = cx - 40; x <= cx + 40; x++)
+            {
+                if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > r2) continue;
+                var o = (y * 1024 + ((x + 1024) % 1024)) * 3;
+                px[o] = r; px[o + 1] = g; px[o + 2] = b;
+            }
+        }
+        Disc(300, 150, 144, 255, 190, 120);   // glow
+        Disc(300, 150, 9, 255, 255, 255);     // white lamp
+        Disc(700, 200, 100, 255, 200, 110);   // glow
+        Disc(700, 200, 4, 255, 254, 185);     // yellow core
+        Disc(900, 100, 0, 255, 255, 255);     // a single-pixel speck
+        return px;
+    }
+
+    private const string EstimateGoldenJson =
+        """
+        {"version":2,"estimated":2,"key":{"s":0.29345703,"t":0.29396018,"r":1.3767703,"g":0.9194592,"b":0.6883851},"lamps":[{"s":0.68408203,"t":0.39160424,"r":0.69489634,"g":0.4990029,"b":0.34744817}],"regions":[{"s":0.25072125,"t":0.1682944,"r":0.17136969,"g":0.36895105,"b":1.0865415},{"s":0.74998695,"t":0.16692786,"r":0.16168451,"g":0.36598167,"b":1.09236},{"s":0.7490752,"t":0.47458154,"r":0.24698937,"g":0.357289,"b":0.8621615},{"s":0.2500115,"t":0.47587448,"r":0.23904935,"g":0.35443312,"b":0.867668}],"total":{"r":0.81909287,"g":1.4466548,"b":3.9087312}}
+        """;
+
+    [Fact] // [EDGE-ldr-light-estimate-35]
+    public void EstimateGolden_ValuesWithinTolerance()
+    {
+        var px = EstimateGoldenSource(out var w, out var h);
+        var actual = LightRigStore.Serialise(LdrLightEstimator.Analyse(RadianceProbe.BuildSrgb8(px, w, h)).Rig);
+        AssertJsonClose(EstimateGoldenJson, actual,
+            "LdrLightEstimator's output changed. If the change is intended, bump LdrLightEstimator.Version, regenerate the bundled "
+            + "light rigs (PrepareBackdrops rigs) and capture this golden again.");
+    }
+
     /// <summary>Same structure, every number within 1e-6 relative (absolute floor 1e-9).</summary>
     internal static void AssertJsonClose(string expected, string actual, string message)
     {
