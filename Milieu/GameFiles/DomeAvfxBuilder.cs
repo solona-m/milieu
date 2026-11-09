@@ -47,7 +47,8 @@ internal static class DomeAvfxBuilder
 
     /// <summary>
     /// Experiment (testing builds): a test light baked into the next dome VFX, to find out whether VFX effector lights can carry
-    /// scene lighting to synced viewers. 0 off (the default; output byte-identical), 1 point light, 2 point light with shadows,
+    /// scene lighting to synced viewers. 0 off (the default; output byte-identical), 1 point light as the venue's (with shadows),
+    /// 2 the same with 10x the range and 3x the brightness (so a dark mode 1 isn't mistaken for "VFX lights don't work"),
     /// 3 directional light. Set only by "/milieu vfxlight"; not saved.
     /// </summary>
     public static int TestLightMode;
@@ -140,8 +141,8 @@ internal static class DomeAvfxBuilder
     /// The experiment's one effector light (VFXEditor Effector/AvfxEffector.cs + Data/AvfxEffectorData{PointLight,DirectionalLight}.cs),
     /// set up like the lights in the "Pickles Venue" ve0002.avfx (effectors 0 and 1): linked from the emitter (Emit EfNo), not a
     /// timeline item; header RoOT 2, bAOV 1, bAGm 1; colour as RGB + A with no Bri key; DstS 1; Attn 1; shadows with near 0.0001
-    /// and far 20 (the near/far range Pickles says shadows depend on). A strong red light so it is unmistakable in game, offset
-    /// 2.5 units ahead of and 1.5 above the emitter (the dome origin, at eye height).
+    /// and far 20 (the near/far range Pickles says shadows depend on). Red so it stands out, offset 2.5 units ahead of and 1.5
+    /// above the emitter (the dome origin, at eye height). bAOV 1 as the venue: the dome particle itself is unlit (bLgt 0).
     /// </summary>
     private static void Effector(AvfxChunkWriter w, int mode)
     {
@@ -153,17 +154,16 @@ internal static class DomeAvfxBuilder
         {
             w.Begin("Col");
             CurveRgb(w, "RGB", 1f, 0.15f, 0.15f);
-            Curve(w, "A", 1f);
+            Curve(w, "A", mode == 2 ? 3f : 1f);
             w.End();
-            Curve(w, "DstS", 1f);
+            Curve(w, "DstS", mode == 2 ? 10f : 1f);
             Axes(w, "Rot", 0);
             w.Begin("Pos").Int("ACT", 0).Int("ACTR", 0);
             Curve(w, "X", 0f);
             Curve(w, "Y", 1.5f);
             Curve(w, "Z", 2.5f);
             w.End();
-            var shadow = mode == 2 ? 1 : 0;
-            w.Int("Attn", 1).Int("bSdw", shadow).Int("bChS", shadow).Int("bMpS", shadow).Int("bMvS", shadow)
+            w.Int("Attn", 1).Int("bSdw", 1).Int("bChS", 1).Int("bMpS", 1).Int("bMvS", 1)
              .Float("SCDN", 0.0001f).Float("SCDF", 20f);
         }
         else

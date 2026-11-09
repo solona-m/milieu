@@ -136,10 +136,10 @@ public sealed class Plugin : IDalamudPlugin
         {
             case int mode:
                 GameFiles.DomeAvfxBuilder.TestLightMode = mode;
-                ChatGui.Print($"[Milieu] Test VFX light {mode} ({mode switch { 1 => "point", 2 => "point + shadows", 3 => "directional", _ => "off" }}). Pick None, then your scene again.");
+                ChatGui.Print($"[Milieu] Test VFX light {mode} ({mode switch { 1 => "point, as the venue", 2 => "point, long range + bright", 3 => "directional", _ => "off" }}). Pick None, then your scene again.");
                 return;
             case null when IsVfxLightCommand(args):
-                ChatGui.Print("[Milieu] Usage: /milieu vfxlight 0|1|2|3 (0 off, 1 point, 2 point + shadows, 3 directional).");
+                ChatGui.Print("[Milieu] Usage: /milieu vfxlight 0|1|2|3 (0 off, 1 point as the venue, 2 point long range + bright, 3 directional).");
                 return;
         }
         if (ParseCommand(args) == CommandAction.Hide) grid.SelectNone();
