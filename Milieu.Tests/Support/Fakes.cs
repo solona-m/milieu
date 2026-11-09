@@ -200,6 +200,16 @@ public sealed class FakePreparer(CacheStore cache) : IBackdropPreparer
         return Task.FromResult(Make(cache, request.ImagePath));
     }
 
+    /// <summary>Scene lighting's rig loader: null (no rig) unless a test sets <see cref="Lights"/>.</summary>
+    public Func<string, CancellationToken, Task<Milieu.Lighting.LightRig?>>? Lights;
+    public int LightCalls;
+
+    public Task<Milieu.Lighting.LightRig?> PrepareLightsAsync(string imagePath, CancellationToken ct)
+    {
+        LightCalls++;
+        return Lights?.Invoke(imagePath, ct) ?? Task.FromResult<Milieu.Lighting.LightRig?>(null);
+    }
+
     public static PreparedTexture Make(CacheStore cache, string path, string key = "00112233445566ff")
     {
         System.IO.Directory.CreateDirectory(cache.Root);

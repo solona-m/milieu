@@ -30,6 +30,16 @@ public sealed class KeyedPreparer(CacheStore cache) : IBackdropPreparer
         return Task.FromResult(Make(Key));
     }
 
+    /// <summary>Scene lighting's rig loader: null (no rig) unless a test sets <see cref="Lights"/>.</summary>
+    public Func<string, CancellationToken, Task<Milieu.Lighting.LightRig?>>? Lights;
+    public int LightCalls;
+
+    public Task<Milieu.Lighting.LightRig?> PrepareLightsAsync(string imagePath, CancellationToken ct)
+    {
+        LightCalls++;
+        return Lights?.Invoke(imagePath, ct) ?? Task.FromResult<Milieu.Lighting.LightRig?>(null);
+    }
+
     public PreparedTexture Make(string key, int length = 64)
     {
         Directory.CreateDirectory(cache.Root);
