@@ -137,8 +137,8 @@ public sealed class BackdropController : Gui.IGridController
 
     /// <summary>
     /// The dome as drawn, for scene lighting: the image of the texture actually shown (never a pending or failed request)
-    /// and the build values and yaw of the drawn VFX; null when no dome is drawn (local VFX alive, or a committed synced
-    /// registration). Framework thread only.
+    /// and the build values and yaw of the drawn VFX; null when no dome is drawn (drawn = a live local VFX, or a committed
+    /// synced registration). Framework thread only.
     /// </summary>
     public LitBackdrop? Lit
     {
