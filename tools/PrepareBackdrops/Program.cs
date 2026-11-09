@@ -223,5 +223,5 @@ internal static class Program
         + string.Concat(rig.Lamps.Select(l => " [" + Where(l) + "]"))
         + FormattableString.Invariant($"; components {s.Components}, kept {s.Kept}; rejected speck {s.Specks}, broad {s.Broad}, share {s.RejectedShare}, ")
         + FormattableString.Invariant($"outlier {s.RejectedOutlier}, halo {s.RejectedHalo}; fallback {(s.OutlierFallback ? "yes" : "no")}; ")
-        + FormattableString.Invariant($"saturated {(s.Saturated ? "yes" : "no")}; clip share {s.ClipShare:0.0000}");
+        + FormattableString.Invariant($"saturated {(s.Saturated ? "yes" : "no")}; clip share {s.ClipShare:0.0000}, strict-white share {s.StrictWhiteShare:0.0000}");
 }

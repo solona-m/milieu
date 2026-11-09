@@ -13,20 +13,21 @@ namespace Milieu.Lighting;
 /// <param name="RejectedOutlier">(e) under <see cref="LdrLightEstimator.OutlierFactor"/> x the median point blob (0 when the fallback fired).</param>
 /// <param name="OutlierFallback">(e) would have rejected every blob passing (d), and at most <see cref="LdrLightEstimator.FallbackMaxBlobs"/> did: (e) skipped.</param>
 /// <param name="RejectedHalo">(f) no glow around it.</param>
-/// <param name="Saturated">(c) more than <see cref="LdrLightEstimator.MaxClipShare"/> of the covered sphere clipped: no point sources.</param>
+/// <param name="Saturated">(c) more than <see cref="LdrLightEstimator.MaxClipShare"/> of the covered sphere strict-white clipped: no point sources.</param>
 /// <param name="Kept">Blobs passing every filter (the top 1 + MaxFills of them are used).</param>
-/// <param name="ClipShare">Near-white (strict) clipped Ω over covered Ω, what gate (c) uses (<see cref="ClipMask.WhiteShare"/>).</param>
+/// <param name="ClipShare">Clipped Ω (both branches of <see cref="LdrLightEstimator.IsClipped"/>) over covered Ω.</param>
+/// <param name="StrictWhiteShare">Strict-white clipped Ω over covered Ω: what gate (c) uses (<see cref="ClipMask.StrictWhiteShare"/>).</param>
 public sealed record EstimateStats(int Components, int Specks, int Broad, int RejectedShare, int RejectedOutlier, bool OutlierFallback,
-                                   int RejectedHalo, bool Saturated, int Kept, double ClipShare);
+                                   int RejectedHalo, bool Saturated, int Kept, double ClipShare, double StrictWhiteShare);
 
 /// <summary>What became of one component (diagnostics and tests).</summary>
-public enum BlobVerdict { Speck, Broad, Saturated, Share, Outlier, Halo, Key, Lamp, Unused }
+internal enum BlobVerdict { Speck, Broad, Saturated, Share, Outlier, Halo, Key, Lamp, Unused }
 
 /// <summary>One seeded component of the clip mask: its direction (centroid), clipped Ω, radius and fate.</summary>
-public sealed record EstimatedBlob(Vector3 Direction, double SolidAngle, double RadiusDegrees, int FirstCell, BlobVerdict Verdict);
+internal sealed record EstimatedBlob(Vector3 Direction, double SolidAngle, double RadiusDegrees, int FirstCell, BlobVerdict Verdict);
 
 /// <summary>The rig, the counts and every component (in labelling order).</summary>
-public sealed record EstimateResult(LightRig Rig, EstimateStats Stats, IReadOnlyList<EstimatedBlob> Blobs);
+internal sealed record EstimateResult(LightRig Rig, EstimateStats Stats, IReadOnlyList<EstimatedBlob> Blobs);
 
 /// <summary>
 /// Estimates scene lighting from an 8-bit image (docs/adr/0010; deterministic, pure). LDR clips every bright source,
@@ -68,10 +69,10 @@ public static class LdrLightEstimator
     /// wall in full sun is (a documented limit), and a warm lamp core with G under 250 is missed.
     /// </summary>
     public static bool IsClipped(byte r, byte g, byte b) =>
-        IsNearWhite(r, g, b) || (r >= WarmCoreMax && g >= WarmCoreMax && b >= WarmCoreMinFloor);
+        IsStrictWhite(r, g, b) || (r >= WarmCoreMax && g >= WarmCoreMax && b >= WarmCoreMinFloor);
 
     /// <summary>The strict (white) clip: the only one the saturated-image gate (c) counts.</summary>
-    public static bool IsNearWhite(byte r, byte g, byte b) => r >= ClipLevel && g >= ClipLevel && b >= ClipLevel;
+    public static bool IsStrictWhite(byte r, byte g, byte b) => r >= ClipLevel && g >= ClipLevel && b >= ClipLevel;
 
     public const float SeedFraction = 0.25f;
     public const float GrowFraction = 0.1f;
@@ -93,7 +94,6 @@ public static class LdrLightEstimator
     private const int MH = ClipMask.Height;
     private const int PW = RadianceProbe.Width;
     private const int PH = RadianceProbe.Height;
-    private const int CellsPerTexel = MW / PW;
 
     /// <summary>Half a mask cell's diagonal, in degrees (cells are 180/1024° square at the equator).</summary>
     private static readonly double HalfCellDiagonalDegrees = 0.5 * Math.Sqrt(2) * 180.0 / MH;
@@ -115,7 +115,7 @@ public static class LdrLightEstimator
         public Vector3 Colour = Vector3.One;
     }
 
-    public static EstimateResult AnalyseDetailed(RadianceProbe probe)
+    internal static EstimateResult AnalyseDetailed(RadianceProbe probe)
     {
         var rgb = probe.Rgb;
         var mask = probe.Clip;
@@ -141,10 +141,11 @@ public static class LdrLightEstimator
 
         double clipOmega = 0, coveredOmega = 0;
         var blobs = mask == null ? new List<Blob>() : Label(mask, out clipOmega, out coveredOmega);
-        // (c) counts only the strict near-white clips (ClipMask.WhiteShare), never the warm branch: a pale or cream sky
-        // must not switch a real sun off.
-        var clipShare = mask?.WhiteShare ?? 0;
-        var saturated = clipShare > MaxClipShare;
+        var clipShare = coveredOmega > 0 ? clipOmega / coveredOmega : 0;
+        // (c) counts only the strict-white clips (ClipMask.StrictWhiteShare), never the warm branch: a cream sky must not
+        // switch a real sun off.
+        var strictShare = mask?.StrictWhiteShare ?? 0;
+        var saturated = strictShare > MaxClipShare;
 
         // (a), (b), (c)
         var points = new List<Blob>();
@@ -194,7 +195,7 @@ public static class LdrLightEstimator
         HashSet<int> TexelsOf(Blob b)
         {
             var set = new HashSet<int>();
-            foreach (var c in b.Cells) set.Add((c / MW / CellsPerTexel) * PW + (c % MW) / CellsPerTexel);
+            foreach (var c in b.Cells) set.Add(TexelOf(c, mask!, probe));
             return set;
         }
 
@@ -232,7 +233,7 @@ public static class LdrLightEstimator
         var total = regions.Aggregate(Vector3.Zero, (a, r) => a + r.Energy);
         var rig = new LightRig(LightExtractor.Version, key, regions, total, lamps.ToArray(), Version);
         var stats = new EstimateStats(blobs.Count, specks, broad, rejectedShare, rejectedOutlier, fallback, rejectedHalo, saturated,
-                                      kept.Count, clipShare);
+                                      kept.Count, clipShare, strictShare);
         return new EstimateResult(rig, stats,
                                   blobs.Select(b => new EstimatedBlob(b.Direction, b.Omega, b.Radius, b.FirstCell, b.Verdict)).ToList());
     }
@@ -269,13 +270,33 @@ public static class LdrLightEstimator
         return (meanY, CapSaturation(c / lum));
     }
 
-    /// <summary>Blends a luminance-1 colour toward white until its saturation ((max − min)/max) is at most 0.5.</summary>
+    /// <summary>
+    /// The probe texel holding a mask cell. Columns map 8:1; rows map through each layout's band (offset and scale), so a
+    /// band panorama's edge mask rows land inside the probe's covered rows (identical to row / 8 for a full frame).
+    /// </summary>
+    internal static int TexelOf(int cell, ClipMask mask, RadianceProbe probe)
+    {
+        int cy = cell / MW, cx = cell % MW;
+        var px = cx * PW / MW;
+        var mRows = Math.Max(1, mask.CoveredRows);
+        var pRows = Math.Max(1, probe.CoveredRows);
+        var f = (cy - mask.CoveredTop + 0.5) / mRows;
+        var py = probe.CoveredTop + (int)Math.Floor(f * pRows);
+        py = Math.Clamp(py, probe.CoveredTop, probe.CoveredTop + pRows - 1);
+        return Math.Clamp(py, 0, PH - 1) * PW + px;
+    }
+
+    /// <summary>
+    /// Blends a luminance-1 colour toward white until its saturation S = (max − min)/max is at most
+    /// <see cref="MaxHaloSaturation"/>: k = S / ((1 − S)·max − min + S), colour·k + white·(1 − k).
+    /// </summary>
     internal static Vector3 CapSaturation(Vector3 c)
     {
+        const float s = MaxHaloSaturation;
         var max = MathF.Max(c.X, MathF.Max(c.Y, c.Z));
         var min = MathF.Min(c.X, MathF.Min(c.Y, c.Z));
-        if (!(max > 0) || (max - min) / max <= MaxHaloSaturation) return c;
-        var k = MaxHaloSaturation / (MaxHaloSaturation * max - min + (1 - MaxHaloSaturation));
+        if (!(max > 0) || (max - min) / max <= s) return c;
+        var k = s / ((1 - s) * max - min + s);
         return c * k + Vector3.One * (1 - k);
     }
 

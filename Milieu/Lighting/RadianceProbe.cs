@@ -21,10 +21,10 @@ public sealed class ClipMask
     public required int CoveredRows { get; init; }
 
     /// <summary>
-    /// The solid-angle share of the covered sphere whose source pixels are near-white clipped
-    /// (<see cref="LdrLightEstimator.IsNearWhite"/>): what the saturated-image gate counts (never the warm-core branch).
+    /// The solid-angle share of the covered sphere whose source pixels are strict-white clipped
+    /// (<see cref="LdrLightEstimator.IsStrictWhite"/>): what the saturated-image gate counts (never the warm-core branch).
     /// </summary>
-    public required double WhiteShare { get; init; }
+    public required double StrictWhiteShare { get; init; }
 }
 
 /// <summary>
@@ -115,7 +115,7 @@ public sealed class RadianceProbe
                 byte r = rgb[p], g = rgb[p + 1], b = rgb[p + 2];
                 linear[x * 3] = lut[r]; linear[x * 3 + 1] = lut[g]; linear[x * 3 + 2] = lut[b];
                 clipped[x] = LdrLightEstimator.IsClipped(r, g, b) ? 1f : 0f;
-                if (LdrLightEstimator.IsNearWhite(r, g, b)) white++;
+                if (LdrLightEstimator.IsStrictWhite(r, g, b)) white++;
             }
             // This source row's latitude in the layout (a band sits in its rows), for the solid-angle weight.
             var t = (maskPlace.BandTop + (y + 0.5) * maskPlace.BandHeight / h) / ClipMask.Height;
@@ -150,7 +150,7 @@ public sealed class RadianceProbe
             Clip = new ClipMask
             {
                 Fraction = fraction, CoveredTop = maskPlace.BandTop, CoveredRows = maskPlace.BandHeight,
-                WhiteShare = coveredOmega > 0 ? whiteOmega / coveredOmega : 0,
+                StrictWhiteShare = coveredOmega > 0 ? whiteOmega / coveredOmega : 0,
             },
         };
     }

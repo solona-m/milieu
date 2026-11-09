@@ -151,6 +151,23 @@ public class RadianceProbeTests
         Assert.Null(RadianceProbe.Build(new float[W * H * 3], W, H).Clip);
     }
 
+    [Fact] // [EDGE-ldr-light-estimate-27] [EDGE-ldr-light-estimate-47]
+    public void StrictWhiteShare_CosLatitudeWeighted_WarmRowsCountZero()
+    {
+        // 1000x500: the top 100 rows (36°, latitude 54° to 90°) are white: share = (1 − sin 54°) / 2 ≈ 0.0955.
+        const int w = 1000, h = 500;
+        var px = new byte[w * h * 3];
+        for (var i = 0; i < 100 * w * 3; i++) px[i] = 255;
+        var m = RadianceProbe.BuildSrgb8(px, w, h).Clip!;
+        var expected = (1 - Math.Sin(54 * Math.PI / 180)) / 2;
+        Assert.Equal(expected, m.StrictWhiteShare, 1e-3);
+        // A row of warm-clipped cream adds clip mask cells but nothing to the strict share.
+        for (var x = 0; x < w; x++) { var o = (250 * w + x) * 3; px[o] = 255; px[o + 1] = 250; px[o + 2] = 210; }
+        var warm = RadianceProbe.BuildSrgb8(px, w, h).Clip!;
+        Assert.Equal(m.StrictWhiteShare, warm.StrictWhiteShare, 12);
+        Assert.True(warm.Fraction.Sum(f => (double)f) > m.Fraction.Sum(f => (double)f));
+    }
+
     [Fact] // [EDGE-scene-lighting-6]
     public void Downsample_AreaAverages_PerChannel()
     {

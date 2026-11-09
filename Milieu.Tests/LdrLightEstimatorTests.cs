@@ -69,9 +69,10 @@ public class LdrLightEstimatorTests
         c /= Y(c);
         var max = Math.Max(c.X, Math.Max(c.Y, c.Z));
         var min = Math.Min(c.X, Math.Min(c.Y, c.Z));
-        if ((max - min) / max > 0.5f)
+        const float s = LdrLightEstimator.MaxHaloSaturation;
+        if ((max - min) / max > s)
         {
-            var k = 0.5f / (0.5f * max - min + 0.5f);
+            var k = s / ((1 - s) * max - min + s);
             c = c * k + Vector3.One * (1 - k);
         }
         return c;
@@ -271,7 +272,7 @@ public class LdrLightEstimatorTests
         var probe = new RadianceProbe
         {
             Rgb = rgb, CoveredTop = 0, CoveredRows = 10,
-            Clip = new ClipMask { Fraction = fraction, CoveredTop = 0, CoveredRows = ClipMask.Height, WhiteShare = 0 },
+            Clip = new ClipMask { Fraction = fraction, CoveredTop = 0, CoveredRows = ClipMask.Height, StrictWhiteShare = 0 },
         };
         var (rig, stats) = LdrLightEstimator.Analyse(probe);
         AssertEnergy(rig);
@@ -344,16 +345,23 @@ public class LdrLightEstimatorTests
     [InlineData(255, 222, 196, false)]   // skin
     [InlineData(255, 250, 210, true)]    // a cream wall in full sun (a documented limit)
     [InlineData(255, 230, 170, false)]   // a warm lamp core (a documented limit)
+    [InlineData(250, 250, 160, true)]    // the warm branch's corner
+    [InlineData(250, 250, 159, false)]   // B under 160
+    [InlineData(249, 255, 200, false)]   // R under 250
     public void IsClipped_Rule(int r, int g, int b, bool clipped)
     {
         Assert.Equal(clipped, LdrLightEstimator.IsClipped((byte)r, (byte)g, (byte)b));
+        // The strict-white predicate (gate (c)) is min(R,G,B) ≥ 245, whatever the warm branch says.
+        var strict = Math.Min(r, Math.Min(g, b)) >= 245;
+        Assert.Equal(strict, LdrLightEstimator.IsStrictWhite((byte)r, (byte)g, (byte)b));
+        Assert.True(!strict || clipped);
         // The probe's mask uses the same rule.
         var px = new byte[256 * 128 * 3];
         px[0] = (byte)r; px[1] = (byte)g; px[2] = (byte)b;
         Assert.Equal(clipped ? 1f : 0f, RadianceProbe.BuildSrgb8(px, 256, 128).Clip!.Fraction[0]);
     }
 
-    [Fact] // [EDGE-ldr-light-estimate-27]
+    [Fact] // [EDGE-ldr-light-estimate-27] [EDGE-ldr-light-estimate-47]
     public void WarmClippedSkyBand_DoesNotSaturate_SunIsKey()
     {
         // Everything above 20° is a cream sky that the warm-core branch clips (33% of the sphere). The saturated-image
@@ -363,8 +371,12 @@ public class LdrLightEstimatorTests
         SyntheticImages.Lamp(px, W, H, 70, 8, 2, (255, 200, 120));
         var (rig, stats) = Analyse(px);
         Assert.False(stats.Saturated);
-        Assert.True(stats.ClipShare < 0.01, $"near-white share {stats.ClipShare}");
-        Assert.True(stats.Broad >= 1, "the cream band is a broad component");
+        Assert.True(stats.ClipShare > 0.25, $"warm-clipped share {stats.ClipShare}");   // would have saturated the image
+        Assert.True(stats.StrictWhiteShare < 0.01, $"strict-white share {stats.StrictWhiteShare}");
+        var r = Detailed(px);
+        var band = r.Blobs.Where(b => b.Verdict == BlobVerdict.Broad).ToList();
+        Assert.True(stats.Broad >= 1 && band.Count == stats.Broad, "the cream band is counted as broad");
+        Assert.Contains(band, b => b.Direction.Y > 0.8f && b.SolidAngle > 0.25 * 4 * Math.PI);
         Assert.True(Off(Assert.IsType<RigLight>(rig.Key), 70, 8) < 1.5, "the sun is the key");
         // The same with a pale blue sky band (not clipped at all).
         var pale = SyntheticImages.LdrPanorama(W, H, (_, el) => el > 20 ? ((byte)175, (byte)215, (byte)255) : ((byte)60, (byte)50, (byte)40));
@@ -555,5 +567,62 @@ public class LdrLightEstimatorTests
         Assert.Null(rig.Key);
         Assert.Empty(rig.Lamps);
         Assert.Equal(32, LdrLightEstimator.FallbackMaxBlobs);
+    }
+    [Theory] // [EDGE-ldr-light-estimate-42] [EDGE-ldr-light-estimate-45]
+    [InlineData(32, true)]
+    [InlineData(33, false)]
+    public void FallbackMaxBlobs_Boundary(int count, bool fires)
+    {
+        // Equal glowing 0.6° lamps around one row (el 30°). 32 pass (a)-(d), all fail (e): the fallback fires (32 ≤
+        // FallbackMaxBlobs). 33: it doesn't, so no key.
+        var px = SyntheticImages.LdrPanorama(W, H, (_, _) => (39, 39, 39));
+        var azimuths = Enumerable.Range(0, count).Select(i => -180 + 360.0 * i / count + 5).ToArray();
+        foreach (var az in azimuths) SyntheticImages.Lamp(px, W, H, az, 30, 0.6, (110, 85, 60), glowDeg: 3.5);
+        var (rig, stats) = Analyse(px);
+        Assert.Equal(0, stats.Specks + stats.Broad + stats.RejectedShare);
+        Assert.Equal(fires, stats.OutlierFallback);
+        if (fires)
+        {
+            Assert.Equal(count, stats.Kept);
+            Assert.True(azimuths.Min(a => Off(Assert.IsType<RigLight>(rig.Key), a, 30)) < 1);
+            Assert.Equal(3, rig.Lamps.Length);
+        }
+        else
+        {
+            Assert.Equal(count, stats.RejectedOutlier);
+            Assert.Null(rig.Key);
+            Assert.Empty(rig.Lamps);
+        }
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-8]
+    public void BandMaskRows_MapInsideCoveredProbeRows()
+    {
+        // 1000x200 (5:1): the probe band is 51 rows from 38, the mask band 410 rows from 307. Under a plain row / 8 the
+        // mask's last rows (712-716) would land on probe row 89, outside the band.
+        const int w = 1000, h = 200;
+        var probe = RadianceProbe.BuildSrgb8(new byte[w * h * 3], w, h);
+        var mask = probe.Clip!;
+        Assert.Equal((38, 51), (probe.CoveredTop, probe.CoveredRows));
+        Assert.Equal((307, 410), (mask.CoveredTop, mask.CoveredRows));
+        for (var cy = mask.CoveredTop; cy < mask.CoveredTop + mask.CoveredRows; cy++)
+        foreach (var cx in new[] { 0, 1000, ClipMask.Width - 1 })
+        {
+            var t = LdrLightEstimator.TexelOf(cy * ClipMask.Width + cx, mask, probe);
+            Assert.InRange(t / RadianceProbe.Width, probe.CoveredTop, probe.CoveredTop + probe.CoveredRows - 1);
+            Assert.Equal(cx * RadianceProbe.Width / ClipMask.Width, t % RadianceProbe.Width);
+        }
+        // A full frame maps exactly row / 8.
+        var full = RadianceProbe.BuildSrgb8(new byte[512 * 256 * 3], 512, 256);
+        for (var cy = 0; cy < ClipMask.Height; cy += 7)
+            Assert.Equal(cy / 8 * RadianceProbe.Width + 3, LdrLightEstimator.TexelOf(cy * ClipMask.Width + 24, full.Clip!, full));
+
+        // End to end: a lamp on the band's bottom edge is found and its texels are zeroed inside the band.
+        var px = SyntheticImages.LdrPanorama(w, h, (_, _) => (60, 50, 40));
+        var (az, el) = SyntheticImages.PixelAzEl(500.5, 197.5, w, h);
+        SyntheticImages.Lamp(px, w, h, az, el, 1.2, (255, 190, 120), glowDeg: 3);
+        var (rig, _) = LdrLightEstimator.Analyse(RadianceProbe.BuildSrgb8(px, w, h));
+        AssertEnergy(rig);
+        Assert.NotNull(rig.Key);
     }
 }

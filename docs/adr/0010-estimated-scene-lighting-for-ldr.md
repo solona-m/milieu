@@ -28,8 +28,8 @@ around them. The brightness has to be assumed.
 - **Filters, in order:**
   - (a) Speck: Ω < 1e-5 sr.
   - (b) Broad: radius > 12°.
-  - (c) Saturated image: more than 25% of the covered sphere is near-white clipped (the warm branch never counts), so
-    no point sources at all.
+  - (c) Saturated image: more than 25% of the covered sphere is strict-white clipped (`ClipMask.StrictWhiteShare`; the
+    warm branch never counts), so no point sources at all.
   - (d) Share: Ω < 5% of the largest point blob.
   - (e) Outlier: with more than 8 point blobs (those passing (a)–(b)), a blob must have Ω ≥ 3× the median point blob.
     - Fallback: if (e) would reject every blob passing (d), and at most 32 did (`FallbackMaxBlobs`, ND-5), (e) is
@@ -82,7 +82,8 @@ around them. The brightness has to be assumed.
 - Small cream or sunlit surfaces can become false lamps.
 - Bundled scenes, as estimated:
   - **Sunset is fills only.** The committed `sunset.jpeg`'s sun core was softened by its preparation (R ≥ 250 but G
-    240–249 and B 100–180), so nothing clips. The original source does get its key.
+    240–249 and B 100–180), so too few pixels clip to form a blob larger than a speck. The original source does get
+    its key.
   - **Forest:** the sun behind the trunks isn't clipped, so bright fog gaps near the horizon become the key and lamps.
   - **Warehouse:** one false lamp on a sunlit wall patch.
 - Follow-up: hand-tuned rig overrides for Sunset and Forest.

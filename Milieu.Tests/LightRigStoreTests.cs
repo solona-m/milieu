@@ -153,6 +153,7 @@ public sealed class LightRigStoreTests : IDisposable
     public static TheoryData<string> BadEstimatedFiles => new()
     {
         "not json",
+        $"{{\"version\":{LightExtractor.Version},\"estimated\":1,\"key\":null,\"lamps\":[],\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}",   // estimator v1
         $"{{\"version\":{LightExtractor.Version},\"key\":null,\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}",                                       // no flag
         $"{{\"version\":{LightExtractor.Version},\"estimated\":{LdrLightEstimator.Version + 1},\"key\":null,\"lamps\":[],\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}",
         $"{{\"version\":{LightExtractor.Version + 1},\"estimated\":{LdrLightEstimator.Version},\"key\":null,\"lamps\":[],\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}",
