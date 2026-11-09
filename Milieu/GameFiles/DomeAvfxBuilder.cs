@@ -47,7 +47,8 @@ internal static class DomeAvfxBuilder
 
     /// <summary>
     /// Experiment (testing builds): a test light baked into the next dome VFX, to find out whether VFX effector lights can carry
-    /// scene lighting to synced viewers. 0 off (the default; output byte-identical), 1 point light as the venue's (with shadows),
+    /// scene lighting to synced viewers. 0 off (the default; output byte-identical), 1 point light set up like the venue's (with shadows;
+    /// red, A 1 and eye-height placement are ours),
     /// 2 the same with 10x the range and 3x the brightness (so a dark mode 1 isn't mistaken for "VFX lights don't work"),
     /// 3 directional light. Set only by "/milieu vfxlight"; not saved.
     /// </summary>
