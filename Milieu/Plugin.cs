@@ -116,16 +116,31 @@ public sealed class Plugin : IDalamudPlugin
     public static CommandAction ParseCommand(string args) =>
         string.Equals(args.Trim(), "off", StringComparison.OrdinalIgnoreCase) ? CommandAction.Hide : CommandAction.ToggleWindow;
 
+    /// <summary>The VFX light experiment's mode from "vfxlight &lt;0-3&gt;", or null when the args are anything else.</summary>
+    public static int? ParseVfxLight(string args)
+    {
+        var parts = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 2 && parts[0].Equals("vfxlight", StringComparison.OrdinalIgnoreCase)
+               && int.TryParse(parts[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var mode)
+               && mode is >= 0 and <= 3 ? mode : null;
+    }
+
+    /// <summary>The args start with "vfxlight" (so a bad mode gets a usage line instead of toggling the window).</summary>
+    public static bool IsVfxLightCommand(string args) =>
+        args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries) is [var first, ..] && first.Equals("vfxlight", StringComparison.OrdinalIgnoreCase);
+
     private void OnCommand(string command, string args)
     {
-        // Experiment: "/milieu vfxlight <0-3>" picks the test light baked into the next dome VFX.
-        var parts = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 2 && parts[0].Equals("vfxlight", StringComparison.OrdinalIgnoreCase)
-            && int.TryParse(parts[1], out var mode) && mode is >= 0 and <= 3)
+        // Experiment (testing builds; remove before the next stable merge): "/milieu vfxlight <0-3>".
+        switch (ParseVfxLight(args))
         {
-            GameFiles.DomeAvfxBuilder.TestLightMode = mode;
-            ChatGui.Print($"[Milieu] Test VFX light {mode} ({(mode switch { 1 => "point", 2 => "point + shadows", 3 => "directional", _ => "off" })}). Pick None, then your scene again.");
-            return;
+            case int mode:
+                GameFiles.DomeAvfxBuilder.TestLightMode = mode;
+                ChatGui.Print($"[Milieu] Test VFX light {mode} ({mode switch { 1 => "point", 2 => "point + shadows", 3 => "directional", _ => "off" }}). Pick None, then your scene again.");
+                return;
+            case null when IsVfxLightCommand(args):
+                ChatGui.Print("[Milieu] Usage: /milieu vfxlight 0|1|2|3 (0 off, 1 point, 2 point + shadows, 3 directional).");
+                return;
         }
         if (ParseCommand(args) == CommandAction.Hide) grid.SelectNone();
         else mainWindow.Toggle();
