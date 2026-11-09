@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text.Json.Nodes;
 using Milieu.Lighting;
 using Xunit;
 
@@ -8,7 +11,9 @@ namespace Milieu.Tests;
 
 /// <summary>
 /// Goldens that pin the lighting arithmetic (docs/adr/0009, 0010). The probe golden is a SHA-256 of the probe's bytes
-/// (plain arithmetic, captured on the code before the LDR estimate work); refactors must keep it.
+/// (plain arithmetic, captured on the code before the LDR estimate work); refactors must keep it. The extractor and
+/// estimator goldens compare the serialised rig's values with committed literals at 1e-6 relative (absolute floor 1e-9),
+/// as cross-CPU byte identity is not promised (ADR 0005).
 /// </summary>
 public class LightingGoldenTests
 {
@@ -69,5 +74,82 @@ public class LightingGoldenTests
         Assert.Equal(coveredTop, p.CoveredTop);
         Assert.Equal(coveredRows, p.CoveredRows);
         Assert.True(sha == Sha(p.Rgb), $"RadianceProbe.Build output changed for '{name}': {Sha(p.Rgb)}. The probe must stay bit-identical.");
+    }
+    /// <summary>The fixed HDR probe of the extractor golden: hash noise in [0, 1) with a 3x3 sun of 5000 at (60, 30).</summary>
+    internal static RadianceProbe ExtractGoldenProbe()
+    {
+        const int w = RadianceProbe.Width, h = RadianceProbe.Height;
+        var rgb = new float[w * h * 3];
+        for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+        for (var c = 0; c < 3; c++)
+            rgb[(y * w + x) * 3 + c] = Noise(x, y, c, 7u) * 0.1f * (c == 2 ? 1.5f : 1f);
+        for (var y = 30; y < 33; y++)
+        for (var x = 60; x < 63; x++)
+        {
+            var o = (y * w + x) * 3;
+            rgb[o] = 5000f; rgb[o + 1] = 4500f; rgb[o + 2] = 4000f;
+        }
+        return RadianceProbe.Build(rgb, w, h);
+    }
+
+    private const string ExtractGoldenJson =
+        """
+        {"version":2,"key":{"s":0.24023438,"t":0.24619286,"r":18.927557,"g":17.034801,"b":15.142046},"regions":[{"s":0.25017533,"t":0.2502487,"r":1.5725,"g":1.5833718,"b":2.3548086},{"s":0.24956119,"t":0.7488588,"r":1.5704882,"g":1.5834409,"b":2.3564317},{"s":0.7501868,"t":0.2489814,"r":1.583448,"g":1.5638938,"b":2.3360412},{"s":0.75008595,"t":0.75060546,"r":1.5624532,"g":1.563402,"b":2.3437428}],"total":{"r":25.216446,"g":23.32891,"b":24.53307}}
+        """;
+
+    [Fact] // [AC-ldr-light-estimate-7] [EDGE-ldr-light-estimate-35]
+    public void ExtractGolden_ValuesWithinTolerance()
+    {
+        var actual = LightRigStore.Serialise(LightExtractor.Extract(ExtractGoldenProbe()));
+        AssertJsonClose(ExtractGoldenJson, actual,
+            "LightExtractor's output changed. If the change is intended, bump LightExtractor.Version, regenerate the bundled "
+            + "light rigs (PrepareBackdrops rigs) and capture this golden again.");
+    }
+
+    /// <summary>Same structure, every number within 1e-6 relative (absolute floor 1e-9).</summary>
+    internal static void AssertJsonClose(string expected, string actual, string message)
+    {
+        var e = new List<string>();
+        var a = new List<string>();
+        Flatten(JsonNode.Parse(expected), "", e);
+        Flatten(JsonNode.Parse(actual), "", a);
+        Assert.True(e.Count == a.Count, $"{message}\nActual: {actual}");
+        for (var i = 0; i < e.Count; i++)
+        {
+            var (ep, ev) = Split(e[i]);
+            var (ap, av) = Split(a[i]);
+            Assert.True(ep == ap, $"{message}\nPath {ep} vs {ap}\nActual: {actual}");
+            if (double.TryParse(ev, NumberStyles.Float, CultureInfo.InvariantCulture, out var x)
+                && double.TryParse(av, NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+                Assert.True(Math.Abs(x - y) <= Math.Max(1e-9, 1e-6 * Math.Abs(x)), $"{message}\n{ep}: {x:R} vs {y:R}\nActual: {actual}");
+            else Assert.True(ev == av, $"{message}\n{ep}: {ev} vs {av}\nActual: {actual}");
+        }
+    }
+
+    private static (string, string) Split(string s)
+    {
+        var i = s.IndexOf('=');
+        return (s[..i], s[(i + 1)..]);
+    }
+
+    private static void Flatten(JsonNode? n, string path, List<string> into)
+    {
+        switch (n)
+        {
+            case JsonObject o:
+                foreach (var (k, v) in o) Flatten(v, path + "." + k, into);
+                break;
+            case JsonArray arr:
+                into.Add(path + "#=" + arr.Count);
+                for (var i = 0; i < arr.Count; i++) Flatten(arr[i], path + "[" + i + "]", into);
+                break;
+            case null:
+                into.Add(path + "=null");
+                break;
+            default:
+                into.Add(path + "=" + n.ToJsonString());
+                break;
+        }
     }
 }
