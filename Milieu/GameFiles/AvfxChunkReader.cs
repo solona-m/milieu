@@ -49,6 +49,7 @@ internal static class AvfxChunkReader
         "AVFX", "Schd", "Item", "Trgr", "TmLn", "Emit", "ItPr", "Ptcl", "Modl",
         "Life", "CrC", "CrI", "ARs", "Col", "RGB", "A", "Bri", "Pos", "Rot", "Scl", "Scr", "X", "Y", "Z", "XR", "YR", "ZR",
         "UvSt", "Data", "FrC", "FrRt", "ColB", "ColE", "TC1", "TC2", "TC3", "TC4", "TN", "TR", "TD", "TP", "NPow", "DPow",
+        "Efct", "Amb", "DstS", "Pow",   // the VFX light experiment's effector (DomeAvfxBuilder.TestLightMode)
     };
 
     public static ChunkNode Parse(byte[] data) => Parse(data, DefaultContainers);
