@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
@@ -13,6 +14,8 @@ using Milieu.Backdrop;
 using Milieu.Gui;
 using Milieu.Imaging;
 using Milieu.Interop;
+using Milieu.Lighting;
+using Milieu.Sync;
 
 namespace Milieu;
 
@@ -33,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 18;
+    public const int BuildNumber = 19;
 
     private const string CommandName = "/milieu";
 
@@ -45,6 +48,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly VfxInterop vfx;
     private readonly PenumbraIpc penumbra;
     private readonly BackdropController controller;
+    private readonly SceneLighting? lighting;
     private readonly DefaultBackdropsDownloadService downloads;
     private readonly SceneGridViewModel grid;
 
@@ -63,15 +67,21 @@ public sealed class Plugin : IDalamudPlugin
         vfx = new VfxInterop(SigScanner, Hooks, Framework, log, strings);
         penumbra = new PenumbraIpc(PluginInterface, log, configDir);
         downloads = new DefaultBackdropsDownloadService(log, configDir);
-        controller = new BackdropController(vfx, penumbra, new GameState(ClientState, Condition, ObjectTable),
-                                            new BackdropPreparer(cache, new Bc7(), downloads, thumbStore), cache, config, log,
+        var gameState = new GameState(ClientState, Condition, ObjectTable);
+        var preparer = new BackdropPreparer(cache, new Bc7(), downloads, thumbStore, log);
+        controller = new BackdropController(vfx, penumbra, gameState, preparer, cache, config, log,
                                             bundled: downloads, save: Save, syncedAvailable: SyncedAvailable,
                                             sync: penumbra, gameData: new GameData(DataManager));
+        lighting = CreateLighting(LightingAvailable(), () => new LightInterop(SigScanner, Framework, log), gameState, () => controller.Lit,
+                                  config, preparer.PrepareLightsAsync,
+                                  () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.FileName), log), log,
+                                  () => Framework.IsFrameworkUnloading, () => controller.EffectiveDelivery);
+        if (lighting != null) controller.Hidden += lighting.RemoveAll;   // the None tile and /milieu off remove the lights within the call
         var userImages = config.UserImages.ToArray();
         Task.Run(() =>
         {
-            // Startup tidy-up off the framework thread: v1 JPEGs and unpinned textures, orphaned thumbnails.
-            try { downloads.CleanupStale(); thumbStore.Cleanup(userImages); }
+            // Startup tidy-up off the framework thread: v1 JPEGs and unpinned textures, orphaned thumbnails, old light rigs.
+            try { downloads.CleanupStale(); thumbStore.Cleanup(userImages); new LightRigStore(cache).TrimRigs(LightRigStore.DefaultKeep); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log.Debug("[Milieu] Startup cleanup skipped."); }
         });
 
@@ -84,7 +94,8 @@ public sealed class Plugin : IDalamudPlugin
         Framework.RunOnFrameworkThread(controller.OnPenumbraInitialized);   // clear a temp mod an earlier session left
 
         grid = new SceneGridViewModel(config, Save, controller.Post, controller, downloads, File.Exists);
-        mainWindow = new MainWindow(controller, config, Save, grid, new ThumbnailCache(TextureProvider, thumbStore), SyncedAvailable);
+        mainWindow = new MainWindow(controller, config, Save, grid, new ThumbnailCache(TextureProvider, thumbStore), SyncedAvailable,
+                                    () => lighting?.Status ?? LightingStatusSnapshot.Initial, lighting != null);
         windows.AddWindow(mainWindow);
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -113,11 +124,48 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private static bool SyncedAvailable() => true;
 
-    private void OnUpdate(IFramework _) => controller.Tick();
+    /// <summary>
+    /// Scene lighting's kill switch (docs/adr/0009): return false and nothing lighting-related is constructed, no light
+    /// function is resolved or called, and the "Scene lighting" block is hidden.
+    /// </summary>
+    private static bool LightingAvailable() => true;
 
-    private void OnTerritoryChanged(uint _) => controller.OnTerritoryChanged();
+    /// <summary>Test seam: builds scene lighting, or nothing at all (the factories are never called) when the kill switch is off.</summary>
+    internal static SceneLighting? CreateLighting(bool available, Func<ILightSpawner> spawnerFactory, Backdrop.IGameState game,
+                                                  Func<LitBackdrop?> lit, Configuration config,
+                                                  Func<string, CancellationToken, Task<LightRig?>> loadRig,
+                                                  Func<ILightingSentinel> sentinelFactory, ILogSink log, Func<bool> isUnloading,
+                                                  Func<DeliveryMode> delivery)
+    {
+        if (!available) return null;
+        return new SceneLighting(spawnerFactory(), game, lit, config, loadRig, sentinelFactory(), log, isUnloading, delivery);
+    }
 
-    private void OnLogout(int type, int code) => controller.OnLogout();
+    /// <summary>Every running job (conversion, light rig) as one task to wait on, or null when none runs.</summary>
+    internal static Task? CombineJobs(params Task?[] jobs)
+    {
+        var running = jobs.Where(j => j != null).Select(j => j!).ToArray();
+        return running.Length == 0 ? null : Task.WhenAll(running);
+    }
+
+    // Lighting ticks after the controller, so a dome that went away this tick takes its lights with it in the same tick.
+    private void OnUpdate(IFramework _)
+    {
+        controller.Tick();
+        lighting?.Tick();
+    }
+
+    private void OnTerritoryChanged(uint _)
+    {
+        controller.OnTerritoryChanged();
+        lighting?.RemoveAll();
+    }
+
+    private void OnLogout(int type, int code)
+    {
+        controller.OnLogout();
+        lighting?.RemoveAll();
+    }
 
     // Penumbra events fire on Penumbra's thread: hop to the framework thread before touching the VFX or the IPC.
     private void OnPenumbraInitialized() => Framework.RunOnFrameworkThread(controller.OnPenumbraInitialized);
@@ -127,12 +175,12 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         ShutdownSequence.Run(
-            cancelJobs: controller.CancelJobForDispose,
+            cancelJobs: () => CombineJobs(controller.CancelJobForDispose(), lighting?.CancelJobForDispose()),
             disposeDownloads: downloads.Dispose,
             runTeardown: wait =>
             {
-                if (Framework.IsInFrameworkUpdateThread) { controller.Teardown(); return true; }
-                return Framework.RunOnFrameworkThread(controller.Teardown).Wait(wait);
+                if (Framework.IsInFrameworkUpdateThread) { TeardownAll(); return true; }
+                return Framework.RunOnFrameworkThread(TeardownAll).Wait(wait);
             },
             unhook: Unhook,
             freeStrings: strings.FreeAll,
@@ -140,8 +188,16 @@ public sealed class Plugin : IDalamudPlugin
             log: log);
     }
 
+    /// <summary>The lights go before the dome (and no native light call is made while the game is exiting).</summary>
+    private void TeardownAll()
+    {
+        lighting?.Teardown();
+        controller.Teardown();
+    }
+
     private void Unhook()
     {
+        if (lighting != null) controller.Hidden -= lighting.RemoveAll;
         vfx.GameRemoved -= controller.OnGameRemoved;
         vfx.Dispose();
         penumbra.Initialized -= OnPenumbraInitialized;

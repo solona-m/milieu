@@ -209,8 +209,8 @@ public sealed class SceneLighting
     /// <summary>Why there must be no lights right now (the status to show), or null when <c>ShouldLight</c> holds.</summary>
     private LightingStatusSnapshot? Blocked(bool enabled, LitBackdrop? current)
     {
+        if (!spawner.Available) return new(LightingStatus.Unavailable);   // first: the panel disables its controls
         if (!enabled) return new(LightingStatus.Off);
-        if (!spawner.Available) return new(LightingStatus.Unavailable);
         switch (latch)
         {
             case Latch.CrashGuard: return new(LightingStatus.CrashGuard);

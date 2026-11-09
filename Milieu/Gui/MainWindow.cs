@@ -8,6 +8,7 @@ using Dalamud.Interface.Windowing;
 using Milieu.Assets;
 using Milieu.Backdrop;
 using Milieu.Imaging;
+using Milieu.Lighting;
 
 namespace Milieu.Gui;
 
@@ -24,6 +25,8 @@ public sealed class MainWindow : Window, IDisposable
     private readonly SceneGridViewModel grid;
     private readonly ThumbnailCache thumbs;
     private readonly Func<bool> syncedAvailable;
+    private readonly Func<LightingStatusSnapshot> lightingStatus;
+    private readonly bool lightingAvailable;
     private readonly FileDialogManager files = new();
 
     private static readonly Vector4 Red = new(1f, 0.4f, 0.4f, 1f);
@@ -31,10 +34,12 @@ public sealed class MainWindow : Window, IDisposable
     private static readonly Vector2 TileSize = new(176, 88);
 
     public MainWindow(BackdropController controller, Configuration config, Action save, SceneGridViewModel grid, ThumbnailCache thumbs,
-                      Func<bool>? syncedAvailable = null)
+                      Func<bool>? syncedAvailable = null, Func<LightingStatusSnapshot>? lightingStatus = null, bool lightingAvailable = false)
         : base($"Milieu (build {Plugin.BuildNumber})###MilieuMain")
     {
         this.syncedAvailable = syncedAvailable ?? (() => false);
+        this.lightingStatus = lightingStatus ?? (() => LightingStatusSnapshot.Initial);
+        this.lightingAvailable = lightingAvailable;
         this.controller = controller;
         this.config = config;
         this.save = save;
@@ -226,6 +231,39 @@ public sealed class MainWindow : Window, IDisposable
             ImGui.SameLine();
             if (ImGui.SmallButton("Credits")) Dalamud.Utility.Util.OpenLink(BackdropPins.CreditsUrl);
         }
+        DrawLighting(vm);
+    }
+
+    /// <summary>
+    /// "Scene lighting" (docs/adr/0009), only when the kill switch (Plugin.LightingAvailable) is on. The window writes the
+    /// config and saves; SceneLighting reads it on its next framework tick.
+    /// </summary>
+    private void DrawLighting(BackdropViewModel backdrop)
+    {
+        var vm = new LightingViewModel(lightingStatus(), config, lightingAvailable, backdrop.EffectiveDelivery);
+        if (!vm.Visible) return;
+        ImGui.Separator();
+        ImGui.TextUnformatted(LightingViewModel.Header);
+        using (ImRaii.Disabled(!vm.ControlsEnabled))
+        {
+            var on = config.SceneLighting;
+            if (ImGui.Checkbox(LightingViewModel.ToggleLabel, ref on))
+            {
+                config.SceneLighting = on;
+                save();
+            }
+            var strength = config.LightStrength;
+            if (ImGui.SliderFloat(LightingViewModel.StrengthLabel, ref strength, Configuration.LightStrengthRange.Min, Configuration.LightStrengthRange.Max, "%.2f"))
+                config.LightStrength = Math.Clamp(strength, Configuration.LightStrengthRange.Min, Configuration.LightStrengthRange.Max);
+            if (ImGui.IsItemDeactivatedAfterEdit()) save();
+            var fills = config.FillLightCount;
+            if (ImGui.SliderInt(LightingViewModel.FillsLabel, ref fills, Configuration.FillLightRange.Min, Configuration.FillLightRange.Max))
+                config.FillLightCount = Math.Clamp(fills, Configuration.FillLightRange.Min, Configuration.FillLightRange.Max);
+            if (ImGui.IsItemDeactivatedAfterEdit()) save();
+        }
+        if (vm.StatusText.Length > 0)
+            ImGui.TextColored(vm.StatusSeverity == Severity.Error ? Red : vm.StatusSeverity == Severity.Warning ? Yellow : Vector4.One, vm.StatusText);
+        foreach (var note in vm.Notes) ImGui.TextDisabled(note);
     }
 
     /// <summary>Every slider applies once, on release (single-swap rule: placement, height or rebuild).</summary>
