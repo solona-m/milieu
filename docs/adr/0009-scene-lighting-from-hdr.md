@@ -20,7 +20,10 @@ also local: PSync pairs never see them.
   local player (object 0, not a GPose actor copy moved by Brio or Ktisis). Strength and fill count are live settings.
   Only HDR, non-bundled images carry the light; LDR and bundled scenes show a note and get no lights.
 - **Extraction is pure** (`Milieu/Lighting/`): a 256x128 radiance probe, the key region (within 6°, ≥ 10% of the peak;
-  a key only if ≥ 5% of the energy and ≥ 10x the median of the *covered* texels, so band panoramas work), then a
+  a key only if its peak is ≥ 10x the median of the *covered* texels, so band panoramas work, and it holds ≥ 5% of the
+  energy, or, for a small and very strong sun, the median is above 0, the peak is ≥ 100x it and the region holds ≥ 1%
+  of the energy; `LightExtractor.Version` 2, amended after real HDRIs: venice_sunset's sun peaks at 873x the median
+  with a 2.4% share, and a black night or space HDR can't make a star the key through the strong branch), then a
   depth-2 median cut. The rig is stored as JSON in `cache/lights/`, keyed on the file and `LightExtractor.Version`;
   every HDR conversion stores one, and a texture cache hit decodes once more only if no rig exists.
 - **The dome as drawn.** Directions come from `BackdropController.Lit`: the image of the texture actually shown (bound

@@ -88,6 +88,20 @@ public sealed class LightRigStoreTests : IDisposable
         Assert.Equal(new Vector3(4, 5, 6), rig.TotalEnergy);
     }
 
+    [Fact] // [EDGE-ldr-light-estimate-39]
+    public void Version1HdrRig_IsMissAndDeleted()
+    {
+        Assert.Equal(2, LightExtractor.Version);
+        Directory.CreateDirectory(cache.LightRigDir);
+        var path = cache.LightRigPath("00000000000000cc");
+        File.WriteAllText(path, $"{{\"version\":1,\"key\":null,\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}");
+        Assert.Null(store.Load("00000000000000cc"));
+        Assert.False(File.Exists(path));
+        // The cache key changes with the version too, so a v1 file is never even looked up under the v2 key.
+        Assert.NotEqual(CacheStore.LightRigKey(@"C:.hdr", 1, 2),
+                        CacheStore.Hash16(System.Text.Encoding.UTF8.GetBytes("L1|c:/a.hdr|1|2")));
+    }
+
     [Fact] // [EDGE-scene-lighting-31]
     public void TrimKeepsNewest100_OnlyOwnPattern()
     {
