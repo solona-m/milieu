@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 namespace Milieu.Lighting;
@@ -23,7 +24,8 @@ public sealed record PlanResult(IReadOnlyList<(string Slot, LightParams P)> Ligh
 /// The key is a spot light at anchor + dir·<see cref="LightRigLayout.LightDistance"/>, aimed at the anchor, casting
 /// character shadows; fills are point lights at the same distance, the top regions whose direction is drawn.
 /// colour = E / TotalEnergy_Y × TypePower × Strength × DistanceCompensation, then scaled uniformly so no channel
-/// exceeds <see cref="LightRigLayout.MaxChannel"/>.
+/// exceeds <see cref="LightRigLayout.MaxChannel"/>. An estimated rig is resolved first (<see cref="Resolve"/>); its lamps
+/// are fill candidates before the regions (<see cref="LightRigLayout.LampPower"/>).
 /// </summary>
 public static class LightRigPlanner
 {
@@ -31,8 +33,26 @@ public static class LightRigPlanner
 
     public static string FillSlot(int i) => "fill" + i;
 
+    /// <summary>
+    /// An estimated rig's brightness, applied at plan time (docs/adr/0010): k = EstimatedKeyOverSky × max(TotalEnergy_Y,
+    /// EstimatedSkyFloorY); the key and lamps (a colour times a relative weight) are scaled by k and added to the total, so
+    /// regions + key + lamps = total. An HDR rig is returned as it is.
+    /// </summary>
+    public static LightRig Resolve(LightRig rig)
+    {
+        if (!rig.IsEstimated) return rig;
+        var sky = LightRig.Luminance(rig.TotalEnergy);
+        var k = LightRigLayout.EstimatedKeyOverSky * (float.IsFinite(sky) ? MathF.Max(sky, LightRigLayout.EstimatedSkyFloorY) : LightRigLayout.EstimatedSkyFloorY);
+        var key = rig.Key is { } kl ? kl with { Energy = kl.Energy * k } : null;
+        var lamps = rig.Lamps.Select(l => l with { Energy = l.Energy * k }).ToArray();
+        var total = rig.TotalEnergy + (key?.Energy ?? Vector3.Zero);
+        foreach (var l in lamps) total += l.Energy;
+        return rig with { Key = key, Lamps = lamps, TotalEnergy = total };
+    }
+
     public static PlanResult Plan(LightRig rig, DomeView view, Vector3 anchor, float strength, int fillCount)
     {
+        rig = Resolve(rig);
         var lights = new List<(string, LightParams)>();
         var rigHasKey = rig.Key != null;
         Vector3? keyDir = rig.Key is { } k ? DomeProjection.WorldDirection(k.S, k.T, view) : null;
@@ -51,11 +71,12 @@ public static class LightRigPlanner
 
         var fills = Math.Clamp(fillCount, 0, Math.Min(LightRigLayout.MaxFills, LightRigLayout.MaxLights - lights.Count));
         var used = 0;
-        foreach (var region in rig.Regions)
+        foreach (var (region, power) in rig.Lamps.Select(l => (l, LightRigLayout.LampPower))
+                                               .Concat(rig.Regions.Select(r => (r, LightRigLayout.FillPower))))
         {
             if (used >= fills) break;
             if (DomeProjection.WorldDirection(region.S, region.T, view) is not { } dir) continue;   // not on the dome: skipped
-            var colour = Clamp(region.Energy / totalY * LightRigLayout.FillPower * strength * compensation);
+            var colour = Clamp(region.Energy / totalY * power * strength * compensation);
             lights.Add((FillSlot(used), new LightParams(LightShapeKind.Point, anchor + dir * d, Quaternion.Identity, colour,
                                                         LightRigLayout.FillRange, LightRigLayout.KeyConeDegrees,
                                                         LightRigLayout.KeyAngularFalloffDegrees, false)));
