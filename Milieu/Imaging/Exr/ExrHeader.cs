@@ -179,7 +179,8 @@ public static class ExrHeader
             tilesX = (int)tx;
             chunkCount = (int)(tx * ty);
             linesPerBlock = (int)Math.Min(tileH, h);
-            maxBlock = Math.Min(tileW, w) * linesPerBlock * bpp;
+            try { maxBlock = checked(Math.Min(tileW, w) * linesPerBlock * bpp); }
+            catch (OverflowException) { throw Corrupt("tile size overflows"); }
         }
         else
         {

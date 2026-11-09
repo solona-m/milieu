@@ -207,6 +207,100 @@ public sealed class ExrHeaderTests : IDisposable
     public void TileSizeZero_DecodeFailed() =>
         Assert.Equal(Corrupt, Refused(SyntheticExr.WriteHeaderOnly(dir.Path, "pano.exr", new ExrSpec { TileWidth = 0, TileHeight = 8 })).Status.Text);
 
+    private static string HeaderError(ExrSpec s) =>
+        Assert.Throws<ExrFormatException>(() => ExrHeader.Read(new MemoryStream(SyntheticExr.Header(s)))).Message;
+
+    [Theory] // [EDGE-exr-support-7]
+    [InlineData("compression size 2")]
+    [InlineData("dataWindow as box2f")]
+    [InlineData("chlist over 64 KiB")]
+    [InlineData("empty type")]
+    public void KnownAttributeTypeOrSizeMismatch_DecodeFailed(string what)
+    {
+        var s = new ExrSpec();
+        string expected;
+        switch (what)
+        {
+            case "compression size 2":
+                s.OmitCompression = true;
+                s.ExtraAttributes.Add(("compression", "compression", [3, 0]));
+                expected = "attribute type compression is not a valid compression";
+                break;
+            case "dataWindow as box2f":
+                s.OmitDataWindow = true;
+                s.ExtraAttributes.Add(("dataWindow", "box2f", new byte[16]));
+                expected = "attribute type box2f is not a valid box2i";
+                break;
+            case "chlist over 64 KiB":
+                // 300 channels (well under 1024) with 250-byte names: over the 64 KiB chlist cap, not the channel cap.
+                var channels = new List<ExrCh> { new("B"), new("G"), new("R") };
+                for (var i = 0; i < 297; i++) channels.Add(new ExrCh(new string('x', 246) + $"{i:000}.Z"));
+                s.Channels = channels;
+                Assert.True(SyntheticExr.Chlist(channels).Length > ExrLimits.MaxChlistBytes);
+                expected = "attribute type chlist is not a valid chlist";
+                break;
+            default:
+                var bytes = HeaderWith(w => { w.Write(Encoding.ASCII.GetBytes("junk\0\0")); w.Write(4); w.Write(0); });
+                Assert.Equal("empty attribute type", Assert.Throws<ExrFormatException>(() => ExrHeader.Read(new MemoryStream(bytes))).Message);
+                Assert.Equal(Corrupt, Refused(FileBytes(bytes)).Status.Text);
+                return;
+        }
+        Assert.Equal(expected, HeaderError(s));
+        Assert.Equal(Corrupt, Refused(File(s)).Status.Text);
+    }
+
+    [Fact] // [EDGE-exr-support-28]
+    public void ChannelSamplingBelowOne_DecodeFailed()
+    {
+        var s = new ExrSpec { Channels = [new("B"), new("G"), new("R", 1, 0, 1)] };
+        Assert.Equal("invalid channel sampling", HeaderError(s));
+        Assert.Equal(Corrupt, Refused(File(s)).Status.Text);
+    }
+
+    [Fact] // [EDGE-exr-support-27]
+    public void BlockBytes_AtLimitAndOver()
+    {
+        // Scanline ZIP: 8192 wide x 16 lines x 128 FLOAT channels = exactly 64 MiB; one more HALF channel is over.
+        var channels = new List<ExrCh> { new("B", 2), new("G", 2), new("R", 2) };
+        for (var i = 0; i < 125; i++) channels.Add(new ExrCh($"c{i:000}", 2));
+        var at = Read(new ExrSpec { Width = 8192, Height = 16, Compression = 3, Channels = channels });
+        Assert.Equal(ExrLimits.MaxBlockBytes, at.MaxBlockBytes);
+        channels.Add(new ExrCh("d", 1));
+        Assert.Equal(LayoutText("very large tiles or too many channels"),
+                     Refused(SyntheticExr.WriteHeaderOnly(dir.Path, "pano.exr", new ExrSpec { Width = 8192, Height = 16, Compression = 3, Channels = channels })).Status.Text);
+
+        // Tiled, one HALF channel: a 2^25 x 1 tile is exactly 64 MiB; one sample wider is over.
+        var tile = Read(new ExrSpec { Width = 1 << 25, Height = 1, TileWidth = 1 << 25, TileHeight = 1, Channels = [new("Y")] });
+        Assert.Equal(ExrLimits.MaxBlockBytes, tile.MaxBlockBytes);
+        Assert.Equal(LayoutText("very large tiles or too many channels"),
+                     Refused(SyntheticExr.WriteHeaderOnly(dir.Path, "pano.exr",
+                             new ExrSpec { Width = (1 << 25) + 1, Height = 1, TileWidth = (1 << 25) + 1, TileHeight = 1, Channels = [new("Y")] })).Status.Text);
+    }
+
+    [Fact] // [EDGE-exr-support-26]
+    public void Tiles_AtLimitAndOver()
+    {
+        // 1024 x 1024 one-pixel tiles is exactly MaxTiles; 17 x 61681 = MaxTiles + 1.
+        var at = Read(new ExrSpec { Width = 1024, Height = 1024, TileWidth = 1, TileHeight = 1 });
+        Assert.Equal(ExrLimits.MaxTiles, at.ChunkCount);
+        Assert.Equal(17L * 61681, ExrLimits.MaxTiles + 1L);
+        Assert.Equal(LayoutText("very small tiles"),
+                     Refused(SyntheticExr.WriteHeaderOnly(dir.Path, "pano.exr", new ExrSpec { Width = 17, Height = 61681, TileWidth = 1, TileHeight = 1 })).Status.Text);
+    }
+
+    [Fact] // [EDGE-exr-support-26]
+    public void TileBlockBytesOverflow_DecodeFailed()
+    {
+        // int.MaxValue-sized tiles over an int.MaxValue-sized data window: the block size overflows a long.
+        var s = new ExrSpec
+        {
+            Width = int.MaxValue, Height = int.MaxValue, TileWidth = int.MaxValue, TileHeight = int.MaxValue,
+            Channels = [new("B", 2), new("G", 2), new("R", 2)],
+        };
+        Assert.Equal("tile size overflows", HeaderError(s));
+        Assert.Equal(Corrupt, Refused(SyntheticExr.WriteHeaderOnly(dir.Path, "pano.exr", s)).Status.Text);
+    }
+
     [Fact] // [EDGE-exr-support-26]
     public void TileSizeOverInt_DecodeFailed() =>
         Assert.Equal(Corrupt, Refused(SyntheticExr.WriteHeaderOnly(dir.Path, "pano.exr",

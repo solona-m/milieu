@@ -138,6 +138,45 @@ public sealed class ExrPizTests(ITestOutputHelper output)
                                  BitConverter.SingleToInt32Bits(img.Rgb[(y * s.Width + x) * 3 + k]));
     }
 
+    /// <summary>
+    /// A valid but hostile Huffman table: all 65,537 symbols at length 30, so 65,536 of them share the 14-bit prefix 0.
+    /// The data repeats symbol 65,535, the last in that prefix's symbol order (the worst case for a bucket scan).
+    /// </summary>
+    private static byte[] SingleBucketStream(int codes)
+    {
+        var table = new SyntheticExr.BitWriter();
+        for (var i = 0; i < ExrPiz.HufEncSize; i++) table.Put(6, 30);
+        var t = table.Finish(out _);
+        var data = new SyntheticExr.BitWriter();
+        for (var i = 0; i < codes; i++) data.Put(30, 65535);
+        var d = data.Finish(out var nBits);
+        var ms = new MemoryStream();
+        var w = new BinaryWriter(ms);
+        w.Write(0); w.Write(ExrPiz.HufEncSize - 1); w.Write(t.Length); w.Write(nBits); w.Write(0);
+        w.Write(t);
+        w.Write(d);
+        return ms.ToArray();
+    }
+
+    [Fact] // [EDGE-exr-support-16]
+    public void HostileLongCodeTable_DecodesInBoundedTime()
+    {
+        const int codes = 70_000;   // more than the 65,536-step cancellation interval
+        var stream = SingleBucketStream(codes);
+        var output = new ushort[codes];
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        new ExrPiz().HufUncompress(stream, output);
+        sw.Stop();
+        Assert.All(output, v => Assert.Equal(65535, v));
+        // A per-prefix scan would need ~4.6 billion comparisons here; canonical decoding by length needs one step per code.
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2), $"took {sw.Elapsed}");
+
+        // The decode loop also checks the token (defence in depth).
+        using var cts = new System.Threading.CancellationTokenSource();
+        cts.Cancel();
+        Assert.ThrowsAny<OperationCanceledException>(() => new ExrPiz().HufUncompress(stream, new ushort[codes], cts.Token));
+    }
+
     [Fact] // [EDGE-exr-support-38]
     public void KnownAnswer_Wavelet14And16()
     {

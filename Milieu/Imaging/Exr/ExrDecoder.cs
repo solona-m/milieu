@@ -17,7 +17,18 @@ public static class ExrDecoder
 
     public static (int Width, int Height, float[] Rgb) Decode(Stream s, CancellationToken ct) => Decode(s, ct, null);
 
+    /// <summary>
+    /// Throws only <see cref="ExrFormatException"/>, <see cref="ExrUnsupportedException"/> or
+    /// <see cref="OperationCanceledException"/>: truncation and bad zlib data are wrapped as format errors.
+    /// </summary>
     internal static (int Width, int Height, float[] Rgb) Decode(Stream s, CancellationToken ct, ExrDecodeTrace? trace)
+    {
+        try { return DecodeCore(s, ct, trace); }
+        catch (EndOfStreamException) { throw new ExrFormatException("file truncated"); }
+        catch (InvalidDataException) { throw new ExrFormatException("invalid zlib data"); }
+    }
+
+    private static (int Width, int Height, float[] Rgb) DecodeCore(Stream s, CancellationToken ct, ExrDecodeTrace? trace)
     {
         var h = ExrHeader.Read(s);
         if (h.Width > ImageLoader.MaxHdrWidth || h.Height > ImageLoader.MaxHdrHeight)
@@ -108,7 +119,7 @@ public static class ExrDecoder
                         data = packed;
                         break;
                     case 4:
-                        piz!.Decompress(packed.AsSpan(0, packedSize), unpacked.AsSpan(0, expected), bw, bh, sizes, pizScratch!, trace);
+                        piz!.Decompress(packed.AsSpan(0, packedSize), unpacked.AsSpan(0, expected), bw, bh, sizes, pizScratch!, trace, ct);
                         data = unpacked;
                         break;
                     default:

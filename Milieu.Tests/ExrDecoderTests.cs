@@ -273,13 +273,16 @@ public sealed class ExrDecoderTests : IDisposable
             }
             File.WriteAllBytes(path, m);
 
+            // The decoder's own contract: only its exception types escape (truncation and zlib errors are wrapped).
             long bound;
             try
             {
                 var h = ExrHeader.Read(new MemoryStream(m));
                 bound = 12L * h.Width * h.Height + 3 * h.MaxBlockBytes + 8L * h.ChunkCount + MiB;
             }
-            catch (Exception) { bound = MiB; }
+            catch (Exception e) when (e is ExrFormatException or ExrUnsupportedException) { bound = MiB; }
+            try { ExrDecoder.Decode(new MemoryStream(m, writable: false), default); }
+            catch (Exception e) when (e is ExrFormatException or ExrUnsupportedException) { }
 
             var before = GC.GetAllocatedBytesForCurrentThread();
             try
@@ -394,6 +397,24 @@ public sealed class ExrDecoderTests : IDisposable
         var e = Assert.Throws<ExrFormatException>(() => ExrDecoder.Decode(new MemoryStream(cut), default));
         Assert.Equal("chunk size out of range", e.Message);
         Assert.Equal(MessageKey.DecodeFailed, LoadFails(Path(cut)).Status.Key);
+    }
+
+    [Fact] // [EDGE-exr-support-11]
+    public void TruncatedOffsetTable_DecodeFailed()
+    {
+        var build = SyntheticExr.Build(new ExrSpec { Compression = 3, Height = 64 });
+        var cut = build.Bytes[..(int)(build.OffsetTablePos + 8 * 4 - 4)];
+        var e = Assert.Throws<ExrFormatException>(() => ExrDecoder.Decode(new MemoryStream(cut), default));
+        Assert.Equal("offset table past the end of the file", e.Message);
+        Assert.Equal(MessageKey.DecodeFailed, LoadFails(Path(cut)).Status.Key);
+    }
+
+    [Fact] // [EDGE-exr-support-12]
+    public void UncompressedChunkShorterThanBlock_DecodeFailed()
+    {
+        var b = SyntheticExr.Build(new ExrSpec { Compression = 0, PackedOverride = (i, u) => i == 3 ? u[..^2] : u }).Bytes;
+        var e = Assert.Throws<ExrFormatException>(() => ExrDecoder.Decode(new MemoryStream(b), default));
+        Assert.Equal("uncompressed chunk size mismatch", e.Message);
     }
 
     [Theory] // [EDGE-exr-support-13]
