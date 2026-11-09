@@ -378,9 +378,12 @@ public sealed class SceneLightingTests : IDisposable
         var tcs = new TaskCompletionSource<LightRig?>();
         loader = (p, _) => p == ImageB ? tcs.Task : Task.FromResult<LightRig?>(RigA);
         lit = new LitBackdrop(ImageB, View0);                // B committed
+        var refreshes = spawner.Refreshes.Count;
         s.Tick();
         Assert.Equal(LightingStatus.Analysing, s.Status.Status);
         Assert.Equal(held, spawner.Live);                    // A's lights until B's rig is in
+        Ticks(4);
+        Assert.Equal(refreshes + 5 * 3, spawner.Refreshes.Count);   // still refreshed every tick while analysing
         tcs.SetResult(RigB);
         s.Tick();
         Assert.Equal(held, spawner.Live);                    // re-aimed in place, not recreated
@@ -673,12 +676,13 @@ public sealed class SceneLightingTests : IDisposable
     [Fact] // [EDGE-scene-lighting-34]
     public void SentinelSetBeforeEachBatch_ClearedAfterStableTicks()
     {
+        spawner.RequireSentinelSet = sentinel;               // every Create throws unless the sentinel is already set
         Ticks(Settle);
         Assert.Equal(0, sentinel.Sets);
         s.Tick();
         Assert.Equal(1, sentinel.Sets);
         Assert.Equal("Set", sentinel.Calls[^1]);
-        Assert.Equal(spawner.Calls.IndexOf("Create"), 0);    // nothing native before the Set
+        Assert.Equal(3, spawner.Creates.Count);              // all three created after the Set
         Ticks(LightRigLayout.StableTicks - 2);
         Assert.True(sentinel.IsSet);                          // not yet: the window is StableTicks with lights alive
         s.Tick();
@@ -779,5 +783,61 @@ public sealed class SceneLightingTests : IDisposable
         public bool Update(LightHandle h, LightParams p) => inner.Update(h, p);
         public bool Refresh(LightHandle h) => inner.Refresh(h);
         public bool Destroy(LightHandle h) => !(Active && ReferenceEquals(h, third)) && inner.Destroy(h);
+    }
+
+    [Fact] // [EDGE-scene-lighting-17]
+    public void DeadHandleWhileAnalysing_FailsAndRemoves()
+    {
+        LightUp();
+        loader = (_, _) => new TaskCompletionSource<LightRig?>().Task;   // B's rig never arrives
+        lit = new LitBackdrop(ImageB, View0);
+        s.Tick();
+        Assert.Equal(LightingStatus.Analysing, s.Status.Status);
+        var gone = spawner.Creates[0].H;
+        spawner.GoneByGame.Add(gone);
+        s.Tick();
+        Assert.DoesNotContain(gone, spawner.Destroys);
+        Assert.Empty(spawner.Live);
+        Assert.Equal(LightingStatus.CreateFailed, s.Status.Status);
+    }
+
+    [Fact] // [EDGE-scene-lighting-34]
+    public void StableCountContinuesWhileAnalysing()
+    {
+        LightUp();
+        Ticks(LightRigLayout.StableTicks - 100);
+        loader = (_, _) => new TaskCompletionSource<LightRig?>().Task;
+        lit = new LitBackdrop(ImageB, View0);
+        Ticks(100);
+        Assert.Equal(LightingStatus.Analysing, s.Status.Status);
+        Assert.False(sentinel.IsSet);                         // the window kept counting with A's lights alive
+    }
+
+    public static TheoryData<string> EmptyPlans => new() { "StrengthZero", "NoKeyNoFills", "NothingDrawn" };
+
+    [Theory] // [EDGE-scene-lighting-34] [EDGE-scene-lighting-10]
+    [MemberData(nameof(EmptyPlans))]
+    public void ApplyLeavingNoLights_ClearsOwnedSentinel(string what)
+    {
+        LightUp();
+        Assert.True(sentinel.IsSet);
+        switch (what)
+        {
+            case "StrengthZero": config.LightStrength = 0; break;
+            case "NoKeyNoFills": loader = (_, _) => Task.FromResult<LightRig?>(RigA with { Key = null }); config.FillLightCount = 0;
+                                 lit = new LitBackdrop(ImageB, View0); break;
+            case "NothingDrawn": lit = new LitBackdrop(ImageA, View0 with { URepeat = 0.01f, VRepeat = 0.01f }); break;
+        }
+        s.Tick();
+        Assert.Empty(spawner.Live);
+        Assert.False(sentinel.IsSet);
+        // A refused destroy keeps the light, and the sentinel with it.
+        config.LightStrength = 1; config.FillLightCount = 2; loader = null; lit = new LitBackdrop(ImageA, View0);
+        s.Tick();
+        Assert.True(sentinel.IsSet);
+        spawner.RefuseDestroy = true;
+        config.LightStrength = 0;
+        s.Tick();
+        Assert.True(sentinel.IsSet);
     }
 }

@@ -273,6 +273,8 @@ public sealed class FakeLightSpawner : Milieu.Lighting.ILightSpawner
     /// <summary>Handles the game "freed": Update/Refresh find them dead.</summary>
     public readonly HashSet<Milieu.Lighting.LightHandle> GoneByGame = [];
     public bool RefuseDestroy;
+    /// <summary>When set, every Create asserts the crash sentinel is already set (the Set-before-Create order).</summary>
+    public FakeSentinel? RequireSentinelSet;
     private int next = 0x1000;
 
     public int NativeCalls => Calls.Count;
@@ -289,6 +291,7 @@ public sealed class FakeLightSpawner : Milieu.Lighting.ILightSpawner
     public Milieu.Lighting.LightHandle? Create(Milieu.Lighting.LightParams p)
     {
         Check(null, "Create");
+        if (RequireSentinelSet is { IsSet: false }) throw new InvalidOperationException("Create before the crash sentinel was set");
         if (++CreateAttempts == FailCreateAt) return null;
         var h = new Milieu.Lighting.LightHandle(next += 0x10);
         Creates.Add((p, h));

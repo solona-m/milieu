@@ -28,10 +28,15 @@ public interface IBackdropPreparer
 /// probe → limits and budget → warnings → cache → decode → (tone map) → seam check → layout, resample, band fill →
 /// mips → BC7 → atomic write. Progress weights: decode 10, tone map 10, resample 10, mips 10, encode 60.
 /// </summary>
+/// <param name="storeRigs">Scene lighting's kill switch (Plugin.LightingAvailable): false and no conversion extracts or stores a light rig.</param>
 public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IBundledBackdrops? bundled = null, ThumbStore? thumbs = null,
-                                     ILogSink? log = null) : IBackdropPreparer
+                                     ILogSink? log = null, bool storeRigs = true) : IBackdropPreparer
 {
     private readonly LightRigStore rigs = new(cache);
+
+    /// <summary>Test seam: float RGB → light rig (the radiance probe, then the extractor).</summary>
+    internal Func<float[], int, int, CancellationToken, LightRig> RigExtractor { get; set; } =
+        (rgb, w, h, ct) => LightExtractor.Extract(RadianceProbe.Build(rgb, w, h, ct));
 
     private readonly HashSet<string> verified = new(StringComparer.OrdinalIgnoreCase);
 
@@ -134,7 +139,7 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
         byte[] rgb;
         if (image.IsHdr)
         {
-            TryStoreRig(request.ImagePath, info, image.Hdr!, image.Width, image.Height, ct);
+            if (storeRigs) TryStoreRig(request.ImagePath, info, image.Hdr!, image.Width, image.Height, ct);
             rgb = ToneMapper.ToSrgb8(image.Hdr!, image.Width, image.Height, request.ExposureEv, request.ToneMap, ct);
             image = new LoadedImage { Width = image.Width, Height = image.Height, Rgb = rgb };   // drop the float buffer
         }
@@ -171,16 +176,30 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
         return new PreparedTexture(key, diskPath, CacheStore.TextureGamePath(key), outW, outH, probe.Kind, warnings);
     }
 
-    /// <summary>Every HDR conversion extracts and stores the image's light rig while the float data is at hand. Never fails the conversion.</summary>
-    private LightRig? TryStoreRig(string path, FileInfo info, float[] hdr, int w, int h, CancellationToken ct)
+    /// <summary>
+    /// Every HDR conversion extracts and stores the image's light rig while the float data is at hand. A failure here
+    /// (extraction or storage) is logged at Debug and never fails the conversion; only cancellation passes through.
+    /// </summary>
+    private void TryStoreRig(string path, FileInfo info, float[] hdr, int w, int h, CancellationToken ct)
     {
-        var rig = LightExtractor.Extract(RadianceProbe.Build(hdr, w, h, ct));
+        LightRig rig;
+        try { rig = RigExtractor(hdr, w, h, ct); }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            log?.Debug("[Milieu] Light rig not extracted: " + LogText.Describe(e, path, cache.Root));
+            return;
+        }
+        SaveRig(path, info, rig);
+    }
+
+    /// <summary>Stores a rig; an IO failure is logged at Debug (the rig is simply extracted again next time).</summary>
+    private void SaveRig(string path, FileInfo info, LightRig rig)
+    {
         try { rigs.Save(CacheStore.LightRigKey(path, info.Length, info.LastWriteTimeUtc.Ticks), rig); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             log?.Debug("[Milieu] Light rig not cached: " + LogText.Describe(e, path, cache.Root));
         }
-        return rig;
     }
 
     public async Task<LightRig?> PrepareLightsAsync(string imagePath, CancellationToken ct)
@@ -210,7 +229,10 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
             Interlocked.Increment(ref decodes);
             var image = ImageLoader.Load(imagePath, probe.Kind, ct);
             if (!image.IsHdr) return null;
-            return TryStoreRig(imagePath, info, image.Hdr!, image.Width, image.Height, ct);
+            // Here an extraction failure propagates: scene lighting latches it as ReadFailed.
+            var rig = RigExtractor(image.Hdr!, image.Width, image.Height, ct);
+            SaveRig(imagePath, info, rig);
+            return rig;
         }
         finally { oneAtATime.Release(); }
     }

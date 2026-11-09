@@ -68,7 +68,7 @@ public sealed class Plugin : IDalamudPlugin
         penumbra = new PenumbraIpc(PluginInterface, log, configDir);
         downloads = new DefaultBackdropsDownloadService(log, configDir);
         var gameState = new GameState(ClientState, Condition, ObjectTable);
-        var preparer = new BackdropPreparer(cache, new Bc7(), downloads, thumbStore, log);
+        var preparer = new BackdropPreparer(cache, new Bc7(), downloads, thumbStore, log, storeRigs: LightingAvailable());
         controller = new BackdropController(vfx, penumbra, gameState, preparer, cache, config, log,
                                             bundled: downloads, save: Save, syncedAvailable: SyncedAvailable,
                                             sync: penumbra, gameData: new GameData(DataManager));
@@ -81,7 +81,12 @@ public sealed class Plugin : IDalamudPlugin
         Task.Run(() =>
         {
             // Startup tidy-up off the framework thread: v1 JPEGs and unpinned textures, orphaned thumbnails, old light rigs.
-            try { downloads.CleanupStale(); thumbStore.Cleanup(userImages); new LightRigStore(cache).TrimRigs(LightRigStore.DefaultKeep); }
+            try
+            {
+                downloads.CleanupStale();
+                thumbStore.Cleanup(userImages);
+                if (LightingAvailable()) new LightRigStore(cache).TrimRigs(LightRigStore.DefaultKeep);
+            }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log.Debug("[Milieu] Startup cleanup skipped."); }
         });
 
@@ -125,8 +130,9 @@ public sealed class Plugin : IDalamudPlugin
     private static bool SyncedAvailable() => true;
 
     /// <summary>
-    /// Scene lighting's kill switch (docs/adr/0009): return false and nothing lighting-related is constructed, no light
-    /// function is resolved or called, and the "Scene lighting" block is hidden.
+    /// Scene lighting's kill switch (docs/adr/0009): return false and nothing lighting-related runs: SceneLighting isn't
+    /// constructed, no light function is resolved or called, conversions extract and store no light rig, the rig cache
+    /// isn't trimmed, and the "Scene lighting" block is hidden.
     /// </summary>
     private static bool LightingAvailable() => true;
 

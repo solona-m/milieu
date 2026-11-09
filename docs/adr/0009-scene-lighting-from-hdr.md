@@ -45,10 +45,13 @@ also local: PSync pairs never see them.
 - **Failures latch** until the user turns the option off and on (an image change also clears a read failure):
   the light function missing (the panel says so, controls disabled), a light not created (any already made are
   destroyed), a light found dead, the rig unreadable. No retry loop. `Plugin.LightingAvailable` is the kill switch:
-  off, nothing lighting-related is constructed and the section is hidden.
+  off, nothing lighting-related runs (no SceneLighting, no light function resolved, no rig extracted, stored or trimmed)
+  and the section is hidden. A failure extracting a rig during a conversion is logged and never fails the backdrop.
 - **Crash sentinel** (`<config>/lighting-attempt.flag`): set before each create batch; cleared after 600 ticks with
   lights alive, on the off→on toggle, and in RemoveAll/Teardown **only once every light was destroyed** (a refused
-  destroy keeps the flag until a later RemoveAll destroys the rest). Found at startup, lighting starts latched
+  destroy keeps the flag until a later RemoveAll destroys the rest), and when a plan leaves no light alive. The flag is
+  cleared only by the session that set it: a CrashGuard flag found at startup survives until the user's off→on, even
+  across a clean exit (RemoveAll, Teardown and the unloading path don't clear a flag this session didn't set). Found at startup, lighting starts latched
   (CrashGuard) and says why. Its scope is creation and the first 600 ticks only: a per-frame crash later is not caught,
   by design. Every game client on the machine shares the config directory, so one client's attempt in progress can make
   another show a false CrashGuard; off→on recovers.

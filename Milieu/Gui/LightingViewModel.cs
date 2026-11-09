@@ -20,12 +20,12 @@ public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configura
 
     public const string UnavailableText = "Milieu can't find the game's light functions. It may need an update for this game patch.";
     public const string CrashGuardText =
-        "Scene lighting was switched off because the game closed while Milieu was setting up its lights last time. Turn it on again to retry.";
+        "Scene lighting was switched off because the game closed while Milieu was setting up its lights last time. Untick and tick it again to retry.";
     public const string NeedsHdrText = "Only .hdr and .exr images carry the light information this needs.";
     public const string WaitingForBackdropText = "Lights appear while an HDR backdrop is shown.";
     public const string WaitingForGPoseText = "Lights appear in GPose.";
     public const string AnalysingTemplate = "Reading the light in {file}…";
-    public const string CreateFailedText = "The game didn't create the lights; scene lighting is off until you turn it on again.";
+    public const string CreateFailedText = "The game didn't create the lights; scene lighting is off until you untick and tick it again.";
     public const string ReadFailedTemplate = "{file}: couldn't read its light information.";
     public const string StrengthZeroText = "Light strength is 0, so no lights are added.";
     public const string OnWithKeyTemplate = "Lit by the image: sun + {n} fill lights.";

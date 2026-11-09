@@ -102,7 +102,7 @@ public sealed class SceneLighting
         if (sentinel.WasSetAtStartup)
         {
             latch = Latch.CrashGuard;
-            log.Warning("[Milieu] The game closed while scene lights were being set up last session; scene lighting is off until it is turned on again.");
+            log.Warning("[Milieu] The game closed while scene lights were being set up last session; scene lighting is off until it is unticked and ticked again.");
         }
     }
 
@@ -155,7 +155,12 @@ public sealed class SceneLighting
         // (c) The rig for the drawn image: from memory, or one job off the framework thread.
         if (!string.Equals(rigPath, shown.ImagePath, StringComparison.OrdinalIgnoreCase))
         {
-            if (!TickRigJob(shown.ImagePath)) return;
+            if (!TickRigJob(shown.ImagePath))
+            {
+                // The previous image's lights stay until the new rig is in: they keep their per-frame refresh meanwhile.
+                RefreshAndCount();
+                return;
+            }
         }
         if (rig == null)
         {
@@ -179,15 +184,29 @@ public sealed class SceneLighting
         var plan = LightRigPlanner.Plan(rig, shown.View, anchor.Value, config.LightStrength, config.FillLightCount);
         if (!Apply(plan)) return;
 
-        // (f) The per-frame refresh.
+        // (f), (g)
+        if (!RefreshAndCount()) return;
+
+        status = new LightingStatusSnapshot(
+            !(config.LightStrength > 0) ? LightingStatus.StrengthZero
+            : !plan.RigHasKey ? LightingStatus.OnNoKey
+            : !plan.KeyDrawn ? LightingStatus.OnKeyNotDrawn
+            : LightingStatus.OnWithKey,
+            FileOf(shown.ImagePath), plan.FillCount);
+    }
+
+    /// <summary>
+    /// (f) The per-frame refresh of every live light (a dead one fails and removes them all), then (g) the stable count:
+    /// lights that stayed up <see cref="LightRigLayout.StableTicks"/> clear the sentinel. False if it failed (latched).
+    /// </summary>
+    private bool RefreshAndCount()
+    {
         foreach (var (_, (handle, _)) in lights.ToArray())
             if (!spawner.Refresh(handle))
             {
-                FailAndRemove("[Milieu] A scene light is no longer valid; scene lighting is off until it is turned on again.");
-                return;
+                FailAndRemove("[Milieu] A scene light is no longer valid; scene lighting is off until it is unticked and ticked again.");
+                return false;
             }
-
-        // (g) Lights that stayed up long enough clear the sentinel.
         if (lights.Count > 0)
         {
             if (++stable == LightRigLayout.StableTicks && sentinelOwned)
@@ -197,13 +216,7 @@ public sealed class SceneLighting
             }
         }
         else stable = 0;
-
-        status = new LightingStatusSnapshot(
-            !(config.LightStrength > 0) ? LightingStatus.StrengthZero
-            : !plan.RigHasKey ? LightingStatus.OnNoKey
-            : !plan.KeyDrawn ? LightingStatus.OnKeyNotDrawn
-            : LightingStatus.OnWithKey,
-            FileOf(shown.ImagePath), plan.FillCount);
+        return true;
     }
 
     /// <summary>Why there must be no lights right now (the status to show), or null when <c>ShouldLight</c> holds.</summary>
@@ -281,7 +294,7 @@ public sealed class SceneLighting
                 if (held.P == p) continue;
                 if (!spawner.Update(held.Handle, p))
                 {
-                    FailAndRemove("[Milieu] A scene light is no longer valid; scene lighting is off until it is turned on again.");
+                    FailAndRemove("[Milieu] A scene light is no longer valid; scene lighting is off until it is unticked and ticked again.");
                     return false;
                 }
                 lights[slot] = (held.Handle, p);
@@ -296,7 +309,7 @@ public sealed class SceneLighting
             var handle = spawner.Create(p);
             if (handle == null)
             {
-                FailAndRemove("[Milieu] The game didn't create a scene light; scene lighting is off until it is turned on again.");
+                FailAndRemove("[Milieu] The game didn't create a scene light; scene lighting is off until it is unticked and ticked again.");
                 return false;
             }
             lights[slot] = (handle, p);
@@ -307,6 +320,12 @@ public sealed class SceneLighting
         {
             var (handle, _) = lights[slot];
             if (handle.IsDead || spawner.Destroy(handle)) lights.Remove(slot);   // a refused destroy is retried next tick
+        }
+        if (lights.Count == 0 && sentinelOwned)
+        {
+            // Nothing left alive (strength 0, nothing planned or drawn): this attempt is over.
+            sentinel.Clear();
+            sentinelOwned = false;
         }
         if (created && plan.Lights.FirstOrDefault(l => l.Slot == LightRigPlanner.KeySlot) is { P: { } key } && anchor is { } a && rig?.Key is { } k)
         {

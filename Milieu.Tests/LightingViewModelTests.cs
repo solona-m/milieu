@@ -62,7 +62,7 @@ public class LightingViewModelTests
     public void CreateFailed_Text()
     {
         var vm = Vm(LightingStatus.CreateFailed);
-        Assert.Equal("The game didn't create the lights; scene lighting is off until you turn it on again.", vm.StatusText);
+        Assert.Equal("The game didn't create the lights; scene lighting is off until you untick and tick it again.", vm.StatusText);
         Assert.Equal(Severity.Error, vm.StatusSeverity);
         Assert.True(vm.ControlsEnabled);
     }
@@ -83,7 +83,7 @@ public class LightingViewModelTests
     [Fact] // [AC-scene-lighting-7] [EDGE-scene-lighting-33]
     public void CrashGuard_Text()
     {
-        Assert.Equal("Scene lighting was switched off because the game closed while Milieu was setting up its lights last time. Turn it on again to retry.",
+        Assert.Equal("Scene lighting was switched off because the game closed while Milieu was setting up its lights last time. Untick and tick it again to retry.",
                      Vm(LightingStatus.CrashGuard).StatusText);
         Assert.Equal(LightingViewModel.CrashGuardText, Vm(LightingStatus.CrashGuard, image: @"C:\pics\a.jpg").StatusText);
     }

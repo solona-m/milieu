@@ -517,4 +517,41 @@ public sealed class BackdropPreparerTests : IDisposable
             a != null && b != null && a.Version == b.Version && Equals(a.Key, b.Key) && a.Regions.SequenceEqual(b.Regions) && a.TotalEnergy == b.TotalEnergy;
         public int GetHashCode(Milieu.Lighting.LightRig? r) => 0;
     }
+
+    [Fact] // [EDGE-scene-lighting-30]
+    public async Task RigExtractionThrows_ConversionSucceeds()
+    {
+        var log = new FakeLog();
+        var p = new BackdropPreparer(cache, new StubEncoder(), log: log)
+        {
+            RigExtractor = (_, _, _, _) => throw new InvalidOperationException("a lighting bug"),
+        };
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        var t = await p.PrepareTextureAsync(Req(hdr), null, default);
+        AssertAtex(t.DiskPath, 1024, 512);
+        Assert.False(Directory.Exists(cache.LightRigDir) && Directory.GetFiles(cache.LightRigDir).Length > 0);
+        Assert.Contains(log.Lines, l => l.Level == "Debug" && l.Text.Contains("Light rig"));
+        // Cancellation is not swallowed.
+        var cancelling = new BackdropPreparer(cache, new StubEncoder())
+        {
+            RigExtractor = (_, _, _, _) => throw new OperationCanceledException(),
+        };
+        var other = SyntheticImages.WriteHdrRgb(dir.Path, "other.hdr", 256, 128, SunImage(256, 128));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelling.PrepareTextureAsync(Req(other), null, default));
+    }
+
+    [Fact] // [AC-scene-lighting-10] [EDGE-scene-lighting-28]
+    public async Task KillSwitchOff_NoRigExtractedOrStored()
+    {
+        var extracted = 0;
+        var p = new BackdropPreparer(cache, new StubEncoder(), storeRigs: false)
+        {
+            RigExtractor = (rgb, w, h, ct) => { extracted++; return Milieu.Lighting.LightExtractor.Extract(Milieu.Lighting.RadianceProbe.Build(rgb, w, h, ct)); },
+        };
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        var t = await p.PrepareTextureAsync(Req(hdr), null, default);
+        AssertAtex(t.DiskPath, 1024, 512);
+        Assert.Equal(0, extracted);
+        Assert.False(Directory.Exists(cache.LightRigDir));
+    }
 }
