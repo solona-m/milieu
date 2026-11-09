@@ -196,7 +196,7 @@ internal static class DomeAvfxBuilder
     /// and far 20 (the near/far range Pickles says shadows depend on). Red so it stands out, offset 2.5 units ahead of and 1.5
     /// above the emitter (the dome origin, at eye height). bAOV 1 as the venue: the dome particle itself is unlit (bLgt 0).
     /// Directional (modes 3-5): set up like the game's directional effectors that light the world (19 of 506 have bAGm 1; the
-    /// rest light only their own effect; 18 of the 19 match this): bAOV 0, black ambient, colour as RGB + Bri (the point
+    /// rest light only their own effect; 18 of the 19 match this, 15 with black ambient): bAOV 0, black ambient, colour as RGB + Bri (the point
     /// lights' A is not used), Pow 1, on its own particle-less emitter (<see cref="LightEmitter"/>; mode 5 uses the dome
     /// emitter instead). Mode 3 copies the most common one (14 of the 19: RGB 255/182/99 of 255, Bri 3, Rot X 90 degrees);
     /// modes 4 and 5 are red, Bri 10, tilted.

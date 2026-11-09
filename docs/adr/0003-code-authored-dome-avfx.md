@@ -43,7 +43,7 @@ scene lighting to synced viewers (ADR 0009 lights are local-only native objects)
 dome emitter (`Emit` `EfNo` 0), set up like the "Pickles Venue" lights (mode 2 with 10x range and 3x brightness), shadows
 with near 0.0001 / far 20. Modes 3-4: a directional light on its own particle-less emitter with its own timeline item, set up
 like the game's world-lighting directional lights (found by scanning the game's VFX: 19 of 506 directional effectors have
-bAGm 1, and 18 of those 19 use bAOV 0, black ambient, RGB + Bri and their own particle-less emitter); mode 3 copies the most
+bAGm 1, and 18 of those 19 use bAOV 0, RGB + Bri and their own particle-less emitter, most (15) with black ambient); mode 3 copies the most
 common one, mode 4 is red, brighter and tilted. Mode 5 is mode 4's light linked from the dome emitter (the 19th game light
 is linked from a particle emitter), to tell whether the separate emitter matters.
 Mode 0, the default, gives byte-identical output.
