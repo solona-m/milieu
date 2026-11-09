@@ -155,7 +155,9 @@ internal static class DomeAvfxBuilder
     private static void Effector(AvfxChunkWriter w, int mode)
     {
         var point = mode != 3;
-        w.Begin("Efct").Int("EfVT", point ? 0 : 1).Int("RoOT", 0).Int("CCOT", 0).Int("bAOV", 1).Int("bAGm", 1)
+        // Header values as VFXEditor's known-good point light (Files/default_effector.vfxedit): rotation order 2, other VFX
+        // unaffected (so the light doesn't light the dome itself), the game affected.
+        w.Begin("Efct").Int("EfVT", point ? 0 : 1).Int("RoOT", 2).Int("CCOT", 0).Int("bAOV", 0).Int("bAGm", 1)
          .Int("LpSt", 0).Int("LpEd", 0);
         w.Begin("Data");
         if (point)
@@ -173,7 +175,7 @@ internal static class DomeAvfxBuilder
             w.End();
             var shadow = mode == 2 ? 1 : 0;
             w.Int("Attn", 1).Int("bSdw", shadow).Int("bChS", shadow).Int("bMpS", shadow).Int("bMvS", shadow)
-             .Float("SCDN", 0.1f).Float("SCDF", 30f);
+             .Float("SCDN", 0.5f).Float("SCDF", 15f);
         }
         else
         {
@@ -346,7 +348,8 @@ internal static class DomeAvfxBuilder
         Expect(root.Need("TmLn").All("Item").First().Need("EmNo").AsInt() == 0, "timeline → emitter 0");
         var lastItem = root.Need("TmLn").All("Item").Last().Children;
         var efNos = lastItem.Where(c => c.Tag == "EfNo").Select(c => c.AsInt()).ToArray();
-        Expect(root.Need("TmLn").Need("TICn").AsInt() == 1 + lights && efNos.Length == 1 + lights
+        Expect(root.Need("TmLn").Need("TICn").AsInt() == 1 + lights && root.Need("TmLn").All("Item").Count() == 1 + lights
+               && efNos.Length == 1 + lights
                && efNos.All(i => i >= -1 && i < lights) && efNos.Count(i => i == 0) == lights, "timeline → effector links in range");
         var itpr = root.Need("Emit").Need("ItPr");
         Expect(itpr.Need("TgtB").AsInt() == 0, "emitter → particle 0");
