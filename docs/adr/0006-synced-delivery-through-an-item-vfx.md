@@ -104,4 +104,4 @@ The dome is the item's own VFX, so it shows only while the game draws that item 
 
 Open in-game questions (UNVERIFIED): the dome loads on the cushion and on the ring; it follows when walking and doesn't
 swing with emotes (else try `PICd 2`); item VFX culling with a 20000-unit sky dome; what a pair outside the dome radius
-sees (room mode); two synced Milieu users near each other; whether `IsTesting`/`IsDev` gate as expected.
+sees (room mode); two synced Milieu users near each other; that the kill switch hides the options when off.

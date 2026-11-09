@@ -14,7 +14,7 @@ tests; for a rule backed by a test, a diff that weakens the test is `FAIL`.
 - User images are read only from paths the user chose; nothing is written outside the plugin's config directory. `FAIL`.
   Exemption (ADR 0006): synced delivery writes Milieu's own files (`sky_*.atex`,
   `dome_*.avfx`, `*.tmp`) into `<Penumbra ModDirectory>\_milieu_sync\` and nowhere else under the mod directory; cleanup
-  touches only those patterns, and stable builds never create the folder. Any other write there is still `FAIL`.
+  touches only those patterns, and the folder is never created while `Plugin.SyncedAvailable` is off. Any other write there is still `FAIL`.
 - `TreatWarningsAsErrors` stays on in `Milieu.csproj`. `FAIL` if a diff turns it off or adds a blanket `NoWarn`.
 - Workflows (`.github/workflows/`, ADR 0007): every action is pinned to a full commit SHA with a `# vX.Y.Z` comment;
   only `release.yml` and `testing-release.yml` may hold `contents: write`, `secrets.` or a release action; no guard is

@@ -413,8 +413,8 @@ public sealed class BackdropController : Gui.IGridController
             || penumbra.State == PenumbraState.NoBaseCollection)
         {
             penumbra.Clear();
-            // Synced leftovers, also on stable builds where synced delivery is hidden (an earlier testing install may have
-            // left them). Removal only: the staging folder is never created here.
+            // Synced leftovers, also when the kill switch hides synced delivery (an earlier session may have left
+            // them). Removal only: the staging folder is never created here.
             if (synced != null)
             {
                 synced.Forget();

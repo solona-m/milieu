@@ -98,7 +98,7 @@ public sealed class Configuration : IPluginConfiguration
         if (Version < CurrentVersion) Version = CurrentVersion;
     }
 
-    /// <param name="syncedAvailable">False on stable builds: a saved synced choice then falls back to Only me.</param>
+    /// <param name="syncedAvailable">False when the kill switch (Plugin.SyncedAvailable) is off: a saved synced choice then falls back to Only me.</param>
     public void Clamp(bool syncedAvailable = true)
     {
         if (!Enum.IsDefined(Delivery) || (!syncedAvailable && Delivery != Sync.DeliveryMode.Local)) Delivery = Sync.DeliveryMode.Local;
