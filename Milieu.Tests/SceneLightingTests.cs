@@ -575,9 +575,6 @@ public sealed class SceneLightingTests : IDisposable
         s.Teardown();
         Assert.Empty(spawner.Live);
         Assert.Equal(3, spawner.Destroys.Count);
-        unloading = true;                                    // after unhook nothing calls in; even a stray tick is inert
-        s.Tick();
-        s.Teardown();
         Assert.Equal(3, spawner.Destroys.Count);
     }
 
@@ -839,5 +836,53 @@ public sealed class SceneLightingTests : IDisposable
         config.LightStrength = 0;
         s.Tick();
         Assert.True(sentinel.IsSet);
+    }
+
+    [Fact] // [EDGE-scene-lighting-26] [EDGE-scene-lighting-12]
+    public void HdrPathRigNull_RemovesLights_NeedsHdr()
+    {
+        LightUp();
+        const string odd = @"C:\pics\odd.hdr";
+        loader = (p, _) => Task.FromResult<LightRig?>(p == odd ? null : RigA);
+        lit = new LitBackdrop(odd, View0);
+        s.Tick();
+        Assert.Empty(spawner.Live);
+        Assert.Equal(3, spawner.Destroys.Count);
+        Assert.Equal(LightingStatus.NeedsHdr, s.Status.Status);
+        Assert.Equal(1, loads.Count(l => l == odd));
+        var creates = spawner.CreateAttempts;
+        Ticks(Settle * 2);
+        Assert.Equal(creates, spawner.CreateAttempts);
+        Assert.Equal(1, loads.Count(l => l == odd));          // the null is remembered: no repeated job
+    }
+
+    [Fact] // [EDGE-scene-lighting-14] [EDGE-scene-lighting-13]
+    public void JobCancelledByOthers_LatchesReadFailed_NoRestartLoop()
+    {
+        loader = (_, _) => Task.FromCanceled<LightRig?>(new CancellationToken(true));
+        Ticks(Settle * 2);
+        Assert.Single(loads);
+        Assert.Equal(new LightingStatusSnapshot(LightingStatus.ReadFailed, "sky.hdr"), s.Status);
+        Assert.Equal(0, spawner.NativeCalls);
+        loader = null;
+        config.SceneLighting = false; s.Tick();
+        config.SceneLighting = true;
+        Ticks(Settle + 1);
+        Assert.Equal(LightingStatus.OnWithKey, s.Status.Status);
+    }
+
+    [Fact] // [EDGE-scene-lighting-23]
+    public void AfterTeardown_TickAndRemoveAllInert()
+    {
+        LightUp();
+        s.Teardown();
+        Assert.Equal(3, spawner.Destroys.Count);
+        var calls = spawner.NativeCalls;
+        Assert.False(unloading);                             // a dome is still drawn and the game isn't exiting
+        Ticks(Settle * 2);
+        s.RemoveAll();
+        s.Teardown();
+        Assert.Equal(calls, spawner.NativeCalls);
+        Assert.Single(loads);
     }
 }

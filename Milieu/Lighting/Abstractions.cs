@@ -37,7 +37,10 @@ public interface ILightSpawner
     /// <summary>Rewrites a light's parameters. False when the handle is found dead (no native call is made on it).</summary>
     bool Update(LightHandle h, LightParams p);
 
-    /// <summary>The per-frame render/culling/material refresh. False when the handle is found dead.</summary>
+    /// <summary>
+    /// The per-frame render/culling/material refresh (skipped, still true, for a light the game or Brio hid: visibility
+    /// flags 0). False when the handle is found dead.
+    /// </summary>
     bool Refresh(LightHandle h);
 
     /// <summary>Destroys the light. False only when refused (not on the framework thread): the caller keeps the handle.</summary>

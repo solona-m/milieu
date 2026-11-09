@@ -554,4 +554,54 @@ public sealed class BackdropPreparerTests : IDisposable
         Assert.Equal(0, extracted);
         Assert.False(Directory.Exists(cache.LightRigDir));
     }
+
+    [Theory] // [EDGE-scene-lighting-26] [EDGE-scene-lighting-14]
+    [InlineData("x.hdr")]
+    [InlineData("x.exr")]
+    public async Task PrepareLights_HdrNamedButLdrContent_FailsAtProbe_NoDecode(string name)
+    {
+        // A PNG renamed to an HDR extension is refused by the HDR header probe (DecodeFailed, which scene lighting latches
+        // as ReadFailed); it is never decoded, so no rig comes from LDR pixels.
+        var (p, _) = Make();
+        var png = SyntheticImages.WritePng(dir.Path, "real.png", 64, 32);
+        var fake = dir.File(name);
+        File.Copy(png, fake);
+        var ex = await Assert.ThrowsAsync<MilieuException>(() => p.PrepareLightsAsync(fake, default));
+        Assert.Equal(MessageKey.DecodeFailed, ex.Status.Key);
+        Assert.Equal(0, p.DecodeCount);
+        Assert.False(Directory.Exists(cache.LightRigDir));
+    }
+
+    [Fact] // [AC-scene-lighting-8] [EDGE-scene-lighting-25]
+    public async Task PrepareLights_WaitingOnConversion_UsesTheRigItStored()
+    {
+        var gate = new TaskCompletionSource();
+        var encoder = new StubEncoder { Before = _ => gate.Task };
+        var p = new BackdropPreparer(cache, encoder);
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        var conversion = Task.Run(() => p.PrepareTextureAsync(Req(hdr), null, default));
+        Assert.True(Eventually.Holds(() => encoder.Calls > 0), "conversion holds the decode slot");   // rig already stored
+        Directory.Delete(cache.LightRigDir, recursive: true);    // force the first Load to miss…
+        var lights = Task.Run(() => p.PrepareLightsAsync(hdr, default));
+        Assert.True(Eventually.Holds(() => p.RigWaits == 1), "the rig load missed and is waiting for the decode slot");
+        Assert.False(lights.IsCompleted);
+        // …then put the rig back as if the conversion had just stored it: the second Load (after the wait) finds it.
+        await new BackdropPreparer(cache, new StubEncoder()).PrepareLightsAsync(hdr, default);
+        gate.SetResult();
+        await conversion;
+        var rig = await lights;
+        Assert.NotNull(rig?.Key);
+        Assert.Equal(1, p.DecodeCount);                          // the waiting call didn't decode again
+    }
+
+    [Fact] // [EDGE-scene-lighting-14]
+    public async Task PrepareLights_ExtractorThrows_PassesThrough()
+    {
+        var p = new BackdropPreparer(cache, new StubEncoder())
+        {
+            RigExtractor = (_, _, _, _) => throw new InvalidOperationException("a lighting bug"),
+        };
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => p.PrepareLightsAsync(hdr, default));
+    }
 }

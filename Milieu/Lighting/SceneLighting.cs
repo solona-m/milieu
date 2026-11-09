@@ -74,6 +74,7 @@ public sealed class SceneLighting
     private int stable;
     private bool sentinelOwned;   // set by this instance and not yet cleared
     private Vector3? anchor;
+    private bool tornDown;
 
     private string? rigPath;
     private LightRig? rig;
@@ -119,8 +120,8 @@ public sealed class SceneLighting
 
     public void Tick()
     {
-        // (0) Game exit: no native calls at all.
-        if (isUnloading()) return;
+        // (0) Game exit, or already torn down (plugin unload): no native calls at all.
+        if (tornDown || isUnloading()) return;
 
         // (a) The user's off→on: every latch and the sentinel are cleared (the retry).
         var enabled = config.SceneLighting;
@@ -262,15 +263,13 @@ public sealed class SceneLighting
         jobCts?.Dispose();
         jobCts = null;
         jobPath = null;
-        if (done.IsCanceled)
+        if (done.IsCanceled || done.IsFaulted)
         {
-            status = new LightingStatusSnapshot(LightingStatus.Analysing, FileOf(path));
-            return false;   // started again next tick
-        }
-        if (done.IsFaulted)
-        {
-            var ex = done.Exception?.GetBaseException();
+            // Milieu cancels only jobs it drops (never waited on here), so a cancelled result means the job gave up by
+            // itself: latched like a fault, never restarted back to back.
+            var ex = done.IsFaulted ? done.Exception?.GetBaseException() : null;
             if (ex is not MilieuException && ex != null) log.Warning("[Milieu] Reading the light failed: " + LogText.Describe(ex, path));
+            else if (done.IsCanceled) log.Warning("[Milieu] Reading the light was cancelled.");
             latch = Latch.ReadFailed;
             readFailedPath = path;
             settle = 0;
@@ -354,6 +353,7 @@ public sealed class SceneLighting
     /// </summary>
     public void RemoveAll()
     {
+        if (tornDown) return;
         if (isUnloading())
         {
             if (lights.Count > 0) log.Debug("[Milieu] Game exiting: scene lights left to the game.");
@@ -376,11 +376,16 @@ public sealed class SceneLighting
         }
     }
 
-    /// <summary>Plugin unload, on the framework thread: cancel the rig job and remove every light.</summary>
+    /// <summary>
+    /// Plugin unload, on the framework thread: cancel the rig job and remove every light. Afterwards Tick and RemoveAll
+    /// are inert, whatever the dome or the game state.
+    /// </summary>
     public void Teardown()
     {
+        if (tornDown) return;
         CancelRigJob();
         RemoveAll();
+        tornDown = true;
     }
 
     private void CancelRigJob()

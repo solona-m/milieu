@@ -57,6 +57,12 @@ also local: PSync pairs never see them.
   another show a false CrashGuard; off→on recovers.
 - **Game exit.** While `IFramework.IsFrameworkUnloading`, no light call is made at all: Tick does nothing and
   RemoveAll/Teardown drop the handles (leaked on purpose, as Brio does) and clear the sentinel (an exit is not a crash).
+- **Per-frame refresh and hidden lights.** Every live light gets UpdateRender/UpdateCulling/UpdateMaterials each tick,
+  except one whose DrawObject visibility flags are 0 (hidden, e.g. through Brio after it adopted the light): it stays
+  live but isn't refreshed, as Brio does. That skip is UNVERIFIED in game (the interop has no unit-test seam).
+- **Plugin unload.** Teardown runs on the framework thread through `RunOnFrameworkThread` with the same bounded wait as
+  the controller's (the existing `ShutdownSequence` pattern); after it, SceneLighting's Tick and RemoveAll are
+  inert. The rig is cached in memory for the last image path only (re-showing an earlier image reads it from disk).
 - **Synced delivery.** Lights are local in both modes and the panel says pairs don't see them. Two assumptions: the
   item VFX's world yaw is the baked yaw (ICbR 0; ADR 0006's PICd 2 fallback would need the character's yaw), and a
   committed synced registration counts as drawn even if the item isn't (the lights then stay).

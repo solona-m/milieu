@@ -48,6 +48,10 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
     internal int DecodeCount => decodes;
     internal int EncodeCount => encodes;
 
+    /// <summary>Test seam: how many rig loads missed the cache and queued for the decode slot.</summary>
+    internal int RigWaits => Volatile.Read(ref rigWaits);
+    private int rigWaits;
+
     /// <summary>Test hook: sees mip 0 RGBA before encoding.</summary>
     internal Action<byte[]>? OnMip0 { get; set; }
 
@@ -219,6 +223,7 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
         var key = CacheStore.LightRigKey(imagePath, info.Length, info.LastWriteTimeUtc.Ticks);
         if (rigs.Load(key) is { } cached) return cached;
 
+        Interlocked.Increment(ref rigWaits);
         await oneAtATime.WaitAsync(ct).ConfigureAwait(false);
         try
         {

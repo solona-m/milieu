@@ -148,6 +148,7 @@ public sealed unsafe class LightInterop : ILightSpawner
         if (!OnFrameworkThread("Refresh")) return true;
         var light = Live(h);
         if (light == null) return false;
+        if (light->Flags == 0) return true;   // hidden (e.g. by Brio after adopting it): still ours, not refreshed, as Brio does
         light->UpdateRender();
         light->UpdateCulling();
         light->UpdateMaterials();
