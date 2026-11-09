@@ -98,7 +98,8 @@ public sealed class LightRigStoreTests : IDisposable
         Assert.Null(store.Load("00000000000000cc"));
         Assert.False(File.Exists(path));
         // The cache key changes with the version too, so a v1 file is never even looked up under the v2 key.
-        Assert.NotEqual(CacheStore.LightRigKey(@"C:.hdr", 1, 2),
+        Assert.Equal(CacheStore.Hash16(System.Text.Encoding.UTF8.GetBytes("L2|c:/a.hdr|1|2")), CacheStore.LightRigKey(@"C:\a.hdr", 1, 2));
+        Assert.NotEqual(CacheStore.LightRigKey(@"C:\a.hdr", 1, 2),
                         CacheStore.Hash16(System.Text.Encoding.UTF8.GetBytes("L1|c:/a.hdr|1|2")));
     }
 

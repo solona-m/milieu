@@ -18,7 +18,8 @@ public enum LightingStatus
     Off,
     Unavailable,
     CrashGuard,
-    NeedsHdr,
+    /// <summary>No light can be read from the image: an unknown kind, or no rig (a bundled scene without a valid entry).</summary>
+    NoLightInfo,
     WaitingForBackdrop,
     WaitingForGPose,
     Analysing,
@@ -30,16 +31,20 @@ public enum LightingStatus
     OnKeyNotDrawn,
 }
 
-/// <summary>The lighting state as of the last tick. <see cref="FileName"/> is the image's file name only, never a path.</summary>
-public sealed record LightingStatusSnapshot(LightingStatus Status, string FileName = "", int Fills = 0)
+/// <summary>
+/// The lighting state as of the last tick. <see cref="FileName"/> is the image's file name only (a bundled scene's display
+/// name), never a path. <see cref="Estimated"/>: the lights come from an estimated rig (an 8-bit image, docs/adr/0010).
+/// </summary>
+public sealed record LightingStatusSnapshot(LightingStatus Status, string FileName = "", int Fills = 0, bool Estimated = false)
 {
     public static readonly LightingStatusSnapshot Initial = new(LightingStatus.Off);
 }
 
 /// <summary>
 /// Scene lighting's lifecycle (docs/adr/0009), ticked on the framework thread right after the backdrop controller.
-/// Lights exist only while <see cref="ShouldLight"/> holds (option on, spawner available, no latch, an HDR image drawn on
-/// the dome, ready and in GPose with a local player, the framework not unloading) and only after
+/// Lights exist only while <see cref="ShouldLight"/> holds (option on, spawner available, no latch, an image Milieu can
+/// read light from drawn on the dome (HDR, PNG/JPG or a bundled scene, <see cref="CanLight"/>), ready and in GPose with
+/// a local player, the framework not unloading) and only after
 /// <see cref="LightRigLayout.GposeSettleTicks"/> consecutive ticks of it; the counter resets on any tick it doesn't hold,
 /// and the lights are removed in that same tick. The rig is loaded off the framework thread (one job, the last path kept
 /// in memory); the plan is applied by slot (create the missing, update the changed, destroy the rest).
@@ -113,10 +118,12 @@ public sealed class SceneLighting
     /// <summary>Lights currently held (test seam).</summary>
     internal int LiveCount => lights.Count;
 
-    internal static bool IsHdrImage(string path) =>
-        !BackdropPins.IsBundledId(path) && ImageLoader.KindOf(path)?.IsHdr() == true;
+    /// <summary>An image Milieu can read light from: an HDR rig, an estimate for a PNG/JPG, or a bundled scene's table rig.</summary>
+    internal static bool CanLight(string path) => BackdropPins.IsBundledId(path) || ImageLoader.KindOf(path) != null;
 
-    private static string FileOf(string path) => BackdropPins.IsBundledId(path) ? path : Path.GetFileName(path);
+    /// <summary>What the panel calls an image: its file name (never a path), or a bundled scene's display name.</summary>
+    public static string FileOf(string path) =>
+        BackdropPins.TryParseId(path, out var pin) ? pin.DisplayName : BackdropPins.IsBundledId(path) ? path : Path.GetFileName(path);
 
     public void Tick()
     {
@@ -167,7 +174,7 @@ public sealed class SceneLighting
         {
             settle = 0;
             RemoveAll();
-            status = new LightingStatusSnapshot(LightingStatus.NeedsHdr, FileOf(shown.ImagePath));
+            status = new LightingStatusSnapshot(LightingStatus.NoLightInfo, FileOf(shown.ImagePath));
             return;
         }
 
@@ -175,7 +182,7 @@ public sealed class SceneLighting
         if (settle < LightRigLayout.GposeSettleTicks)
         {
             settle++;
-            status = new LightingStatusSnapshot(LightingStatus.WaitingForGPose, FileOf(shown.ImagePath));
+            status = new LightingStatusSnapshot(LightingStatus.WaitingForGPose, FileOf(shown.ImagePath), Estimated: rig.IsEstimated);
             return;
         }
 
@@ -193,7 +200,7 @@ public sealed class SceneLighting
             : !plan.RigHasKey ? LightingStatus.OnNoKey
             : !plan.KeyDrawn ? LightingStatus.OnKeyNotDrawn
             : LightingStatus.OnWithKey,
-            FileOf(shown.ImagePath), plan.FillCount);
+            FileOf(shown.ImagePath), plan.FillCount, rig.IsEstimated);
     }
 
     /// <summary>
@@ -232,7 +239,7 @@ public sealed class SceneLighting
             case Latch.ReadFailed: return new(LightingStatus.ReadFailed, FileOf(readFailedPath ?? ""));
         }
         if (current == null) return new(LightingStatus.WaitingForBackdrop);
-        if (!IsHdrImage(current.ImagePath)) return new(LightingStatus.NeedsHdr, FileOf(current.ImagePath));
+        if (!CanLight(current.ImagePath)) return new(LightingStatus.NoLightInfo, FileOf(current.ImagePath));
         if (!game.IsReady || !game.IsGPosing || game.PlayerPosition == null) return new(LightingStatus.WaitingForGPose, FileOf(current.ImagePath));
         if (isUnloading()) return new(LightingStatus.Off);
         return null;
@@ -331,11 +338,13 @@ public sealed class SceneLighting
             var d = Vector3.Normalize(key.Position - a);
             var az = MathF.Atan2(d.Z, d.X) * 180 / MathF.PI;
             var el = MathF.Asin(Math.Clamp(d.Y, -1f, 1f)) * 180 / MathF.PI;
-            log.Information($"[Milieu] Scene lights on ({lights.Count}, {delivery()} delivery): key at azimuth {az:0.#}°, elevation {el:0.#}° (image s {k.S:0.###}, t {k.T:0.###}).");
+            log.Information($"[Milieu] Scene lights on ({lights.Count}{Estimated()}, {delivery()} delivery): key at azimuth {az:0.#}°, elevation {el:0.#}° (image s {k.S:0.###}, t {k.T:0.###}).");
         }
-        else if (created) log.Information($"[Milieu] Scene lights on ({lights.Count}, {delivery()} delivery): no key light.");
+        else if (created) log.Information($"[Milieu] Scene lights on ({lights.Count}{Estimated()}, {delivery()} delivery): no key light.");
         return true;
     }
+
+    private string Estimated() => rig?.IsEstimated == true ? ", estimated" : "";
 
     private void FailAndRemove(string message)
     {

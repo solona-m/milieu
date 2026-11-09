@@ -17,9 +17,10 @@ public interface IBackdropPreparer
     Task<PreparedTexture> PrepareTextureAsync(BackdropRequest request, IProgress<float>? progress, CancellationToken ct);
 
     /// <summary>
-    /// The light rig of an HDR image (scene lighting, docs/adr/0009): from the rig cache, or a decode (serialised with
-    /// conversions). Null for a bundled id or a non-HDR file, without opening it. Throws <see cref="MilieuException"/> if
-    /// the file is missing, unreadable or too large. Runs off the framework thread.
+    /// The light rig of an image (scene lighting, docs/adr/0009 and 0010): an HDR rig, or an estimated rig for a PNG/JPG,
+    /// from the rig cache or a decode (serialised with conversions); a bundled scene's from the table built into the
+    /// plugin, without opening any file. Null for an unknown kind (unopened), or a bundled scene with no valid rig. Throws
+    /// <see cref="MilieuException"/> if the file is missing, unreadable or too large. Runs off the framework thread.
     /// </summary>
     Task<LightRig?> PrepareLightsAsync(string imagePath, CancellationToken ct);
 }
@@ -37,6 +38,13 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
     /// <summary>Test seam: float RGB → light rig (the radiance probe, then the extractor).</summary>
     internal Func<float[], int, int, CancellationToken, LightRig> RigExtractor { get; set; } =
         (rgb, w, h, ct) => LightExtractor.Extract(RadianceProbe.Build(rgb, w, h, ct));
+
+    /// <summary>Test seam: 8-bit RGB → estimated light rig (the radiance probe with its clip mask, then the estimator).</summary>
+    internal Func<byte[], int, int, CancellationToken, LightRig> RigEstimator { get; set; } =
+        (rgb, w, h, ct) => LdrLightEstimator.Analyse(RadianceProbe.BuildSrgb8(rgb, w, h, ct)).Rig;
+
+    /// <summary>Test seam: a bundled scene's precomputed rig by stem (<see cref="BundledLightRigs.Find(string)"/>).</summary>
+    internal Func<string, LightRig?> BundledRigLookup { get; set; } = BundledLightRigs.Find;
 
     private readonly HashSet<string> verified = new(StringComparer.OrdinalIgnoreCase);
 
@@ -147,7 +155,11 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
             rgb = ToneMapper.ToSrgb8(image.Hdr!, image.Width, image.Height, request.ExposureEv, request.ToneMap, ct);
             image = new LoadedImage { Width = image.Width, Height = image.Height, Rgb = rgb };   // drop the float buffer
         }
-        else rgb = image.Rgb!;
+        else
+        {
+            rgb = image.Rgb!;
+            if (storeRigs) TryStoreEstimatedRig(request.ImagePath, info, rgb, image.Width, image.Height, ct);
+        }
         progress?.Report(0.20f);
 
         if (SeamDetector.Measure(rgb, image.Width, image.Height).NoWrap)
@@ -196,10 +208,30 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
         SaveRig(path, info, rig);
     }
 
-    /// <summary>Stores a rig; an IO failure is logged at Debug (the rig is simply extracted again next time).</summary>
+    /// <summary>
+    /// Every PNG/JPG conversion estimates and stores the image's light rig (docs/adr/0010) while the pixels are at hand;
+    /// like <see cref="TryStoreRig"/>, a failure is logged at Debug and never fails the conversion.
+    /// </summary>
+    private void TryStoreEstimatedRig(string path, FileInfo info, byte[] rgb, int w, int h, CancellationToken ct)
+    {
+        LightRig rig;
+        try { rig = RigEstimator(rgb, w, h, ct); }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            log?.Debug("[Milieu] Light rig not estimated: " + LogText.Describe(e, path, cache.Root));
+            return;
+        }
+        SaveRig(path, info, rig);
+    }
+
+    private static string RigKeyOf(string path, FileInfo info, bool estimated) => estimated
+        ? CacheStore.EstimatedRigKey(path, info.Length, info.LastWriteTimeUtc.Ticks)
+        : CacheStore.LightRigKey(path, info.Length, info.LastWriteTimeUtc.Ticks);
+
+    /// <summary>Stores a rig under its kind's key; an IO failure is logged at Debug (the rig is simply made again next time).</summary>
     private void SaveRig(string path, FileInfo info, LightRig rig)
     {
-        try { rigs.Save(CacheStore.LightRigKey(path, info.Length, info.LastWriteTimeUtc.Ticks), rig); }
+        try { rigs.Save(RigKeyOf(path, info, rig.IsEstimated), rig); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             log?.Debug("[Milieu] Light rig not cached: " + LogText.Describe(e, path, cache.Root));
@@ -208,7 +240,9 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
 
     public async Task<LightRig?> PrepareLightsAsync(string imagePath, CancellationToken ct)
     {
-        if (BackdropPins.IsBundledId(imagePath) || ImageLoader.KindOf(imagePath)?.IsHdr() != true) return null;
+        if (BackdropPins.IsBundledId(imagePath)) return BundledRigLookup(imagePath[BackdropPins.IdPrefix.Length..]);
+        if (ImageLoader.KindOf(imagePath) is not { } kind) return null;
+        var estimated = !kind.IsHdr();
         var file = Path.GetFileName(imagePath);
         FileInfo info;
         try
@@ -220,22 +254,22 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
         {
             throw new MilieuException(StatusMessage.Of(MessageKey.FileMissing, ("file", file)));
         }
-        var key = CacheStore.LightRigKey(imagePath, info.Length, info.LastWriteTimeUtc.Ticks);
-        if (rigs.Load(key) is { } cached) return cached;
+        var key = RigKeyOf(imagePath, info, estimated);
+        if (rigs.Load(key, estimated) is { } cached) return cached;
 
         Interlocked.Increment(ref rigWaits);
         await oneAtATime.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (rigs.Load(key) is { } stored) return stored;   // a conversion stored it while this waited
+            if (rigs.Load(key, estimated) is { } stored) return stored;   // a conversion stored it while this waited
             var probe = ImageLoader.Probe(imagePath);
             ImageLoader.CheckLimits(probe, file, probe.Width);
             ct.ThrowIfCancellationRequested();
             Interlocked.Increment(ref decodes);
             var image = ImageLoader.Load(imagePath, probe.Kind, ct);
-            if (!image.IsHdr) return null;
-            // Here an extraction failure propagates: scene lighting latches it as ReadFailed.
-            var rig = RigExtractor(image.Hdr!, image.Width, image.Height, ct);
+            if (image.IsHdr == estimated) return null;
+            // Here an extraction or estimate failure propagates: scene lighting latches it as ReadFailed.
+            var rig = estimated ? RigEstimator(image.Rgb!, image.Width, image.Height, ct) : RigExtractor(image.Hdr!, image.Width, image.Height, ct);
             SaveRig(imagePath, info, rig);
             return rig;
         }
