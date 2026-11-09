@@ -18,7 +18,8 @@ also local: PSync pairs never see them.
   a spot **key** light from the image's sun or brightest region (character shadows on) and up to three coloured point
   **fill** lights from a median cut of the rest, all at one distance (`LightRigLayout.LightDistance`) from the real
   local player (object 0, not a GPose actor copy moved by Brio or Ktisis). Strength and fill count are live settings.
-  Only HDR, non-bundled images carry the light; LDR and bundled scenes show a note and get no lights.
+  HDR images carry the real light. JPG/PNG images and bundled scenes get estimated lights (ADR 0010), which replaced
+  the earlier "LDR and bundled scenes show a note and get no lights".
 - **Extraction is pure** (`Milieu/Lighting/`): a 256x128 radiance probe, the key region (within 6°, ≥ 10% of the peak;
   a key only if its peak is ≥ 10x the median of the *covered* texels, so band panoramas work, and it holds ≥ 5% of the
   energy, or, for a small and very strong sun, the median is above 0, the peak is ≥ 100x it and the region holds ≥ 1%

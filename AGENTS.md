@@ -56,7 +56,8 @@ Architecture decision records are in `docs/adr/`.
 - stop: none — unload the plugin in game via `/xlplugins`
 - single test: `dotnet test Milieu.Tests/Milieu.Tests.csproj -c Release --filter "FullyQualifiedName~PluginManifestTests"`
 - reference-parity tests (run before code review): set `MILIEU_REFERENCE_AVFX` / `MILIEU_REFERENCE_ATEX` to an extracted "Pickles Venue" `ve0002.avfx` / `Sky1.atex` and `MILIEU_HDRI_SOURCE_DIR` to the source images (and optionally `MILIEU_EXR_SAMPLES_DIR` to a folder of real `.exr` HDRIs, with `<stem>.piz.exr`/`<stem>.zip.exr` pairs), then filter `FullyQualifiedName~Reference|FullyQualifiedName~WhenSourcePresent|FullyQualifiedName~BundledBackdropsTests|FullyQualifiedName~CancelInsideMip0`; report pass/skip counts
-- prepare bundled backdrops (rarely): `dotnet run --project tools/PrepareBackdrops -c Release -- <source dir> Milieu/DefaultBackdrops`, then `-- atex Milieu/DefaultBackdrops artifacts/backdrops`, paste the printed pins into `Milieu/Assets/BackdropPins.cs` and bump its `Tag`, `-- verify artifacts/backdrops --tag <tag>`, `-- thumbs Milieu/DefaultBackdrops Milieu/Resources/Thumbs`; publish (the owner): tag that commit, push the tag, `powershell -File tools/publish-backdrops.ps1 -Tag <tag>` (ADR 0005)
+- prepare bundled backdrops (rarely): `dotnet run --project tools/PrepareBackdrops -c Release -- <source dir> Milieu/DefaultBackdrops`, then `-- atex Milieu/DefaultBackdrops artifacts/backdrops`, paste the printed pins into `Milieu/Assets/BackdropPins.cs` and bump its `Tag`, `-- verify artifacts/backdrops --tag <tag>`, `-- thumbs Milieu/DefaultBackdrops Milieu/Resources/Thumbs`, `-- rigs Milieu/DefaultBackdrops Milieu/Assets/BundledLightRigs.Data.cs` (the bundled light rigs, ADR 0010); publish (the owner): tag that commit, push the tag, `powershell -File tools/publish-backdrops.ps1 -Tag <tag>` (ADR 0005)
+- light estimate versioning (ADR 0010): any change to an `LdrLightEstimator` or `LightExtractor` constant or algorithm means bumping its `Version` and regenerating the bundled light rigs (`-- rigs`, above); the brightness constants in `LightRigLayout` need neither
 - release (ADR 0007): annotated tags only. Testing: `git tag -a testing-<n> -F notes.md` (a sequence; the mirror serves only that shape). Stable: run the full suite, merge `test` into `main`, then `git tag -a v<yyMM>.<git rev-list --count HEAD>.0.0 -F notes.md` in the same UTC month as the CI build. Pushing the tag builds and publishes; never reuse a tag
 - default branch: `test` — reviews diff against it; work merges into it (`main` is the stable release branch)
 
@@ -69,9 +70,9 @@ Milieu/            the Dalamud plugin (Plugin.cs: services, events, /milieu, dis
   Imaging/         header probes, decode budget, tone mapping, resampling, band fill, seam check, mips, BC7
     Exr/           in-repo OpenEXR decoder (header, channel selection, RLE/ZIP, PIZ), bounded by ExrLimits (ADR 0008)
   Interop/         native signatures, static VFX spawner + remove hook, game lights (LightInterop), Penumbra IPC, game state, game data
-  Lighting/        scene lighting (ADR 0009): radiance probe, light extraction, dome projection, rig planner/cache, sentinel, lifecycle
+  Lighting/        scene lighting (ADR 0009, 0010): radiance probe, light extraction, LDR light estimate, dome projection, rig planner/cache, sentinel, lifecycle
   Sync/            synced delivery (experimental): item targets, IMC parsing, Penumbra meta, planning, staging, lifecycle
-  Assets/          bundled-backdrop downloads (pinned release assets, resilient downloader)
+  Assets/          bundled-backdrop downloads (pinned release assets, resilient downloader), bundled light rigs (generated table)
   Gui/             main window and its pure view models
   DefaultBackdrops/  committed source JPEGs of the bundled scenes (NOT shipped; pre-converted .atex are built into artifacts/backdrops and published with tools/publish-backdrops.ps1)
   Resources/Thumbs/  embedded 256x128 previews of the bundled scenes
@@ -79,14 +80,14 @@ Milieu.Tests/      xunit tests (Support/: fakes, synthetic images, reference-fil
 tools/PrepareBackdrops/  offline tool that produces Milieu/DefaultBackdrops
 tools/check-package.ps1  the release workflows' package guards (size, root manifest, version, changelog)
 .github/workflows/ test.yml (quick suite, read-only), testing-release.yml (testing-<n>), release.yml (v<version>)
-docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery, 0007 releases and listing, 0008 OpenEXR decoder, 0009 scene lighting), agent guidance
+docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery, 0007 releases and listing, 0008 OpenEXR decoder, 0009 scene lighting, 0010 estimated lighting), agent guidance
 ```
 
 ## Testing
 
 xunit in `Milieu.Tests/`, one `*Tests.cs` per unit, synthetic fixtures built in
 code. Tests needing real game or user files must skip when the file is absent;
-never hard-code a local path. Exception: product-asset tests (`BundledBackdropsTests`, the pinned-folder test) read the committed `Milieu/DefaultBackdrops` images (ADR 0004). Exception: oracle fixtures generated by the official OpenEXR library may be committed as code literals (`Milieu.Tests/Support/ExrOracleFixtures.cs`, ADR 0008). While iterating run only targeted `--filter`
+never hard-code a local path. Exception: product-asset tests (`BundledBackdropsTests`, `BundledLightRigsTests`, the pinned-folder test) read the committed `Milieu/DefaultBackdrops` images (ADR 0004). Exception: oracle fixtures generated by the official OpenEXR library may be committed as code literals (`Milieu.Tests/Support/ExrOracleFixtures.cs`, ADR 0008). While iterating run only targeted `--filter`
 tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 
 ## Sensitive Areas — the security surface
