@@ -45,8 +45,12 @@ internal static class DomeAvfxBuilder
 
     public static readonly (int PICd, int ICbS, int ICbR, int ICbP) LocalAttach = (3, 1, 1, 1);
 
-    /// <summary>SPIKE (spike/vfx-light, never merged): 0 off, 1 point light, 2 point light with shadows, 3 directional light.</summary>
-    public static int SpikeLightMode;
+    /// <summary>
+    /// Experiment (testing builds): a test light baked into the next dome VFX, to find out whether VFX effector lights can carry
+    /// scene lighting to synced viewers. 0 off (the default; output byte-identical), 1 point light, 2 point light with shadows,
+    /// 3 directional light. Set only by "/milieu vfxlight"; not saved.
+    /// </summary>
+    public static int TestLightMode;
 
     private const int Pi = 1078530011; // the bit pattern of (float)Math.PI, as the reference stores AFXi etc.
 
@@ -145,7 +149,7 @@ internal static class DomeAvfxBuilder
         w.Int("bEna", 1).Int("StTm", 0).Int("EdTm", -1).Int("BdNo", -1).Int("EfNo", effector).Int("EmNo", emitter).Int("Plfm", 0);
 
     /// <summary>
-    /// SPIKE: one effector light (VFXEditor Effector/AvfxEffector.cs + Data/AvfxEffectorData{PointLight,DirectionalLight}.cs).
+    /// The experiment's one effector light (VFXEditor Effector/AvfxEffector.cs + Data/AvfxEffectorData{PointLight,DirectionalLight}.cs).
     /// A strong red light so it is unmistakable in game, 2.5 units ahead of and 1.5 above the dome origin (eye height).
     /// </summary>
     private static void Effector(AvfxChunkWriter w, int mode)
@@ -340,6 +344,10 @@ internal static class DomeAvfxBuilder
         Expect(schd.Need("Item").Children.Single(c => c.Tag == "TlNo").AsInt() == 0, "scheduler item → timeline 0");
         Expect(schd.All("Trgr").Count() == TriggerCount, "12 triggers");
         Expect(root.Need("TmLn").All("Item").First().Need("EmNo").AsInt() == 0, "timeline → emitter 0");
+        var lastItem = root.Need("TmLn").All("Item").Last().Children;
+        var efNos = lastItem.Where(c => c.Tag == "EfNo").Select(c => c.AsInt()).ToArray();
+        Expect(root.Need("TmLn").Need("TICn").AsInt() == 1 + lights && efNos.Length == 1 + lights
+               && efNos.All(i => i >= -1 && i < lights) && efNos.Count(i => i == 0) == lights, "timeline → effector links in range");
         var itpr = root.Need("Emit").Need("ItPr");
         Expect(itpr.Need("TgtB").AsInt() == 0, "emitter → particle 0");
         var attach = p.AttachToOwner ? SyncedAttach : LocalAttach;
