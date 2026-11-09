@@ -100,3 +100,14 @@ Format and interop knowledge (no code copied verbatim):
   pinned release-asset download pattern, adapted.
 - The OpenEXR file layout specification (openexr.com) — header, offset table
   and chunk layout.
+- Brio (GPL-3.0) — the spawned-light lifecycle used by scene lighting
+  (Milieu/Interop/LightInterop.cs): create with a null pool name, bind the
+  render light's transform to the object's own transform block, per-frame
+  UpdateRender/UpdateCulling/UpdateMaterials, CleanupRender + Dtor teardown,
+  and skipping teardown while the framework unloads. Adapted, no code copied
+  verbatim. Brio credits Dynamis (Exter-N) and LightsCameraAction (NeNeppie)
+  for this knowledge. GPL-3.0 work may be combined with Milieu's AGPL-3.0
+  (GPLv3 section 13). https://github.com/Etheirys/Brio
+- FFXIVClientStructs (MIT) — the Scene/Render light structs and the
+  Light.Create address used by scene lighting (and VfxObject.Create for the
+  dome). https://github.com/aers/FFXIVClientStructs
