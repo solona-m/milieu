@@ -208,6 +208,26 @@ public sealed class ExrHeaderTests : IDisposable
         Assert.Equal(Corrupt, Refused(SyntheticExr.WriteHeaderOnly(dir.Path, "pano.exr", new ExrSpec { TileWidth = 0, TileHeight = 8 })).Status.Text);
 
     [Fact] // [EDGE-exr-support-26]
+    public void TileSizeOverInt_DecodeFailed() =>
+        Assert.Equal(Corrupt, Refused(SyntheticExr.WriteHeaderOnly(dir.Path, "pano.exr",
+                                                                   new ExrSpec { TileWidth = unchecked((int)0x80000000u), TileHeight = 8 })).Status.Text);
+
+    [Theory] // [AC-exr-support-8] [EDGE-exr-support-26]
+    [InlineData("level mode 3")]
+    [InlineData("rounding mode 2")]
+    [InlineData("line order 3")]
+    public void InvalidTileModeOrLineOrder_DecodeFailed(string what)
+    {
+        var s = what switch
+        {
+            "level mode 3" => new ExrSpec { TileWidth = 8, TileHeight = 8, LevelMode = 3 },
+            "rounding mode 2" => new ExrSpec { TileWidth = 8, TileHeight = 8, LevelMode = 0x20 },
+            _ => new ExrSpec { LineOrder = 3 },
+        };
+        Assert.Equal(Corrupt, Refused(SyntheticExr.WriteHeaderOnly(dir.Path, "pano.exr", s)).Status.Text);
+    }
+
+    [Fact] // [EDGE-exr-support-26]
     public void TooManyTiles_UnsupportedLayout()
     {
         var path = SyntheticExr.WriteHeaderOnly(dir.Path, "pano.exr", new ExrSpec { Width = 2048, Height = 1024, TileWidth = 1, TileHeight = 1 });

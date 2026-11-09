@@ -138,6 +138,16 @@ public sealed class ExrDecoderTests : IDisposable
         Assert.Equal(MessageKey.TooLargeHdr, e.Status.Key);
     }
 
+    [Fact] // [AC-exr-support-4] [EDGE-exr-support-10]
+    public void Decode_OversizeHeader_RefusedByDecoder()
+    {
+        // The decoder's own cap check (defence in depth behind ImageLoader.Load's), on a header-only stream.
+        var ms = new MemoryStream(SyntheticExr.Header(new ExrSpec { Width = 8193, Height = 4096, Compression = 3 }), writable: false);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Assert.Throws<ExrFormatException>(() => ExrDecoder.Decode(ms, default));
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < MiB);
+    }
+
     [Theory, Trait("Speed", "Slow")] // [AC-exr-support-4]
     [InlineData(3)]
     [InlineData(4)]
@@ -366,6 +376,23 @@ public sealed class ExrDecoderTests : IDisposable
         });
         Assert.True(b.Length - at > unpacked + 1);
         Assert.Equal(MessageKey.DecodeFailed, LoadFails(Path(b)).Status.Key);
+    }
+
+    [Fact] // [EDGE-exr-support-12]
+    public void PackedPastEndOfFile_UnderUnpacked_DecodeFailed()
+    {
+        // The last chunk claims one byte more than the file has left, while still within its unpacked size: only the
+        // "bytes left in the file" bound can refuse it.
+        var build = SyntheticExr.Build(new ExrSpec { Compression = 3, Height = 40, ForceRaw = true });
+        var last = (int)build.ChunkOffsets.Max();
+        var unpacked = 8 * 16 * 6;   // the 8-line partial last block
+        var cut = build.Bytes[..^10];
+        var remaining = cut.Length - (last + 8);
+        BinaryPrimitives.WriteInt32LittleEndian(cut.AsSpan(last + 4), remaining + 1);
+        Assert.True(remaining + 1 <= unpacked);
+        var e = Assert.Throws<ExrFormatException>(() => ExrDecoder.Decode(new MemoryStream(cut), default));
+        Assert.Equal("chunk size out of range", e.Message);
+        Assert.Equal(MessageKey.DecodeFailed, LoadFails(Path(cut)).Status.Key);
     }
 
     [Theory] // [EDGE-exr-support-13]

@@ -39,7 +39,8 @@ Options considered:
   64 MiB (`MaxBlockBytes`) unpacked per chunk. The offset table is read and fully validated before the float output is
   allocated; packed sizes are bounded by the file and the block; decompressors fill pre-sized buffers and fail on short
   or long output (zip-bomb safe); chunks are streamed one at a time and decode is cancellable per chunk.
-- **Memory**: output 12 B/px plus a header-sized working set of at most `3 * MaxBlockBytes + 1 MiB` (193 MiB): below
+- **Memory**: output 12 B/px plus a header-sized working set of at most `3 * MaxBlockBytes + 2 MiB` (194 MiB; the 2 MiB covers the
+  fixed PIZ tables and the offset table): below
   the `.hdr` path's 24 B/px plus the file. `DecodeBudget` models EXR as `12 * px + WorkingSetBytes`, without the file
   length.
 - **Testing exception:** besides synthetic files built in code, the tests check the decoder against tiny fixtures
@@ -53,6 +54,9 @@ Options considered:
 - EXR panoramas from Poly Haven, Blender and most HDRI sources work with no new dependency; the DLL grows by tens of KB.
 - The decoder is a new security surface (AGENTS.md Sensitive Areas): every check against `ExrLimits` is load-bearing,
   and changes need the hostile-input and fuzz tests to stay green.
+- A tiny hostile file whose header claims up to 8192x4096 (and a valid-looking offset table) can make the decoder
+  allocate the output and working set before a chunk fails. That allocation is bounded by the header-derived cap, the
+  same as the `.hdr` path's; accepted.
 - **Known lever, `MaxBlockBytes`:** an 8192-wide PIZ chunk (32 lines) of FLOAT channels passes 64 MiB above 64
   channels, so huge multilayer renders are refused with the "very large tiles or too many channels" message. If that
   matters, raise the cap (the working set grows 3x the increase) or stream a chunk per channel group.

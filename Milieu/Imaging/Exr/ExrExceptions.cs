@@ -30,8 +30,13 @@ public static class ExrLimits
     public const long MaxHeaderBytes = 16L * 1024 * 1024;
     public const int MaxChlistBytes = 64 * 1024;
 
-    /// <summary>Worst-case decode working set besides the float output: packed + unpacked + PIZ scratch, plus the fixed PIZ tables.</summary>
-    public const long WorkingSetBytes = 3 * MaxBlockBytes + 1024 * 1024;
+    /// <summary>
+    /// Worst-case decode working set besides the float output: packed + unpacked + PIZ scratch (3 x MaxBlockBytes), plus
+    /// 2 MiB for the fixed PIZ tables (≈ 0.8 MiB, up to ≈ 1 MiB with long codes) and the offset table. The offset table
+    /// (8 B per chunk) reaches 8 MiB only at MaxTiles tiny tiles, whose blocks are then tiny, so it can't coincide with
+    /// 64 MiB blocks.
+    /// </summary>
+    public const long WorkingSetBytes = 3 * MaxBlockBytes + 2 * 1024 * 1024;
 }
 
 /// <summary>Per-decode diagnostics for tests (passed explicitly so parallel tests can't interfere).</summary>

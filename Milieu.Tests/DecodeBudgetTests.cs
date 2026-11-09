@@ -56,7 +56,7 @@ public class DecodeBudgetTests
     {
         var exr = new ProbeInfo(ImageKind.Exr, 8192, 4096, 16, 3, false, FileBytes);
         Assert.Equal(12, DecodeBudget.DecodeBytesPerPixel(exr));
-        Assert.Equal(3 * 64L * 1024 * 1024 + 1024 * 1024, Milieu.Imaging.Exr.ExrLimits.WorkingSetBytes);
+        Assert.Equal(3 * 64L * 1024 * 1024 + 2 * 1024 * 1024, Milieu.Imaging.Exr.ExrLimits.WorkingSetBytes);
         const double px = 8192.0 * 4096, outPx = 8192.0 * 4096;
         var decode = 12 * px + Milieu.Imaging.Exr.ExrLimits.WorkingSetBytes;
         var resample = 12 * px + 3 * px + 4 * outPx;

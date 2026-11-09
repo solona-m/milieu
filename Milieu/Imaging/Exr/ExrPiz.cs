@@ -6,7 +6,8 @@ namespace Milieu.Imaging.Exr;
 /// <summary>
 /// PIZ chunk decoding: a port of OpenEXR's ImfPizCompressor (bitmap + reverse LUT), ImfHuf (Huffman with run-length
 /// symbol) and ImfWav (2D Haar wavelet, 14- and 16-bit variants). Every read from the chunk is bounds-checked and any
-/// inconsistency throws <see cref="ExrFormatException"/>. The fixed tables are allocated once per decode (≈ 0.8 MiB).
+/// inconsistency throws <see cref="ExrFormatException"/>. The fixed tables are allocated once per decode (≈ 0.8 MiB, plus up to
+/// ≈ 0.25 MiB of long-code symbols), counted in <see cref="ExrLimits.WorkingSetBytes"/>.
 /// </summary>
 internal sealed class ExrPiz
 {

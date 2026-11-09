@@ -99,6 +99,45 @@ public sealed class ExrPizTests(ITestOutputHelper output)
         Assert.Throws<ExrFormatException>(() => Decompress(piz, 16, 8, [1, 1, 1], raw.Length));
     }
 
+    [Fact] // [EDGE-exr-support-16]
+    public void EmptyBitmap_AllZeroBlocks()
+    {
+        // All-zero scanline PIZ: the encoder writes minNonZero > maxNonZero (an empty bitmap) and the decoder must accept it.
+        var zero = new ExrSpec { Width = 16, Height = 40, Compression = 4, Value = (_, _, _) => 0f };
+        var b = SyntheticExr.Build(zero);
+        foreach (var off in b.ChunkOffsets)
+        {
+            var at = (int)off + 8;
+            Assert.True(BinaryPrimitives.ReadUInt16LittleEndian(b.Bytes.AsSpan(at)) > BinaryPrimitives.ReadUInt16LittleEndian(b.Bytes.AsSpan(at + 2)));
+        }
+        Assert.Equal(0, b.RawChunks);
+        AssertBitExact(zero, ExrDecoder.Decode(new MemoryStream(b.Bytes), default));
+
+        // Tiled: tile (0,0) is all zero, the other tiles are not.
+        var tiled = new ExrSpec
+        {
+            Width = 37, Height = 19, Compression = 4, TileWidth = 16, TileHeight = 8,
+            Value = (x, y, c) => x < 16 && y < 8 ? 0f : 0.25f + (x / 8 + c) % 4 / 4f,
+        };
+        var t = SyntheticExr.Build(tiled);
+        // Tiles 0 and 1 are full 16x8 tiles stored PIZ-compressed (the small edge tiles may be raw).
+        Assert.All(new[] { 0, 1 }, i => Assert.True(BinaryPrimitives.ReadInt32LittleEndian(t.Bytes.AsSpan((int)t.ChunkOffsets[i] + 16)) < 16 * 8 * 6));
+        int first = (int)t.ChunkOffsets[0] + 20, second = (int)t.ChunkOffsets[1] + 20;
+        Assert.True(BinaryPrimitives.ReadUInt16LittleEndian(t.Bytes.AsSpan(first)) > BinaryPrimitives.ReadUInt16LittleEndian(t.Bytes.AsSpan(first + 2)));
+        Assert.True(BinaryPrimitives.ReadUInt16LittleEndian(t.Bytes.AsSpan(second)) <= BinaryPrimitives.ReadUInt16LittleEndian(t.Bytes.AsSpan(second + 2)));
+        AssertBitExact(tiled, ExrDecoder.Decode(new MemoryStream(t.Bytes), default));
+    }
+
+    private static void AssertBitExact(ExrSpec s, (int Width, int Height, float[] Rgb) img)
+    {
+        Assert.Equal((s.Width, s.Height), (img.Width, img.Height));
+        for (var y = 0; y < s.Height; y++)
+            for (var x = 0; x < s.Width; x++)
+                for (var k = 0; k < 3; k++)
+                    Assert.Equal(BitConverter.SingleToInt32Bits(SyntheticExr.Expected(s, x, y, 2 - k)),   // R, G, B stored as 2, 1, 0
+                                 BitConverter.SingleToInt32Bits(img.Rgb[(y * s.Width + x) * 3 + k]));
+    }
+
     [Fact] // [EDGE-exr-support-38]
     public void KnownAnswer_Wavelet14And16()
     {
