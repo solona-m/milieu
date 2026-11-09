@@ -144,7 +144,8 @@ public sealed class ExrDecoderTests : IDisposable
         // The decoder's own cap check (defence in depth behind ImageLoader.Load's), on a header-only stream.
         var ms = new MemoryStream(SyntheticExr.Header(new ExrSpec { Width = 8193, Height = 4096, Compression = 3 }), writable: false);
         var before = GC.GetAllocatedBytesForCurrentThread();
-        Assert.Throws<ExrFormatException>(() => ExrDecoder.Decode(ms, default));
+        var e = Assert.Throws<ExrFormatException>(() => ExrDecoder.Decode(ms, default));
+        Assert.Equal("image larger than the HDR cap", e.Message);
         Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < MiB);
     }
 
