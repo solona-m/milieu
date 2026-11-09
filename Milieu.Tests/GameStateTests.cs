@@ -35,4 +35,32 @@ public class GameStateTests
         Assert.False(GameState.Ready(true, false, false, Flags()));
         Assert.True(GameState.Ready(true, true, false, Flags()));
     }
+
+    [Fact] // [AC-scene-lighting-9]
+    public void IsGPosing_ReflectsClientState()
+    {
+        foreach (var gposing in new[] { true, false })
+        {
+            var client = Stub<Dalamud.Plugin.Services.IClientState>.Create(name => name == "get_IsGPosing" ? gposing : null);
+            var state = new GameState(client, Stub<Dalamud.Plugin.Services.ICondition>.Create(_ => null),
+                                      Stub<Dalamud.Plugin.Services.IObjectTable>.Create(_ => null));
+            Assert.Equal(gposing, state.IsGPosing);
+        }
+    }
+
+    /// <summary>An interface stub answering member calls by name (System.Reflection.DispatchProxy).</summary>
+    public class Stub<T> : System.Reflection.DispatchProxy where T : class
+    {
+        private System.Func<string, object?> answer = _ => null;
+
+        public static T Create(System.Func<string, object?> answer)
+        {
+            var proxy = Create<T, Stub<T>>();
+            ((Stub<T>)(object)proxy).answer = answer;
+            return proxy;
+        }
+
+        protected override object? Invoke(System.Reflection.MethodInfo? method, object?[]? args) =>
+            answer(method!.Name) ?? throw new System.NotSupportedException(method.Name);
+    }
 }

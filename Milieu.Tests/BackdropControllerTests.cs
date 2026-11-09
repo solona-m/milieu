@@ -910,4 +910,157 @@ public sealed class BackdropControllerTests : IDisposable
         Assert.Equal(game.PlayerPosition!.Value.Y + 3.2f, spawner.Spawns[^1].Pos.Y, 4);
         Assert.Equal(0.16f, SpawnedFloorY(), 2);
     }
+
+    // ---------------------------------------------------------------- scene lighting: the dome as drawn (Lit), Hidden
+
+    private static float Rad(float deg) => deg * MathF.PI / 180f;
+
+    [Fact] // [AC-scene-lighting-1]
+    public void Lit_SetOnCommit_CarriesTextureImageBuildAndSpawnYaw()
+    {
+        config.FlipHorizontal = true;
+        config.HorizontalRepeat = 1.5f;
+        config.VerticalRepeat = 0.75f;
+        config.Sky.VerticalScale = 0.5f;
+        config.Sky.YawDegrees = 30;
+        penumbra.ResolveWorks = false;
+        c.Show();
+        c.Tick();
+        Assert.Equal(BackdropState.AwaitingRedirect, c.State);
+        Assert.Null(c.Lit);                                  // nothing drawn yet
+        penumbra.ResolveWorks = true;
+        c.Tick();
+        var lit = Assert.IsType<Milieu.Lighting.LitBackdrop>(c.Lit);
+        Assert.Equal(config.ImagePath, lit.ImagePath);
+        Assert.Equal(new Milieu.Lighting.DomeView(Rad(30), true, 0.5f, 1.5f, 0.75f), lit.View);
+        Assert.Equal(spawner.Spawns[^1].Yaw, lit.View.YawRadians);
+
+        // Settings edited but not yet applied don't move the lights: Lit is what is drawn, not the config.
+        config.Sky.YawDegrees = 90;
+        config.HorizontalRepeat = 3f;
+        config.Sky.VerticalScale = 2f;
+        Assert.Equal(new Milieu.Lighting.DomeView(Rad(30), true, 0.5f, 1.5f, 0.75f), c.Lit!.View);
+        // A rebuild commits the new build values (and respawns at the current yaw).
+        c.ApplyRebuild();
+        Assert.Equal(1.5f, c.Lit!.View.URepeat);               // still the old dome until the new one is drawn
+        c.Tick();
+        Assert.Equal(new Milieu.Lighting.DomeView(Rad(90), true, 2f, 3f, 0.75f), c.Lit!.View);
+    }
+
+    [Fact] // [AC-scene-lighting-1]
+    public void Lit_YawUpdatedOnApplyPlacement()
+    {
+        ShowAndSpawn();
+        Assert.Equal(0f, c.Lit!.View.YawRadians);
+        config.Sky.YawDegrees = -120;
+        c.ApplyPlacement();
+        Assert.Equal(Rad(-120), c.Lit!.View.YawRadians, 1e-6f);
+        Assert.Equal(spawner.Spawns[^1].Yaw, c.Lit!.View.YawRadians);
+    }
+
+    [Fact] // [AC-scene-lighting-2]
+    public void Hide_RaisesHidden()
+    {
+        var hidden = 0;
+        c.Hidden += () => hidden++;
+        ShowAndSpawn();
+        c.Hide();
+        Assert.Equal(1, hidden);
+        ShowAndSpawn();
+        c.OnLogout();
+        Assert.Equal(2, hidden);
+        ShowAndSpawn();
+        c.OnPenumbraDisposed();
+        Assert.Equal(3, hidden);
+        c.Teardown();
+        Assert.Equal(4, hidden);
+    }
+
+    public static TheoryData<string> LitEnders => new() { "Hide", "DeadHandle", "NotReady", "PenumbraDisposed", "TerritoryChanged", "Logout", "Teardown" };
+
+    [Theory] // [AC-scene-lighting-2] [EDGE-scene-lighting-21]
+    [MemberData(nameof(LitEnders))]
+    public void Lit_NullAfter(string what)
+    {
+        var h = ShowAndSpawn();
+        Assert.NotNull(c.Lit);
+        switch (what)
+        {
+            case "Hide": c.Hide(); break;
+            case "DeadHandle": spawner.GameFrees(h); c.Tick(); break;
+            case "NotReady": game.Ready = false; c.Tick(); break;
+            case "PenumbraDisposed": c.OnPenumbraDisposed(); break;
+            case "TerritoryChanged": c.OnTerritoryChanged(); break;
+            case "Logout": c.OnLogout(); break;
+            case "Teardown": c.Teardown(); break;
+        }
+        Assert.Null(c.Lit);
+    }
+
+    [Fact] // [EDGE-scene-lighting-39]
+    public void YawChangedWhileSuspended_Respawn_LitHasNewYaw()
+    {
+        ShowAndSpawn();
+        c.OnTerritoryChanged();
+        Assert.Equal(BackdropState.Suspended, c.State);
+        Assert.Null(c.Lit);
+        config.Sky.YawDegrees = 45;                          // saved while suspended: applies on the next spawn
+        Ticks(BackdropController.RespawnDelayFrames);
+        Assert.Equal(BackdropState.Shown, c.State);
+        Assert.Equal(Rad(45), c.Lit!.View.YawRadians, 1e-6f);
+        Assert.Equal(spawner.Spawns[^1].Yaw, c.Lit!.View.YawRadians);
+    }
+
+    [Fact] // [EDGE-scene-lighting-41]
+    public void ShowBWhileAShown_RebuildMidConversion_ThenBFaults_LitStaysA()
+    {
+        var a = config.ImagePath!;
+        ShowAndSpawn();
+        Assert.Equal(a, c.Lit!.ImagePath);
+
+        config.ImagePath = dir.File("b.hdr");
+        preparer.Gate = new TaskCompletionSource<PreparedTexture>();
+        c.Show();
+        Assert.Equal(BackdropState.Preparing, c.State);
+        c.ApplyRebuild();                                    // mid-conversion: registers nothing today
+        c.Tick();
+        Assert.Equal(a, c.Lit!.ImagePath);
+
+        preparer.Gate.SetException(new MilieuException(StatusMessage.Of(MessageKey.DecodeFailed, ("file", "b.hdr"))));
+        c.Tick();
+        Assert.Equal(BackdropState.Shown, c.State);          // B failed; A still drawn
+        Assert.Equal(a, c.Lit!.ImagePath);
+
+        var spawns = spawner.Spawns.Count;
+        config.HorizontalRepeat = 3f;
+        c.ApplyRebuild();                                    // rebuilds A's texture with the new repeat
+        c.Tick();
+        Assert.Equal(spawns + 1, spawner.Spawns.Count);      // committed
+        Assert.Equal(3f, c.Lit!.View.URepeat);
+        Assert.Equal(a, c.Lit!.ImagePath);                   // the texture binds the path, not the request
+    }
+
+    [Fact] // [EDGE-scene-lighting-41]
+    public void TextureImagePath_SetOnlyWhenTextureAssigned()
+    {
+        var a = config.ImagePath!;
+        ShowAndSpawn();
+        config.ImagePath = dir.File("b.hdr");
+        preparer.Gate = new TaskCompletionSource<PreparedTexture>();
+        c.Show();
+        preparer.Gate.SetCanceled();                         // the job is cancelled: no texture assigned
+        c.Tick();
+        Assert.Equal(BackdropState.Shown, c.State);
+        c.ApplyRebuild();
+        c.Tick();
+        Assert.Equal(a, c.Lit!.ImagePath);
+
+        // A job that completes does bind its own image.
+        var b = config.ImagePath!;
+        preparer.Gate = null;
+        c.Show();
+        c.Tick();
+        c.Tick();
+        Assert.Equal(b, c.Lit!.ImagePath);
+    }
 }

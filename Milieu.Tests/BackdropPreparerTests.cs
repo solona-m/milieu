@@ -419,4 +419,189 @@ public sealed class BackdropPreparerTests : IDisposable
         Assert.NotNull(thumb);
         Assert.Equal(256 * 128 * 4, thumb!.Length);
     }
+
+    // ---------------------------------------------------------------- light rigs (scene lighting)
+
+    private static float[] SunImage(int w, int h) =>
+        SyntheticImages.SunDisc(w, h, 60, 25, 4, (40f, 36f, 30f), (_, el) => el > 0 ? (0.2f, 0.3f, 0.6f) : (0.1f, 0.08f, 0.05f));
+
+    [Fact] // [AC-scene-lighting-8]
+    public async Task HdrConversion_StoresRig()
+    {
+        var (p, _) = Make();
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        await p.PrepareTextureAsync(Req(hdr), null, default);
+        var info = new FileInfo(hdr);
+        var key = CacheStore.LightRigKey(hdr, info.Length, info.LastWriteTimeUtc.Ticks);
+        var rig = new Milieu.Lighting.LightRigStore(cache).Load(key);
+        Assert.NotNull(rig);
+        Assert.NotNull(rig!.Key);
+        Assert.Equal(Milieu.Lighting.LightRig.RegionCount, rig.Regions.Length);
+
+        // An EXR conversion stores one too; an LDR conversion doesn't.
+        var exr = SyntheticExr.Write(dir.Path, "a.exr", new ExrSpec { Width = 64, Height = 32, Compression = 3 });
+        await p.PrepareTextureAsync(Req(exr), null, default);
+        var ei = new FileInfo(exr);
+        Assert.NotNull(new Milieu.Lighting.LightRigStore(cache).Load(CacheStore.LightRigKey(exr, ei.Length, ei.LastWriteTimeUtc.Ticks)));
+        var png = SyntheticImages.WritePng(dir.Path, "b.png", 64, 32);
+        await p.PrepareTextureAsync(Req(png), null, default);
+        Assert.Equal(2, Directory.GetFiles(cache.LightRigDir, "lights_*.json").Length);
+    }
+
+    [Fact] // [AC-scene-lighting-8]
+    public async Task PrepareLights_StoreHit_NoDecode()
+    {
+        var (p, _) = Make();
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        await p.PrepareTextureAsync(Req(hdr), null, default);
+        Assert.Equal(1, p.DecodeCount);
+        var rig = await p.PrepareLightsAsync(hdr, default);
+        Assert.NotNull(rig?.Key);
+        Assert.Equal(1, p.DecodeCount);   // from the store: no decode
+        // A new session (new preparer) reads the store too.
+        var fresh = new BackdropPreparer(cache, new StubEncoder());
+        Assert.Equal(rig, await fresh.PrepareLightsAsync(hdr, default), new RigComparer());
+        Assert.Equal(0, fresh.DecodeCount);
+    }
+
+    [Fact] // [EDGE-scene-lighting-25]
+    public async Task TextureCachedNoRig_PrepareLightsDecodesOnceThenHits()
+    {
+        var (p, _) = Make();
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        await p.PrepareTextureAsync(Req(hdr), null, default);
+        Directory.Delete(cache.LightRigDir, recursive: true);   // texture cached, rig gone
+        var fresh = new BackdropPreparer(cache, new StubEncoder());
+        await fresh.PrepareTextureAsync(Req(hdr), null, default);
+        Assert.Equal(0, fresh.DecodeCount);                      // texture cache hit: no decode, so no rig either
+        var rig = await fresh.PrepareLightsAsync(hdr, default);
+        Assert.NotNull(rig?.Key);
+        Assert.Equal(1, fresh.DecodeCount);
+        await fresh.PrepareLightsAsync(hdr, default);
+        Assert.Equal(1, fresh.DecodeCount);
+    }
+
+    [Fact] // [EDGE-scene-lighting-26]
+    public async Task PrepareLights_BundledOrLdr_NullWithoutOpening()
+    {
+        var (p, _) = Make();
+        Assert.Null(await p.PrepareLightsAsync("bundled:moon", default));
+        // Neither file exists: a null (not a FileMissing error) proves it was never opened.
+        Assert.Null(await p.PrepareLightsAsync(dir.File("absent.png"), default));
+        Assert.Null(await p.PrepareLightsAsync(dir.File("absent.jpg"), default));
+        Assert.Equal(0, p.DecodeCount);
+        // An HDR that's missing is an error the caller latches (ReadFailed).
+        var ex = await Assert.ThrowsAsync<MilieuException>(() => p.PrepareLightsAsync(dir.File("absent.hdr"), default));
+        Assert.Equal(MessageKey.FileMissing, ex.Status.Key);
+        var huge = SyntheticImages.WriteHdrHeaderOnly(dir.Path, "huge.hdr", 16384, 8192);
+        Assert.Equal(MessageKey.TooLargeHdr, (await Assert.ThrowsAsync<MilieuException>(() => p.PrepareLightsAsync(huge, default))).Status.Key);
+    }
+
+    [Fact] // [EDGE-scene-lighting-30]
+    public async Task RigStoreUnwritable_ConversionSucceeds()
+    {
+        var (p, _) = Make();
+        Directory.CreateDirectory(cache.Root);
+        File.WriteAllText(cache.LightRigDir, "a file where the rig folder should be");
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        var t = await p.PrepareTextureAsync(Req(hdr), null, default);
+        AssertAtex(t.DiskPath, 1024, 512);
+        Assert.True(File.Exists(cache.LightRigDir));
+        // Lights still come (decoded again, as nothing could be stored).
+        Assert.NotNull((await p.PrepareLightsAsync(hdr, default))?.Key);
+    }
+
+    private sealed class RigComparer : System.Collections.Generic.IEqualityComparer<Milieu.Lighting.LightRig?>
+    {
+        public bool Equals(Milieu.Lighting.LightRig? a, Milieu.Lighting.LightRig? b) =>
+            a != null && b != null && a.Version == b.Version && Equals(a.Key, b.Key) && a.Regions.SequenceEqual(b.Regions) && a.TotalEnergy == b.TotalEnergy;
+        public int GetHashCode(Milieu.Lighting.LightRig? r) => 0;
+    }
+
+    [Fact] // [EDGE-scene-lighting-30]
+    public async Task RigExtractionThrows_ConversionSucceeds()
+    {
+        var log = new FakeLog();
+        var p = new BackdropPreparer(cache, new StubEncoder(), log: log)
+        {
+            RigExtractor = (_, _, _, _) => throw new InvalidOperationException("a lighting bug"),
+        };
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        var t = await p.PrepareTextureAsync(Req(hdr), null, default);
+        AssertAtex(t.DiskPath, 1024, 512);
+        Assert.False(Directory.Exists(cache.LightRigDir) && Directory.GetFiles(cache.LightRigDir).Length > 0);
+        Assert.Contains(log.Lines, l => l.Level == "Debug" && l.Text.Contains("Light rig"));
+        // Cancellation is not swallowed.
+        var cancelling = new BackdropPreparer(cache, new StubEncoder())
+        {
+            RigExtractor = (_, _, _, _) => throw new OperationCanceledException(),
+        };
+        var other = SyntheticImages.WriteHdrRgb(dir.Path, "other.hdr", 256, 128, SunImage(256, 128));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelling.PrepareTextureAsync(Req(other), null, default));
+    }
+
+    [Fact] // [AC-scene-lighting-10] [EDGE-scene-lighting-28]
+    public async Task KillSwitchOff_NoRigExtractedOrStored()
+    {
+        var extracted = 0;
+        var p = new BackdropPreparer(cache, new StubEncoder(), storeRigs: false)
+        {
+            RigExtractor = (rgb, w, h, ct) => { extracted++; return Milieu.Lighting.LightExtractor.Extract(Milieu.Lighting.RadianceProbe.Build(rgb, w, h, ct)); },
+        };
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        var t = await p.PrepareTextureAsync(Req(hdr), null, default);
+        AssertAtex(t.DiskPath, 1024, 512);
+        Assert.Equal(0, extracted);
+        Assert.False(Directory.Exists(cache.LightRigDir));
+    }
+
+    [Theory] // [EDGE-scene-lighting-26] [EDGE-scene-lighting-14]
+    [InlineData("x.hdr")]
+    [InlineData("x.exr")]
+    public async Task PrepareLights_HdrNamedButLdrContent_FailsAtProbe_NoDecode(string name)
+    {
+        // A PNG renamed to an HDR extension is refused by the HDR header probe (DecodeFailed, which scene lighting latches
+        // as ReadFailed); it is never decoded, so no rig comes from LDR pixels.
+        var (p, _) = Make();
+        var png = SyntheticImages.WritePng(dir.Path, "real.png", 64, 32);
+        var fake = dir.File(name);
+        File.Copy(png, fake);
+        var ex = await Assert.ThrowsAsync<MilieuException>(() => p.PrepareLightsAsync(fake, default));
+        Assert.Equal(MessageKey.DecodeFailed, ex.Status.Key);
+        Assert.Equal(0, p.DecodeCount);
+        Assert.False(Directory.Exists(cache.LightRigDir));
+    }
+
+    [Fact] // [AC-scene-lighting-8] [EDGE-scene-lighting-25]
+    public async Task PrepareLights_WaitingOnConversion_UsesTheRigItStored()
+    {
+        var gate = new TaskCompletionSource();
+        var encoder = new StubEncoder { Before = _ => gate.Task };
+        var p = new BackdropPreparer(cache, encoder);
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        var conversion = Task.Run(() => p.PrepareTextureAsync(Req(hdr), null, default));
+        Assert.True(Eventually.Holds(() => encoder.Calls > 0), "conversion holds the decode slot");   // rig already stored
+        Directory.Delete(cache.LightRigDir, recursive: true);    // force the first Load to miss…
+        var lights = Task.Run(() => p.PrepareLightsAsync(hdr, default));
+        Assert.True(Eventually.Holds(() => p.RigWaits == 1), "the rig load missed and is waiting for the decode slot");
+        Assert.False(lights.IsCompleted);
+        // …then put the rig back as if the conversion had just stored it: the second Load (after the wait) finds it.
+        await new BackdropPreparer(cache, new StubEncoder()).PrepareLightsAsync(hdr, default);
+        gate.SetResult();
+        await conversion;
+        var rig = await lights;
+        Assert.NotNull(rig?.Key);
+        Assert.Equal(1, p.DecodeCount);                          // the waiting call didn't decode again
+    }
+
+    [Fact] // [EDGE-scene-lighting-14]
+    public async Task PrepareLights_ExtractorThrows_PassesThrough()
+    {
+        var p = new BackdropPreparer(cache, new StubEncoder())
+        {
+            RigExtractor = (_, _, _, _) => throw new InvalidOperationException("a lighting bug"),
+        };
+        var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => p.PrepareLightsAsync(hdr, default));
+    }
 }

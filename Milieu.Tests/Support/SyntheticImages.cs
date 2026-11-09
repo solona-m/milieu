@@ -80,6 +80,100 @@ public static class SyntheticImages
         return path;
     }
 
+    /// <summary>
+    /// A float RGB equirect panorama from a function of (azimuth, elevation) in degrees. Pixel centres: azimuth
+    /// (s − 0.5)·360 with s = (x+0.5)/w, elevation (0.5 − t)·180 with t = (y+0.5)/h (the image-space convention of
+    /// LightExtractor, restated here so the tests don't depend on it).
+    /// </summary>
+    public static float[] HdrPanorama(int w, int h, Func<double, double, (float R, float G, float B)> f)
+    {
+        var data = new float[w * h * 3];
+        for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+        {
+            var az = ((x + 0.5) / w - 0.5) * 360.0;
+            var el = (0.5 - (y + 0.5) / h) * 180.0;
+            var (r, g, b) = f(az, el);
+            var o = (y * w + x) * 3;
+            data[o] = r; data[o + 1] = g; data[o + 2] = b;
+        }
+        return data;
+    }
+
+    /// <summary>The unit direction of (azimuth, elevation) in degrees: (cos el cos az, sin el, cos el sin az).</summary>
+    public static System.Numerics.Vector3 Dir(double azDeg, double elDeg)
+    {
+        double az = azDeg * Math.PI / 180, el = elDeg * Math.PI / 180;
+        return new System.Numerics.Vector3((float)(Math.Cos(el) * Math.Cos(az)), (float)Math.Sin(el), (float)(Math.Cos(el) * Math.Sin(az)));
+    }
+
+    /// <summary>The angle in degrees between two directions.</summary>
+    public static double AngleDeg(System.Numerics.Vector3 a, System.Numerics.Vector3 b) =>
+        Math.Acos(Math.Clamp(System.Numerics.Vector3.Dot(System.Numerics.Vector3.Normalize(a), System.Numerics.Vector3.Normalize(b)), -1f, 1f)) * 180 / Math.PI;
+
+    /// <summary>The (azimuth, elevation) in degrees of image coordinates (s,t).</summary>
+    public static (double Az, double El) AzEl(double s, double t) => ((s - 0.5) * 360.0, (0.5 - t) * 180.0);
+
+    /// <summary>
+    /// A sun disc of the given radius (degrees) at (az, el) over a background: each pixel is supersampled 4x4 so the disc's
+    /// rasterised area matches its solid angle closely.
+    /// </summary>
+    public static float[] SunDisc(int w, int h, double azDeg, double elDeg, double radiusDeg, (float R, float G, float B) sun,
+                                  Func<double, double, (float R, float G, float B)> sky)
+    {
+        var centre = Dir(azDeg, elDeg);
+        var cosR = Math.Cos(radiusDeg * Math.PI / 180);
+        var data = new float[w * h * 3];
+        for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+        {
+            var az0 = ((x + 0.5) / w - 0.5) * 360.0;
+            var el0 = (0.5 - (y + 0.5) / h) * 180.0;
+            var (r, g, b) = sky(az0, el0);
+            var close = System.Numerics.Vector3.Dot(Dir(az0, el0), centre) > Math.Cos((radiusDeg + 2) * Math.PI / 180);
+            if (close)
+            {
+                var hits = 0;
+                for (var sy = 0; sy < 4; sy++)
+                for (var sx = 0; sx < 4; sx++)
+                {
+                    var az = ((x + (sx + 0.5) / 4) / w - 0.5) * 360.0;
+                    var el = (0.5 - (y + (sy + 0.5) / 4) / h) * 180.0;
+                    if (System.Numerics.Vector3.Dot(Dir(az, el), centre) >= cosR) hits++;
+                }
+                var f = hits / 16f;
+                r = r * (1 - f) + sun.R * f; g = g * (1 - f) + sun.G * f; b = b * (1 - f) + sun.B * f;
+            }
+            var o = (y * w + x) * 3;
+            data[o] = r; data[o + 1] = g; data[o + 2] = b;
+        }
+        return data;
+    }
+
+    /// <summary>Writes float RGB as a flat (non-RLE) Radiance .hdr.</summary>
+    public static string WriteHdrRgb(string dir, string name, int w, int h, float[] rgb)
+    {
+        var path = Path.Combine(dir, name);
+        using var s = File.Create(path);
+        s.Write(Encoding.ASCII.GetBytes($"#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {h} +X {w}\n"));
+        var px = new byte[4];
+        for (var i = 0; i < w * h; i++)
+        {
+            float r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2];
+            var max = Math.Max(r, Math.Max(g, b));
+            if (max < 1e-32f) { px[0] = px[1] = px[2] = px[3] = 0; }
+            else
+            {
+                var e = (int)Math.Ceiling(Math.Log2(max) + 1e-7);
+                var scale = 256.0 / Math.Pow(2, e);
+                px[0] = (byte)Math.Min(255, r * scale); px[1] = (byte)Math.Min(255, g * scale); px[2] = (byte)Math.Min(255, b * scale);
+                px[3] = (byte)(e + 128);
+            }
+            s.Write(px);
+        }
+        return path;
+    }
+
     /// <summary>A Radiance header with no pixels: enough for a probe, fails a full decode.</summary>
     public static string WriteHdrHeaderOnly(string dir, string name, int w, int h)
     {

@@ -36,6 +36,19 @@ public sealed class CacheStore(string root)
 
     public static string AvfxKey(byte[] avfx) => Hash16(avfx);
 
+    /// <summary>
+    /// The light rig's cache key: the file only (path, length, write time) and the extractor version. Exposure, tone map
+    /// and texture size don't change the image's radiance, so they are not part of it.
+    /// </summary>
+    public static string LightRigKey(string path, long length, long lastWriteUtcTicks) =>
+        Hash16(Encoding.UTF8.GetBytes("L" + Lighting.LightExtractor.Version + "|" + Path.GetFullPath(path).ToLowerInvariant().Replace('\\', '/')
+                                      + "|" + length + "|" + lastWriteUtcTicks));
+
+    /// <summary>A subfolder, so <see cref="Cleanup"/> (top level only) never touches the rigs.</summary>
+    public string LightRigDir => Path.Combine(Root, "lights");
+
+    public string LightRigPath(string key) => Path.Combine(LightRigDir, $"lights_{key}.json");
+
     public static string TextureGamePath(string key) => $"vfx/milieu/{key}/sky.atex";
     public static string AvfxGamePath(string key) => $"vfx/milieu/{key}/dome.avfx";
 

@@ -68,7 +68,8 @@ Milieu/            the Dalamud plugin (Plugin.cs: services, events, /milieu, dis
   GameFiles/       AVFX chunk I/O, dome sphere mesh, dome .avfx builder, BC7 .atex writer
   Imaging/         header probes, decode budget, tone mapping, resampling, band fill, seam check, mips, BC7
     Exr/           in-repo OpenEXR decoder (header, channel selection, RLE/ZIP, PIZ), bounded by ExrLimits (ADR 0008)
-  Interop/         native signatures, static VFX spawner + remove hook, Penumbra IPC, game state, game data
+  Interop/         native signatures, static VFX spawner + remove hook, game lights (LightInterop), Penumbra IPC, game state, game data
+  Lighting/        scene lighting (ADR 0009): radiance probe, light extraction, dome projection, rig planner/cache, sentinel, lifecycle
   Sync/            synced delivery (experimental): item targets, IMC parsing, Penumbra meta, planning, staging, lifecycle
   Assets/          bundled-backdrop downloads (pinned release assets, resilient downloader)
   Gui/             main window and its pure view models
@@ -78,7 +79,7 @@ Milieu.Tests/      xunit tests (Support/: fakes, synthetic images, reference-fil
 tools/PrepareBackdrops/  offline tool that produces Milieu/DefaultBackdrops
 tools/check-package.ps1  the release workflows' package guards (size, root manifest, version, changelog)
 .github/workflows/ test.yml (quick suite, read-only), testing-release.yml (testing-<n>), release.yml (v<version>)
-docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery, 0007 releases and listing, 0008 OpenEXR decoder), agent guidance
+docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery, 0007 releases and listing, 0008 OpenEXR decoder, 0009 scene lighting), agent guidance
 ```
 
 ## Testing
@@ -95,6 +96,7 @@ tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 - Penumbra IPC (temporary mods/redirects) — must be removed on dispose and never touch the user's own mods
 - Synced delivery (`Milieu/Sync/`, ADR 0006): writes into Penumbra's mod directory (`_milieu_sync`), an IMC manipulation and the `MilieuSync` temp mod in the player's collection, and the user's image leaving the machine via PSync (notice first); offered on every build (`Plugin.SyncedAvailable` is the kill switch)
 - The OpenEXR decoder (`Milieu/Imaging/Exr/`, ADR 0008) — parses untrusted binary files in the game process; every size and offset is checked against `ExrLimits` before use, and the offset table before the output is allocated
+- Scene lighting: native light create/update/destroy (`Milieu/Interop/LightInterop.cs`), GPose-only, crash sentinel; `Plugin.LightingAvailable` is the kill switch (ADR 0009)
 - `Milieu/Configuration.cs` migrations — a mistake loses user settings
 - Downloads (`Milieu/Assets/`) and `tools/publish-backdrops.ps1` — outbound GETs that write into the config directory, downloaded textures handed to the game; pinned size + header + SHA-256 before use; the publish script's guards keep pins and release assets identical
 - `.github/workflows/` and `tools/check-package.ps1` — publish to every user and hold the plugins-repo dispatch secret; SHA-pinned actions, no disabled guards (ADR 0007, `WorkflowTests`)

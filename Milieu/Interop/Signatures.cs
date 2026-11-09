@@ -12,7 +12,9 @@ public sealed class SourceAttribute(string source) : Attribute
 /// <summary>
 /// Every native signature Milieu scans for, in one place. If any is not found the VFX feature disables itself
 /// (InteropUnavailable) and nothing native is ever called. The create function comes from FFXIVClientStructs
-/// (<c>VfxObject.Addresses.Create</c>), which is kept current with the game by its maintainers.
+/// (<c>VfxObject.Addresses.Create</c>), which is kept current with the game by its maintainers. Scene lighting
+/// (docs/adr/0009) likewise scans FFXIVClientStructs' <c>Scene.Light.Addresses.Create</c> (in <c>LightInterop</c>); it has
+/// no constant here because Dalamud's bundled ClientStructs provides it.
 /// </summary>
 public static class Signatures
 {
