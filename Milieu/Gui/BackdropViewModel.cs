@@ -22,7 +22,7 @@ public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker,
     private static readonly string[] AllLabels =
         ["Only me", "PSync: Plush Cushion (experimental)", "PSync: Mad Bird Ring (right hand) (experimental)"];
 
-    /// <summary>Synced delivery is offered (testing and dev builds only); when false the "Visible to" group isn't drawn.</summary>
+    /// <summary>Synced delivery is offered (Plugin.SyncedAvailable, the kill switch); when false the "Visible to" group isn't drawn.</summary>
     public bool SyncedAvailable => syncedAvailable;
 
     /// <summary>The "Visible to" labels, in DeliveryMode order; only "Only me" when synced delivery isn't offered.</summary>

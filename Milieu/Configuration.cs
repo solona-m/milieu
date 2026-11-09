@@ -40,7 +40,7 @@ public sealed class Configuration : IPluginConfiguration
 
     public int MaxTextureWidth { get; set; } = 8192;
 
-    /// <summary>Who sees the backdrop: only the user (default), or PSync pairs through an item (experimental, testing builds).</summary>
+    /// <summary>Who sees the backdrop: only the user (default), or PSync pairs through an item (experimental).</summary>
     public Sync.DeliveryMode Delivery { get; set; } = Sync.DeliveryMode.Local;
 
     /// <summary>The one-time notice that a user image is uploaded through PSync has been shown.</summary>

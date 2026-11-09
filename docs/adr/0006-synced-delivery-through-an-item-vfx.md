@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (experimental; unverified in game). Offered on testing and dev builds only.
+Accepted (experimental; unverified in game). Offered on testing and dev builds only until 2026-11-09; since then on every build (see the kill switch amendment).
 
 ## Context
 
@@ -54,6 +54,10 @@ synced choice loads as Only me, and the controller never takes the synced path. 
 pairs receive AVFX bytes that have never been loaded in game, without having opted in, and the "(experimental)" label
 never reaches them. Enabling it on stable is one line (`Plugin.SyncedAvailable`) after an in-game check. Startup and
 Penumbra re-init cleanup still run on stable (removal only; the staging folder is never created there).
+
+**Amendment (2026-11-09):** the owner enabled synced delivery on stable builds before the in-game check, by owner
+decision. `Plugin.SyncedAvailable` now returns true on every build and stays the kill switch: returning false restores
+the behaviour above. The "(experimental)" label and the PSync notice are unchanged.
 
 ## Consequences
 

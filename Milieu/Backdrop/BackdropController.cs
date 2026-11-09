@@ -23,7 +23,7 @@ public sealed record BackdropStatus(BackdropState State, float Progress, StatusM
 /// event handlers, which the plugin calls on the framework thread only.
 /// <para>
 /// Two deliveries. Local (default): the all-collections "Milieu" temp mod plus a static VFX only the user sees. Synced
-/// (experimental, testing/dev builds only): the dome becomes an item's own VFX through a player-collection temp mod,
+/// (experimental): the dome becomes an item's own VFX through a player-collection temp mod,
 /// staged under Penumbra's mod directory so PSync pairs see it (<see cref="SyncedDelivery"/>, docs/adr/0006). All
 /// branching reads <see cref="EffectiveDelivery"/>, never <c>config.Delivery</c> directly.
 /// </para>

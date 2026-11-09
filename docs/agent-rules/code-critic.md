@@ -12,7 +12,7 @@ tests; for a rule backed by a test, a diff that weakens the test is `FAIL`.
 - Heavy work (HDRI decode, tone mapping, resize, BC compression) runs off the framework/draw thread. `FAIL` if it can block a frame.
 - Native signatures and offsets live in one interop file with a comment naming their source (FFXIVClientStructs, VFXEditor, …). `NEEDS_DECISION` if a new signature has no source.
 - User images are read only from paths the user chose; nothing is written outside the plugin's config directory. `FAIL`.
-  Exemption (ADR 0006): synced delivery, on testing/dev builds only, writes Milieu's own files (`sky_*.atex`,
+  Exemption (ADR 0006): synced delivery writes Milieu's own files (`sky_*.atex`,
   `dome_*.avfx`, `*.tmp`) into `<Penumbra ModDirectory>\_milieu_sync\` and nowhere else under the mod directory; cleanup
   touches only those patterns, and stable builds never create the folder. Any other write there is still `FAIL`.
 - `TreatWarningsAsErrors` stays on in `Milieu.csproj`. `FAIL` if a diff turns it off or adds a blanket `NoWarn`.
@@ -31,7 +31,7 @@ tests; for a rule backed by a test, a diff that weakens the test is `FAIL`.
   `Milieu-Plugin` user agent). The repo itself has two live surfaces: the dl.solona.info worker serves `README.md` and
   `Milieu/images/icon.png` from the `test` branch (`https://dl.solona.info/milieu`, `/milieu/icon.png`), so a `test`
   push publishes them within minutes (ADR 0007).
-- **User images leaving the machine**: only through synced delivery (ADR 0006, testing/dev builds): PSync uploads the
+- **User images leaving the machine**: only through synced delivery (ADR 0006): PSync uploads the
   shown image to its server and sends it to the user's pairs. Milieu must show the one-time notice before the first
   user image is shared (the image goes only on the next click); a diff that can upload a user image without that gate
   having fired is `FAIL`. Milieu itself never sends the image anywhere.
