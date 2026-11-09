@@ -13,7 +13,8 @@ also local: PSync pairs never see them.
 
 ## Decision
 
-- **An approximation, opt-in.** "Light the scene from the image" (off by default, `Configuration.SceneLighting`) adds
+- **An approximation, on by default.** "Light the scene from the image" (`Configuration.SceneLighting`, on by default
+  since the owner's 2026-11-09 change, also for configs saved without the field; the user can turn it off) adds
   a spot **key** light from the image's sun or brightest region (character shadows on) and up to three coloured point
   **fill** lights from a median cut of the rest, all at one distance (`LightRigLayout.LightDistance`) from the real
   local player (object 0, not a GPose actor copy moved by Brio or Ktisis). Strength and fill count are live settings.
@@ -63,7 +64,7 @@ also local: PSync pairs never see them.
 
 ## Consequences
 
-Easier: an HDR backdrop lights the character in GPose with one checkbox; the maths is unit-tested on synthetic
+Easier: an HDR backdrop lights the character in GPose with no setup (one checkbox turns it off); the maths is unit-tested on synthetic
 panoramas and the lifecycle on fakes, and the native surface is one small class behind `ILightSpawner`.
 Harder: the light powers, distance and ranges are starting values to tune in game; `GameUvScale` and `SpotForward` can
 mirror or misplace the lights until checked (no crash); a ClientStructs lag after a patch disables the feature (the

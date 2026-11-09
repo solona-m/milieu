@@ -142,6 +142,30 @@ public sealed class SceneLightingTests : IDisposable
         Assert.Equal(3, spawner.Creates.Count);
     }
 
+    [Fact] // [AC-scene-lighting-2] [AC-scene-lighting-3] [AC-scene-lighting-9]
+    public void DefaultConfig_LightsHdrInGposeOnly()
+    {
+        var fresh = new Configuration();                     // on by default (owner change)
+        Assert.True(fresh.SceneLighting);
+        s = new SceneLighting(spawner, game, () => lit, fresh, Load, sentinel, log, () => unloading, () => delivery, f => f());
+        lit = new LitBackdrop(@"C:\pics\sky.png", View0);
+        Ticks(Settle + 2);
+        Assert.Equal(0, spawner.NativeCalls);                // LDR: the note, no lights
+        Assert.Equal(LightingStatus.NeedsHdr, s.Status.Status);
+        lit = new LitBackdrop(ImageA, View0);
+        game.IsGPosing = false;
+        Ticks(Settle + 2);
+        Assert.Equal(0, spawner.NativeCalls);                // HDR outside GPose: none
+        game.IsGPosing = true;
+        Ticks(Settle + 1);
+        Assert.Equal(3, spawner.Live.Count());               // HDR in GPose: lit with no user action
+        // The crash sentinel still latches a default-on config off.
+        var guarded = new SceneLighting(new FakeLightSpawner(), game, () => lit, fresh, Load, new FakeSentinel(setAtStartup: true), log,
+                                        () => false, () => delivery, f => f());
+        for (var i = 0; i < Settle + 2; i++) guarded.Tick();
+        Assert.Equal(LightingStatus.CrashGuard, guarded.Status.Status);
+    }
+
     [Theory] // [AC-scene-lighting-3]
     [InlineData(@"C:\pics\sky.png")]
     [InlineData(@"C:\pics\sky.jpg")]

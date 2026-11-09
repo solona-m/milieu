@@ -46,8 +46,11 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>The one-time notice that a user image is uploaded through PSync has been shown.</summary>
     public bool SyncUploadNoticeShown { get; set; }
 
-    /// <summary>Scene lighting (docs/adr/0009): add game lights in GPose that approximate the shown HDR image's light. Off by default.</summary>
-    public bool SceneLighting { get; set; }
+    /// <summary>
+    /// Scene lighting (docs/adr/0009): add game lights in GPose that approximate the shown HDR image's light. On by default
+    /// (owner, 2026-11-09), also for a config saved without the field; it only acts on .hdr/.exr images, in GPose.
+    /// </summary>
+    public bool SceneLighting { get; set; } = true;
 
     /// <summary>Scales every scene light (0 = no lights).</summary>
     public float LightStrength { get; set; } = 1f;

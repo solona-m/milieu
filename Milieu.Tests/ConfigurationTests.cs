@@ -210,10 +210,18 @@ public class ConfigurationTests
     }
 
     [Fact] // [AC-scene-lighting-2]
-    public void SceneLightingDefaultsOff()
+    public void SceneLightingDefaultsOn()
     {
+        // Owner change (2026-11-09): on by default. It still only acts on .hdr/.exr images, in GPose.
         var c = new Configuration();
-        Assert.False(c.SceneLighting);
+        Assert.True(c.SceneLighting);
+        // A config saved before the field existed loads as on too (Newtonsoft keeps the initializer for a missing field).
+        var saved = JsonConvert.DeserializeObject<Configuration>("{\"Version\":4,\"ImagePath\":\"p.hdr\"}")!;
+        saved.Clamp();
+        Assert.True(saved.SceneLighting);
+        // The user's explicit off survives a reload.
+        var off = JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(new Configuration { SceneLighting = false }))!;
+        Assert.False(off.SceneLighting);
         Assert.Equal(1f, c.LightStrength);
         Assert.Equal(2, c.FillLightCount);
         Assert.Equal((0f, 2f), Configuration.LightStrengthRange);
@@ -242,7 +250,7 @@ public class ConfigurationTests
         old.Clamp();
         Assert.Equal(4, old.Version);
         Assert.Equal(Configuration.CurrentVersion, old.Version);
-        Assert.False(old.SceneLighting);
+        Assert.True(old.SceneLighting);
         Assert.Equal(1f, old.LightStrength);
         Assert.Equal(2, old.FillLightCount);
         Assert.Equal(0.5f, old.Brightness);
