@@ -39,7 +39,7 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
     internal Action<byte[]>? OnThumb { get; set; }
 
     /// <summary>
-    /// Conversions never overlap: a new one waits for the previous to finish (its decode cannot be interrupted), so the
+    /// Conversions never overlap: a new one waits for the previous to finish (a decode may not be interruptible: the stb formats), so the
     /// memory budget holds even if Show is pressed repeatedly.
     /// </summary>
     public async Task<PreparedTexture> PrepareTextureAsync(BackdropRequest request, IProgress<float>? progress, CancellationToken ct)

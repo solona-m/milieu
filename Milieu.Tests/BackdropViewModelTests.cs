@@ -41,6 +41,26 @@ public class BackdropViewModelTests
         Assert.False(new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, Cfg(null)).HdrControlsEnabled);
     }
 
+    [Fact] // [AC-exr-support-3]
+    public void HdrControls_EnabledForExr()
+    {
+        Assert.True(new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, Cfg(@"C:\a.exr")).HdrControlsEnabled);
+        Assert.True(new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, Cfg(@"C:\a.EXR")).HdrControlsEnabled);
+    }
+
+    [Fact] // [AC-exr-support-6]
+    public void StatusText_ExrLayoutMessage()
+    {
+        var layout = StatusMessage.Of(MessageKey.UnsupportedExrLayout, ("file", "pano.exr"), ("feature", "deep data"));
+        var vm = new BackdropViewModel(St(BackdropState.Hidden, layout), MessageKey.None, Cfg(@"C:\x\pano.exr"));
+        Assert.Equal("pano.exr has deep data, which Milieu can't read. Save it as a single-part RGB EXR, or as .hdr.", vm.StatusText);
+        Assert.Equal(Severity.Error, vm.StatusSeverity);
+
+        var comp = StatusMessage.Of(MessageKey.UnsupportedExrCompression, ("file", "pano.exr"), ("compression", "B44"));
+        Assert.Equal("pano.exr uses B44 compression, which Milieu can't read. Re-save it with ZIP or PIZ compression, or as .hdr.",
+                     new BackdropViewModel(St(BackdropState.Hidden, comp), MessageKey.None, Cfg(@"C:\x\pano.exr")).StatusText);
+    }
+
     [Fact] // [AC-hdri-backdrop-9]
     public void Blockers_DisableShowWithMessage()
     {

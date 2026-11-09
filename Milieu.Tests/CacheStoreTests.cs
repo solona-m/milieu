@@ -67,6 +67,17 @@ public class CacheStoreTests
         Assert.Matches("^vfx/milieu/[0-9a-f]{16}/dome\\.avfx$", CacheStore.AvfxGamePath(CacheStore.AvfxKey([1, 2])));
     }
 
+    [Fact] // [AC-exr-support-3] [EDGE-exr-support-32]
+    public void ExrKey_IncludesExposureAndToneMap()
+    {
+        var r = new BackdropRequest(@"C:\p\pano.exr", 8192, 0, ToneMapOperator.Aces);
+        var k = CacheStore.TextureKey(r, ImageKind.Exr, 100, 5);
+        Assert.Equal(k, CacheStore.TextureKey(r with { }, ImageKind.Exr, 100, 5));
+        Assert.NotEqual(k, CacheStore.TextureKey(r with { ExposureEv = 1.5f }, ImageKind.Exr, 100, 5));
+        Assert.NotEqual(k, CacheStore.TextureKey(r with { ToneMap = ToneMapOperator.Reinhard }, ImageKind.Exr, 100, 5));
+        Assert.NotEqual(k, CacheStore.TextureKey(r, ImageKind.Exr, 101, 5));
+    }
+
     [Fact] // [EDGE-synced-delivery-22]
     public void WriteAtomic_TokenCancelledBeforeMove_NoFinalFile()
     {

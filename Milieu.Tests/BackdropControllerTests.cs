@@ -328,6 +328,27 @@ public sealed class BackdropControllerTests : IDisposable
         Assert.Empty(penumbra.Sets);
     }
 
+    private sealed class ZeroEncoder : Milieu.Imaging.IBlockEncoder
+    {
+        public Task<byte[]> EncodeMipAsync(byte[] rgba, int width, int height, IProgress<float>? progress, CancellationToken ct) =>
+            Task.FromResult(new byte[AtexWriter.BlockBytes(width, height)]);
+    }
+
+    [Fact] // [AC-exr-support-5]
+    public void UnsupportedExr_ShowsSpecificStatus()
+    {
+        var path = SyntheticExr.Write(dir.Path, "pano.exr", new ExrSpec { Compression = 8 });
+        var cfg = new Configuration { ImagePath = path };
+        var real = new BackdropController(spawner, penumbra, game, new BackdropPreparer(cache, new ZeroEncoder()), cache, cfg, log,
+                                          run: f => f(), utcNow: () => now);
+        real.Show();
+        for (var i = 0; i < 3; i++) real.Tick();
+        Assert.Equal(MessageKey.UnsupportedExrCompression, real.Status.Message.Key);
+        Assert.Equal("pano.exr uses DWAA compression, which Milieu can't read. Re-save it with ZIP or PIZ compression, or as .hdr.",
+                     new Milieu.Gui.BackdropViewModel(real.Status, MessageKey.None, cfg).StatusText);
+        Assert.Empty(spawner.Spawns);
+    }
+
     [Fact] // [EDGE-hdri-backdrop-17]
     public void WriteFailed_KeepsOldDome()
     {

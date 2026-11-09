@@ -42,11 +42,13 @@ public enum MessageKey
     SyncShownRing,
     SyncUploadNotice,
     SyncSharedCollection,
+    UnsupportedExrCompression,
+    UnsupportedExrLayout,
 }
 
 public enum Severity { Info, Warning, Error }
 
-/// <summary>A message key plus its named arguments ({file}, {w}, {h}, {gb}, {pct}).</summary>
+/// <summary>A message key plus its named arguments ({file}, {w}, {h}, {gb}, {pct}, {compression}, {feature}).</summary>
 public sealed record StatusMessage(MessageKey Key, IReadOnlyDictionary<string, string> Args)
 {
     public static readonly StatusMessage None = new(MessageKey.None, new Dictionary<string, string>());
@@ -80,7 +82,7 @@ public static class Messages
         [MessageKey.PenumbraModsDisabled] = "Mods are disabled in Penumbra. Enable them to show a backdrop.",
         [MessageKey.PenumbraNoBaseCollection] = "Penumbra's Base collection is set to None, so it can't load Milieu's files. Assign a Base collection in Penumbra.",
         [MessageKey.NotLoggedIn] = "Log in to show a backdrop.",
-        [MessageKey.UnsupportedFormat] = "{file}: only .hdr, .png and .jpg are supported.",
+        [MessageKey.UnsupportedFormat] = "{file}: only .hdr, .exr, .png and .jpg are supported.",
         [MessageKey.TooLargeHdr] = "{file} is {w}x{h}. HDR images can be at most 8192x4096; downscale it first.",
         [MessageKey.TooLargeLdr] = "{file} ({w}x{h}) is too large to convert safely (about {gb} GB needed); downscale it first.",
         [MessageKey.LargeImage] = "{file} is very large ({w}x{h}); converting it takes longer and uses a lot of memory.",
@@ -108,6 +110,8 @@ public static class Messages
         [MessageKey.SyncShownRing] = "Shown on your Mad Bird Ring. Wear it on your right hand.",
         [MessageKey.SyncUploadNotice] = "{file} isn't shared yet. Clicking its tile shows it through PSync, which uploads it to its server and sends it to all your pairs. Synced delivery is experimental.",
         [MessageKey.SyncSharedCollection] = "Your character has no Penumbra collection of its own, so anyone else using the same collection who wears the {item} shows this backdrop on your screen too. Assign your character its own collection in Penumbra to avoid that.",
+        [MessageKey.UnsupportedExrCompression] = "{file} uses {compression} compression, which Milieu can't read. Re-save it with ZIP or PIZ compression, or as .hdr.",
+        [MessageKey.UnsupportedExrLayout] = "{file} has {feature}, which Milieu can't read. Save it as a single-part RGB EXR, or as .hdr.",
     };
 
     public static string Template(MessageKey key) => Texts[key];

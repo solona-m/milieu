@@ -51,6 +51,22 @@ public class DecodeBudgetTests
         Assert.True(DecodeBudget.PredictPeakBytes(Jpeg(1024, 512, false, 100_000), 1024) < 20_000_000);
     }
 
+    [Fact] // [AC-exr-support-4]
+    public void Exr_DecodeArmPinned()
+    {
+        var exr = new ProbeInfo(ImageKind.Exr, 8192, 4096, 16, 3, false, FileBytes);
+        Assert.Equal(12, DecodeBudget.DecodeBytesPerPixel(exr));
+        Assert.Equal(3 * 64L * 1024 * 1024 + 2 * 1024 * 1024, Milieu.Imaging.Exr.ExrLimits.WorkingSetBytes);
+        const double px = 8192.0 * 4096, outPx = 8192.0 * 4096;
+        var decode = 12 * px + Milieu.Imaging.Exr.ExrLimits.WorkingSetBytes;
+        var resample = 12 * px + 3 * px + 4 * outPx;
+        var encode = 4 * outPx * 4 / 3 + 4 * outPx + outPx * 4 / 3;
+        var expected = (long)System.Math.Ceiling(System.Math.Max(decode, System.Math.Max(resample, encode)));
+        Assert.Equal(expected, DecodeBudget.PredictPeakBytes(exr, 8192));
+        Assert.Equal(expected, DecodeBudget.PredictPeakBytes(exr with { FileBytes = 500_000_000 }, 8192));   // the file is streamed
+        Assert.True(expected < DecodeBudget.PredictPeakBytes(exr with { Kind = ImageKind.Hdr }, 8192));   // below the .hdr path
+    }
+
     [Fact] // [EDGE-hdri-backdrop-55]
     public void ProgressiveFixture_FileLengthPinned()
     {

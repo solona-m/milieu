@@ -69,7 +69,7 @@ public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker,
 
 
     public bool HdrControlsEnabled => config.ImagePath != null && !Assets.BackdropPins.IsBundledId(config.ImagePath)
-                                      && ImageLoader.KindOf(config.ImagePath) == ImageKind.Hdr;
+                                      && ImageLoader.KindOf(config.ImagePath)?.IsHdr() == true;
 
     /// <summary>A bundled scene is selected: texture size and HDR settings don't apply (pre-converted).</summary>
     public bool IsBundledSelection => Assets.BackdropPins.IsBundledId(config.ImagePath);

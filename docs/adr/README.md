@@ -37,3 +37,4 @@ real decision.]
 - [0005](0005-pre-converted-bundled-backdrops.md) Bundled scenes ship pre-converted, published by a guarded local script
 - [0006](0006-synced-delivery-through-an-item-vfx.md) Synced delivery through an item's VFX
 - [0007](0007-plugin-releases-and-listing.md) Plugin releases, version stamping and the plugins-repo listing
+- [0008](0008-in-repo-openexr-decoder.md) OpenEXR is decoded by an in-repo bounded decoder

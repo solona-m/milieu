@@ -29,7 +29,7 @@ public sealed class CacheStore(string root)
         sb.Append(ConverterVersion).Append('|')
           .Append(Path.GetFullPath(r.ImagePath).ToLowerInvariant().Replace('\\', '/')).Append('|')
           .Append(length).Append('|').Append(lastWriteUtcTicks).Append('|').Append(r.MaxWidth);
-        if (kind == ImageKind.Hdr)
+        if (kind.IsHdr())
             sb.Append('|').Append(r.ExposureEv.ToString("R", CultureInfo.InvariantCulture)).Append('|').Append((int)r.ToneMap);
         return Hash16(Encoding.UTF8.GetBytes(sb.ToString()));
     }
