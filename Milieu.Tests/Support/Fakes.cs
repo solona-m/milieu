@@ -256,3 +256,78 @@ public sealed class FakeBundled(string dir) : Milieu.Assets.IBundledBackdrops
     public string PathOf(string stem) => System.IO.Path.Combine(dir, stem + ".atex");
     public void MarkCorrupt(string stem) { Corrupt.Add(stem); System.IO.File.Delete(PathOf(stem)); }
 }
+
+/// <summary>Records every light call. Throws when used while unavailable or on a dead handle (a real call there could crash the game).</summary>
+public sealed class FakeLightSpawner : Milieu.Lighting.ILightSpawner
+{
+    public bool Available { get; set; } = true;
+    public readonly List<(Milieu.Lighting.LightParams P, Milieu.Lighting.LightHandle H)> Creates = [];
+    public readonly List<(Milieu.Lighting.LightHandle H, Milieu.Lighting.LightParams P)> Updates = [];
+    public readonly List<Milieu.Lighting.LightHandle> Refreshes = [];
+    public readonly List<Milieu.Lighting.LightHandle> Destroys = [];
+    /// <summary>Every call in order, refused and failed ones included: "Create", "Update", "Refresh", "Destroy".</summary>
+    public readonly List<string> Calls = [];
+    /// <summary>1-based number of the Create call that returns null (0: none).</summary>
+    public int FailCreateAt;
+    public int CreateAttempts;
+    /// <summary>Handles the game "freed": Update/Refresh find them dead.</summary>
+    public readonly HashSet<Milieu.Lighting.LightHandle> GoneByGame = [];
+    public bool RefuseDestroy;
+    private int next = 0x1000;
+
+    public int NativeCalls => Calls.Count;
+
+    public IEnumerable<Milieu.Lighting.LightHandle> Live => Creates.Select(c => c.H).Where(h => !h.IsDead);
+
+    private void Check(Milieu.Lighting.LightHandle? h, string what)
+    {
+        if (!Available) throw new InvalidOperationException($"{what} while unavailable");
+        if (h is { IsDead: true }) throw new InvalidOperationException($"{what} on a dead handle");
+        Calls.Add(what);
+    }
+
+    public Milieu.Lighting.LightHandle? Create(Milieu.Lighting.LightParams p)
+    {
+        Check(null, "Create");
+        if (++CreateAttempts == FailCreateAt) return null;
+        var h = new Milieu.Lighting.LightHandle(next += 0x10);
+        Creates.Add((p, h));
+        return h;
+    }
+
+    public bool Update(Milieu.Lighting.LightHandle h, Milieu.Lighting.LightParams p)
+    {
+        Check(h, "Update");
+        if (GoneByGame.Contains(h)) { h.MarkDead(); return false; }
+        Updates.Add((h, p));
+        return true;
+    }
+
+    public bool Refresh(Milieu.Lighting.LightHandle h)
+    {
+        Check(h, "Refresh");
+        if (GoneByGame.Contains(h)) { h.MarkDead(); return false; }
+        Refreshes.Add(h);
+        return true;
+    }
+
+    public bool Destroy(Milieu.Lighting.LightHandle h)
+    {
+        Check(h, "Destroy");
+        if (RefuseDestroy) return false;
+        h.MarkDead();
+        Destroys.Add(h);
+        return true;
+    }
+}
+
+public sealed class FakeSentinel : Milieu.Lighting.ILightingSentinel
+{
+    public bool WasSetAtStartup { get; init; }
+    public bool IsSet;
+    public int Sets, Clears;
+    public readonly List<string> Calls = [];
+    public FakeSentinel(bool setAtStartup = false) { WasSetAtStartup = setAtStartup; IsSet = setAtStartup; }
+    public void Set() { Sets++; IsSet = true; Calls.Add("Set"); }
+    public void Clear() { Clears++; IsSet = false; Calls.Add("Clear"); }
+}
