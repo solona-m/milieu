@@ -140,6 +140,20 @@ public static class LightExtractor
 
     private readonly record struct Rect(int X0, int X1, int Y0, int Y1);
 
+    /// <summary>The fills of a probe-sized linear RGB buffer (the median cut on its own, as the LDR estimate uses it).</summary>
+    internal static RigLight[] MedianCut(float[] rgb)
+    {
+        var dOmega = new double[H];
+        var dirs = new Vector3[W * H];
+        for (var row = 0; row < H; row++)
+        {
+            var t = (row + 0.5) / H;
+            dOmega[row] = 2 * Math.PI / W * (Math.PI / H) * Math.Cos(Latitude(t));
+            for (var x = 0; x < W; x++) dirs[row * W + x] = ImageDirection((x + 0.5) / W, t);
+        }
+        return MedianCut(rgb, dOmega, dirs);
+    }
+
     private static RigLight[] MedianCut(float[] rgb, double[] dOmega, Vector3[] dirs)
     {
         var rects = new List<Rect> { new(0, W, 0, H) };

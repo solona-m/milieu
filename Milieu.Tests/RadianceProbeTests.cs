@@ -88,6 +88,69 @@ public class RadianceProbeTests
             Assert.Equal(x / 4 + 100f * (y / 4), At(p, x, y), 3);
     }
 
+    private static double Linear(int v)
+    {
+        var c = v / 255.0;
+        return c <= 0.04045 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+    }
+
+    [Fact] // [AC-ldr-light-estimate-1]
+    public void BuildSrgb8_LinearisesAndBuildsClipMask()
+    {
+        // 1:1 onto the probe: each texel is its pixel, linearised; the mask is 8x finer, so each pixel is 8x8 cells.
+        var px = new byte[W * H * 3];
+        for (var i = 0; i < W * H; i++) { px[i * 3] = 128; px[i * 3 + 1] = 64; px[i * 3 + 2] = 200; }
+        void Set(int x, int y, byte r, byte g, byte b) { var o = (y * W + x) * 3; px[o] = r; px[o + 1] = g; px[o + 2] = b; }
+        Set(10, 20, 255, 255, 255);   // clipped
+        Set(11, 20, 245, 250, 245);   // clipped: min(R,G,B) = 245
+        Set(12, 20, 255, 255, 200);   // a coloured saturated core: not clipped
+        Set(13, 20, 244, 255, 255);   // just under
+        var p = RadianceProbe.BuildSrgb8(px, W, H);
+        Assert.Equal(Linear(128), At(p, 0, 0, 0), 6);
+        Assert.Equal(Linear(64), At(p, 0, 0, 1), 6);
+        Assert.Equal(Linear(200), At(p, 0, 0, 2), 6);
+        Assert.Equal(1.0, At(p, 10, 20, 1), 6);
+        Assert.Equal((0, H), (p.CoveredTop, p.CoveredRows));
+
+        var m = Assert.IsType<ClipMask>(p.Clip);
+        Assert.Equal(ClipMask.Width * ClipMask.Height, m.Fraction.Length);
+        Assert.Equal((0, ClipMask.Height), (m.CoveredTop, m.CoveredRows));
+        float Cell(int x, int y) => m.Fraction[y * ClipMask.Width + x];
+        for (var dy = 0; dy < 8; dy++)
+        for (var dx = 0; dx < 8; dx++)
+        {
+            Assert.Equal(1f, Cell(80 + dx, 160 + dy));
+            Assert.Equal(1f, Cell(88 + dx, 160 + dy));
+            Assert.Equal(0f, Cell(96 + dx, 160 + dy));
+            Assert.Equal(0f, Cell(104 + dx, 160 + dy));
+        }
+        Assert.Equal(2 * 64, m.Fraction.Count(f => f > 0));
+
+        // The probe is exactly Build on the linearised pixels (the shared accumulation), at a non-integer scale too.
+        const int w = 700, h = 350;
+        var src = new byte[w * h * 3];
+        var lin = new float[w * h * 3];
+        for (var i = 0; i < src.Length; i++)
+        {
+            src[i] = (byte)((i * 7919 + i / 3 * 104729) % 256);
+            lin[i] = RadianceProbe.SrgbToLinear[src[i]];
+        }
+        Assert.Equal(RadianceProbe.Build(lin, w, h).Rgb, RadianceProbe.BuildSrgb8(src, w, h).Rgb);
+
+        // A band panorama: the mask fills only its band rows, like the probe.
+        var band = RadianceProbe.BuildSrgb8(Enumerable.Repeat((byte)255, 4096 * 1024 * 3).ToArray(), 4096, 1024);
+        Assert.Equal((32, 64), (band.CoveredTop, band.CoveredRows));
+        Assert.Equal((256, 512), (band.Clip!.CoveredTop, band.Clip.CoveredRows));
+        Assert.Equal(512 * ClipMask.Width, band.Clip.Fraction.Count(f => f == 1f));
+
+        // A small source is box-upsampled: one clipped pixel of 100x50 covers 20.48 x 20.48 cells (partial at the edges).
+        var small = new byte[100 * 50 * 3];
+        small[(25 * 100 + 50) * 3] = small[(25 * 100 + 50) * 3 + 1] = small[(25 * 100 + 50) * 3 + 2] = 255;
+        var sm = RadianceProbe.BuildSrgb8(small, 100, 50).Clip!;
+        Assert.Equal(20.48 * 20.48, sm.Fraction.Sum(f => (double)f), 1e-2);
+        Assert.Null(RadianceProbe.Build(new float[W * H * 3], W, H).Clip);
+    }
+
     [Fact] // [EDGE-scene-lighting-6]
     public void Downsample_AreaAverages_PerChannel()
     {
