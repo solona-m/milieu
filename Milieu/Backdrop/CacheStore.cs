@@ -44,6 +44,15 @@ public sealed class CacheStore(string root)
         Hash16(Encoding.UTF8.GetBytes("L" + Lighting.LightExtractor.Version + "|" + Path.GetFullPath(path).ToLowerInvariant().Replace('\\', '/')
                                       + "|" + length + "|" + lastWriteUtcTicks));
 
+    /// <summary>
+    /// An estimated rig's cache key (an 8-bit image, docs/adr/0010): the file and both the extractor and estimator
+    /// versions, with its own prefix. The estimated flag in the file is what guarantees an HDR rig is never loaded as an
+    /// estimate or the other way round (<see cref="Lighting.LightRigStore.Parse"/>).
+    /// </summary>
+    public static string EstimatedRigKey(string path, long length, long lastWriteUtcTicks) =>
+        Hash16(Encoding.UTF8.GetBytes("E" + Lighting.LightExtractor.Version + "." + Lighting.LdrLightEstimator.Version + "|"
+                                      + Path.GetFullPath(path).ToLowerInvariant().Replace('\\', '/') + "|" + length + "|" + lastWriteUtcTicks));
+
     /// <summary>A subfolder, so <see cref="Cleanup"/> (top level only) never touches the rigs.</summary>
     public string LightRigDir => Path.Combine(Root, "lights");
 

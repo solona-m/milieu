@@ -112,4 +112,17 @@ public class CacheStoreTests
         store.Cleanup(new HashSet<string>());
         Assert.True(File.Exists(store.LightRigPath(key)));
     }
+    [Fact] // [AC-ldr-light-estimate-6]
+    public void EstimatedRigKey_DiffersFromLightRigKey_SameFile()
+    {
+        using var t = new TempDir();
+        var path = t.File("pano.jpg");
+        var key = CacheStore.EstimatedRigKey(path, 100, 5);
+        Assert.Matches("^[0-9a-f]{16}$", key);
+        Assert.NotEqual(CacheStore.LightRigKey(path, 100, 5), key);
+        Assert.Equal(key, CacheStore.EstimatedRigKey(path.ToUpperInvariant(), 100, 5));
+        Assert.NotEqual(key, CacheStore.EstimatedRigKey(path, 101, 5));
+        Assert.NotEqual(key, CacheStore.EstimatedRigKey(path, 100, 6));
+        Assert.NotEqual(key, CacheStore.EstimatedRigKey(t.File("other.jpg"), 100, 5));
+    }
 }

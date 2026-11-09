@@ -102,6 +102,75 @@ public sealed class LightRigStoreTests : IDisposable
                         CacheStore.Hash16(System.Text.Encoding.UTF8.GetBytes("L1|c:/a.hdr|1|2")));
     }
 
+    private static LightRig EstimatedSample(int lamps = 2) =>
+        new(LightExtractor.Version, new RigLight(0.25f, 0.125f, new Vector3(1.2f, 1f, 0.7f)),
+            [new(0f, 0.5f, new Vector3(1, 2, 3)), new(1f, 1f, Vector3.Zero), new(0.5f, 0f, new Vector3(0.1f, 0.2f, 0.3f)), new(0.75f, 0.6f, Vector3.One)],
+            new Vector3(2.1f, 3.2f, 4.3f),
+            Enumerable.Range(0, lamps).Select(i => new RigLight(0.1f * (i + 1), 0.4f, new Vector3(0.5f, 0.4f, 0.3f) * (1f / (i + 1)))).ToArray(),
+            LdrLightEstimator.Version);
+
+    [Fact] // [EDGE-ldr-light-estimate-12]
+    public void RoundTrip_EstimatedWithLamps()
+    {
+        foreach (var rig in new[] { EstimatedSample(), EstimatedSample(0), EstimatedSample(3) })
+        {
+            store.Save("00000000000000e1", rig);
+            var back = store.Load("00000000000000e1", estimated: true);
+            Assert.NotNull(back);
+            Assert.True(back!.IsEstimated);
+            Assert.Equal(LdrLightEstimator.Version, back.EstimatorVersion);
+            Assert.Equal(rig.Key, back.Key);
+            Assert.Equal(rig.Lamps, back.Lamps);
+            Assert.Equal(rig.Regions, back.Regions);
+            Assert.Equal(rig.TotalEnergy, back.TotalEnergy);
+        }
+        var json = LightRigStore.Serialise(EstimatedSample());
+        Assert.Contains("\"estimated\":" + LdrLightEstimator.Version, json);
+        Assert.Contains("\"lamps\":[", json);
+        var hdr = LightRigStore.Serialise(Sample());
+        Assert.DoesNotContain("estimated", hdr);
+        Assert.DoesNotContain("lamps", hdr);
+    }
+
+    [Fact] // [AC-ldr-light-estimate-6]
+    public void EstimatedFlagIsChecked_HdrRigNeverLoadsAsEstimate_AndViceVersa()
+    {
+        Assert.Null(LightRigStore.Parse(LightRigStore.Serialise(Sample()), estimated: true));
+        Assert.Null(LightRigStore.Parse(LightRigStore.Serialise(EstimatedSample()), estimated: false));
+        Assert.NotNull(LightRigStore.Parse(LightRigStore.Serialise(Sample()), estimated: false));
+        Assert.NotNull(LightRigStore.Parse(LightRigStore.Serialise(EstimatedSample()), estimated: true));
+
+        // Through the store: asked under the other kind, the file is a miss and deleted.
+        store.Save("00000000000000e2", Sample());
+        Assert.Null(store.Load("00000000000000e2", estimated: true));
+        Assert.False(File.Exists(cache.LightRigPath("00000000000000e2")));
+        store.Save("00000000000000e3", EstimatedSample());
+        Assert.Null(store.Load("00000000000000e3"));
+        Assert.False(File.Exists(cache.LightRigPath("00000000000000e3")));
+    }
+
+    public static TheoryData<string> BadEstimatedFiles => new()
+    {
+        "not json",
+        $"{{\"version\":{LightExtractor.Version},\"key\":null,\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}",                                       // no flag
+        $"{{\"version\":{LightExtractor.Version},\"estimated\":{LdrLightEstimator.Version + 1},\"key\":null,\"lamps\":[],\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}",
+        $"{{\"version\":{LightExtractor.Version + 1},\"estimated\":{LdrLightEstimator.Version},\"key\":null,\"lamps\":[],\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}",
+        $"{{\"version\":{LightExtractor.Version},\"estimated\":{LdrLightEstimator.Version},\"key\":{R},\"lamps\":[{R},{R},{R},{R}],\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}",   // 4 lamps
+        $"{{\"version\":{LightExtractor.Version},\"estimated\":{LdrLightEstimator.Version},\"key\":{R},\"lamps\":[{{\"s\":2,\"t\":0.5,\"r\":1,\"g\":1,\"b\":1}}],\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}",
+        $"{{\"version\":{LightExtractor.Version},\"estimated\":{LdrLightEstimator.Version},\"key\":{R},\"lamps\":{R},\"regions\":[{R},{R},{R},{R}],\"total\":{T}}}",
+    };
+
+    [Theory] // [EDGE-ldr-light-estimate-12]
+    [MemberData(nameof(BadEstimatedFiles))]
+    public void EstimatedMismatch_IsMissAndDeleted(string text)
+    {
+        Directory.CreateDirectory(cache.LightRigDir);
+        var path = cache.LightRigPath("00000000000000ea");
+        File.WriteAllText(path, text);
+        Assert.Null(store.Load("00000000000000ea", estimated: true));
+        Assert.False(File.Exists(path));
+    }
+
     [Fact] // [EDGE-scene-lighting-31]
     public void TrimKeepsNewest100_OnlyOwnPattern()
     {
