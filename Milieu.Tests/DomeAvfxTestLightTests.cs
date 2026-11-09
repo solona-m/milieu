@@ -42,14 +42,24 @@ public class DomeAvfxTestLightTests
             Assert.Equal(["ACT", "ACTR", "X", "Y", "Z"], Tags(data.Need("Pos")));
         }
 
-        // Timeline: chunk 0 holds item 0 (the dome emitter); chunk 1 holds item 0 and item 1 (the light).
+        // Linked from the dome emitter, as the venue's lights are; the timeline stays one item with no effector.
+        Assert.Equal(0, root.Need("Emit").Need("EfNo").AsInt());
         var timeline = root.Need("TmLn");
-        Assert.Equal(2, timeline.Need("TICn").AsInt());
-        var items = timeline.All("Item").ToArray();
-        Assert.Equal(2, items.Length);
-        Assert.Single(items[0].Children, c => c.Tag == "bEna");
-        Assert.Equal(new[] { -1, 0 }, items[1].Children.Where(c => c.Tag == "EfNo").Select(c => c.AsInt()).ToArray());
-        Assert.Equal(new[] { 0, -1 }, items[1].Children.Where(c => c.Tag == "EmNo").Select(c => c.AsInt()).ToArray());
+        Assert.Equal(1, timeline.Need("TICn").AsInt());
+        Assert.Equal(-1, Assert.Single(timeline.All("Item")).Need("EfNo").AsInt());
+
+        // Venue values: colour as RGB + A (no Bri), distance scale 1, shadow range 0.0001..20.
+        Assert.Equal(["RGB", "A"], Tags(data.Need("Col")));
+        Assert.Equal(1, effector.Need("bAOV").AsInt());
+        Assert.Equal(2, effector.Need("RoOT").AsInt());
+        if (mode != 3)
+        {
+            Assert.Equal(1f, data.Need("DstS").CurveValue());
+            Assert.Equal(0.0001f, data.Need("SCDN").AsFloat());
+            Assert.Equal(20f, data.Need("SCDF").AsFloat());
+            Assert.Equal(1.5f, data.Need("Pos").Need("Y").CurveValue());
+            Assert.Equal(2.5f, data.Need("Pos").Need("Z").CurveValue());
+        }
     }
 
     [Theory]

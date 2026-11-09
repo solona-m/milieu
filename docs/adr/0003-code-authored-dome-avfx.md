@@ -39,7 +39,7 @@ BC7 encoding uses BCnEncoder.Net per mip; its `EncodeToRawBytesAsync` observes t
 
 Experiment (testing builds, 2026-11-09; remove or decide before the next stable merge): `/milieu vfxlight 1|2|3`
 (`DomeAvfxBuilder.TestLightMode`, not saved) adds one VFX effector light (point, point with shadow flags, or
-directional) as an `Efct` chunk plus a second timeline item linking it. It tests in game whether VFX lights can carry
+directional) as an `Efct` chunk linked from the dome emitter (`Emit` `EfNo` 0), set up like the "Pickles Venue" lights. It tests in game whether VFX lights can carry
 scene lighting to synced viewers (ADR 0009 lights are local-only native objects). Mode 0, the default, gives
 byte-identical output.
 
