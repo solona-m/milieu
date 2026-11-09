@@ -26,6 +26,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] public static ICommandManager CommandManager { get; private set; } = null!;
     [PluginService] public static IPluginLog Log { get; private set; } = null!;
+    [PluginService] public static IChatGui ChatGui { get; private set; } = null!;
     [PluginService] public static IFramework Framework { get; private set; } = null!;
     [PluginService] public static IClientState ClientState { get; private set; } = null!;
     [PluginService] public static ICondition Condition { get; private set; } = null!;
@@ -36,7 +37,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 20;
+    public const int BuildNumber = 21;
 
     private const string CommandName = "/milieu";
 
@@ -117,6 +118,15 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
+        // SPIKE (spike/vfx-light): "/milieu vfxlight <0-3>" picks the test light baked into the next dome VFX.
+        var parts = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 2 && parts[0].Equals("vfxlight", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(parts[1], out var mode) && mode is >= 0 and <= 3)
+        {
+            GameFiles.DomeAvfxBuilder.SpikeLightMode = mode;
+            ChatGui.Print($"[Milieu] Test VFX light {mode} ({(mode switch { 1 => "point", 2 => "point + shadows", 3 => "directional", _ => "off" })}). Pick None, then your scene again.");
+            return;
+        }
         if (ParseCommand(args) == CommandAction.Hide) grid.SelectNone();
         else mainWindow.Toggle();
     }

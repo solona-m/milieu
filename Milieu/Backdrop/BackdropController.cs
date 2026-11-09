@@ -599,7 +599,7 @@ public sealed class BackdropController : Gui.IGridController
         try
         {
             avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, build.VerticalScale,
-                build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY));
+                build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY, TestLight: DomeAvfxBuilder.SpikeLightMode));
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
         {
@@ -667,7 +667,8 @@ public sealed class BackdropController : Gui.IGridController
         {
             avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, build.VerticalScale,
                 build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY,
-                BakedHeight: config.Current.HeightOffset, BakedYawRadians: bakedYaw, AttachToOwner: true));
+                BakedHeight: config.Current.HeightOffset, BakedYawRadians: bakedYaw, AttachToOwner: true,
+                TestLight: DomeAvfxBuilder.SpikeLightMode));
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
         {
