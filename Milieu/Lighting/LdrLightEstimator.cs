@@ -15,7 +15,7 @@ namespace Milieu.Lighting;
 /// <param name="RejectedHalo">(f) no glow around it.</param>
 /// <param name="Saturated">(c) more than <see cref="LdrLightEstimator.MaxClipShare"/> of the covered sphere clipped: no point sources.</param>
 /// <param name="Kept">Blobs passing every filter (the top 1 + MaxFills of them are used).</param>
-/// <param name="ClipShare">Clipped Ω over covered Ω.</param>
+/// <param name="ClipShare">Near-white (strict) clipped Ω over covered Ω, what gate (c) uses (<see cref="ClipMask.WhiteShare"/>).</param>
 public sealed record EstimateStats(int Components, int Specks, int Broad, int RejectedShare, int RejectedOutlier, bool OutlierFallback,
                                    int RejectedHalo, bool Saturated, int Kept, double ClipShare);
 
@@ -51,10 +51,27 @@ public sealed record EstimateResult(LightRig Rig, EstimateStats Stats, IReadOnly
 public static class LdrLightEstimator
 {
     /// <summary>Bump when the estimate changes (it is in the estimated rig's cache key and file), and regenerate the bundled rigs.</summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
-    /// <summary>A source pixel is clipped when min(R,G,B) is at least this.</summary>
+    /// <summary>A source pixel is clipped when min(R,G,B) is at least this (a white core)…</summary>
     public const int ClipLevel = 245;
+
+    /// <summary>…or when R and G are at least this and B at least <see cref="WarmCoreMinFloor"/> (a bright yellow core, like a sunset sun).</summary>
+    public const int WarmCoreMax = 250;
+
+    public const int WarmCoreMinFloor = 160;
+
+    /// <summary>
+    /// The clip rule (the single definition, used by <see cref="RadianceProbe.BuildSrgb8"/>): min(R,G,B) ≥
+    /// <see cref="ClipLevel"/> (white), or R ≥ <see cref="WarmCoreMax"/>, G ≥ <see cref="WarmCoreMax"/> and B ≥
+    /// <see cref="WarmCoreMinFloor"/> (a yellow core). Pale sky, sand, skin and orange signage are not clipped; a cream
+    /// wall in full sun is (a documented limit), and a warm lamp core with G under 250 is missed.
+    /// </summary>
+    public static bool IsClipped(byte r, byte g, byte b) =>
+        IsNearWhite(r, g, b) || (r >= WarmCoreMax && g >= WarmCoreMax && b >= WarmCoreMinFloor);
+
+    /// <summary>The strict (white) clip: the only one the saturated-image gate (c) counts.</summary>
+    public static bool IsNearWhite(byte r, byte g, byte b) => r >= ClipLevel && g >= ClipLevel && b >= ClipLevel;
 
     public const float SeedFraction = 0.25f;
     public const float GrowFraction = 0.1f;
@@ -124,7 +141,9 @@ public static class LdrLightEstimator
 
         double clipOmega = 0, coveredOmega = 0;
         var blobs = mask == null ? new List<Blob>() : Label(mask, out clipOmega, out coveredOmega);
-        var clipShare = coveredOmega > 0 ? clipOmega / coveredOmega : 0;
+        // (c) counts only the strict near-white clips (ClipMask.WhiteShare), never the warm branch: a pale or cream sky
+        // must not switch a real sun off.
+        var clipShare = mask?.WhiteShare ?? 0;
         var saturated = clipShare > MaxClipShare;
 
         // (a), (b), (c)

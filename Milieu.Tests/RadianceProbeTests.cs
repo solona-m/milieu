@@ -103,8 +103,8 @@ public class RadianceProbeTests
         void Set(int x, int y, byte r, byte g, byte b) { var o = (y * W + x) * 3; px[o] = r; px[o + 1] = g; px[o + 2] = b; }
         Set(10, 20, 255, 255, 255);   // clipped
         Set(11, 20, 245, 250, 245);   // clipped: min(R,G,B) = 245
-        Set(12, 20, 255, 255, 200);   // a coloured saturated core: not clipped
-        Set(13, 20, 244, 255, 255);   // just under
+        Set(12, 20, 255, 160, 40);    // an orange signage core: not clipped (min 40 < 160)
+        Set(13, 20, 244, 244, 244);   // just under
         var p = RadianceProbe.BuildSrgb8(px, W, H);
         Assert.Equal(Linear(128), At(p, 0, 0, 0), 6);
         Assert.Equal(Linear(64), At(p, 0, 0, 1), 6);

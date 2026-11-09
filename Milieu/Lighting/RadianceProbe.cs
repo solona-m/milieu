@@ -7,7 +7,7 @@ namespace Milieu.Lighting;
 /// <summary>
 /// Where an 8-bit image is clipped (docs/adr/0010): a <see cref="Width"/> x <see cref="Height"/> grid in the same
 /// <see cref="EquirectLayout"/> as the probe (8x finer, cells of 0.176°), each cell holding the area fraction of source
-/// pixels with min(R,G,B) ≥ <see cref="LdrLightEstimator.ClipLevel"/>. A band panorama fills only its rows.
+/// pixels that are clipped (<see cref="LdrLightEstimator.IsClipped"/>). A band panorama fills only its rows.
 /// </summary>
 public sealed class ClipMask
 {
@@ -19,6 +19,12 @@ public sealed class ClipMask
 
     public required int CoveredTop { get; init; }
     public required int CoveredRows { get; init; }
+
+    /// <summary>
+    /// The solid-angle share of the covered sphere whose source pixels are near-white clipped
+    /// (<see cref="LdrLightEstimator.IsNearWhite"/>): what the saturated-image gate counts (never the warm-core branch).
+    /// </summary>
+    public required double WhiteShare { get; init; }
 }
 
 /// <summary>
@@ -92,23 +98,30 @@ public sealed class RadianceProbe
         var mxTaps = Taps(w, ClipMask.Width);
         var myTaps = Taps(h, maskPlace.BandHeight);
         var lut = SrgbToLinear;
-        const int clip = LdrLightEstimator.ClipLevel;
 
         var rows = new float[(long)h * Width * 3];
         var maskRows = new float[(long)h * ClipMask.Width];
         var linear = new float[(long)w * 3];
         var clipped = new float[w];
+        double whiteOmega = 0, coveredOmega = 0;
         for (var y = 0; y < h; y++)
         {
             if ((y & 63) == 0) ct.ThrowIfCancellationRequested();
             var src = (long)y * w * 3;
+            var white = 0;
             for (var x = 0; x < w; x++)
             {
                 var p = src + (long)x * 3;
                 byte r = rgb[p], g = rgb[p + 1], b = rgb[p + 2];
                 linear[x * 3] = lut[r]; linear[x * 3 + 1] = lut[g]; linear[x * 3 + 2] = lut[b];
-                clipped[x] = r >= clip && g >= clip && b >= clip ? 1f : 0f;
+                clipped[x] = LdrLightEstimator.IsClipped(r, g, b) ? 1f : 0f;
+                if (LdrLightEstimator.IsNearWhite(r, g, b)) white++;
             }
+            // This source row's latitude in the layout (a band sits in its rows), for the solid-angle weight.
+            var t = (maskPlace.BandTop + (y + 0.5) * maskPlace.BandHeight / h) / ClipMask.Height;
+            var weight = Math.Cos((0.5 - t) * Math.PI);
+            whiteOmega += white * weight;
+            coveredOmega += w * weight;
             ProbeRow(linear, 0, xTaps, rows, (long)y * Width * 3);
             var dst = (long)y * ClipMask.Width;
             for (var x = 0; x < ClipMask.Width; x++)
@@ -134,7 +147,11 @@ public sealed class RadianceProbe
         return new RadianceProbe
         {
             Rgb = ProbeColumns(rows, place, yTaps), CoveredTop = place.BandTop, CoveredRows = place.BandHeight,
-            Clip = new ClipMask { Fraction = fraction, CoveredTop = maskPlace.BandTop, CoveredRows = maskPlace.BandHeight },
+            Clip = new ClipMask
+            {
+                Fraction = fraction, CoveredTop = maskPlace.BandTop, CoveredRows = maskPlace.BandHeight,
+                WhiteShare = coveredOmega > 0 ? whiteOmega / coveredOmega : 0,
+            },
         };
     }
 

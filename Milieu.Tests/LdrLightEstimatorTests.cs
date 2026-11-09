@@ -112,7 +112,7 @@ public class LdrLightEstimatorTests
         var px = SyntheticImages.LdrPanorama(W, H, (_, _) => DimRoom);
         SyntheticImages.Lamp(px, W, H, -120, 20, 1.0, (255, 180, 100));   // warm
         SyntheticImages.Lamp(px, W, H, 0, 20, 0.8, (150, 200, 255));      // cool
-        SyntheticImages.Lamp(px, W, H, 120, 20, 0.6, (180, 255, 160));    // green
+        SyntheticImages.Lamp(px, W, H, 120, 20, 0.6, (170, 255, 150));    // green
         var (rig, stats) = Analyse(px);
         Assert.Equal(3, stats.Kept);
         var key = Assert.IsType<RigLight>(rig.Key);
@@ -271,7 +271,7 @@ public class LdrLightEstimatorTests
         var probe = new RadianceProbe
         {
             Rgb = rgb, CoveredTop = 0, CoveredRows = 10,
-            Clip = new ClipMask { Fraction = fraction, CoveredTop = 0, CoveredRows = ClipMask.Height },
+            Clip = new ClipMask { Fraction = fraction, CoveredTop = 0, CoveredRows = ClipMask.Height, WhiteShare = 0 },
         };
         var (rig, stats) = LdrLightEstimator.Analyse(probe);
         AssertEnergy(rig);
@@ -330,14 +330,71 @@ public class LdrLightEstimatorTests
         Assert.InRange(key.T * RadianceProbe.Height, 32, 96);
     }
 
+    [Theory] // [AC-ldr-light-estimate-1] [EDGE-ldr-light-estimate-9]
+    [InlineData(255, 160, 40, false)]    // orange signage: min 40 < 160
+    [InlineData(244, 244, 244, false)]
+    [InlineData(249, 249, 200, false)]   // max < 250 and min < 245
+    [InlineData(255, 159, 255, false)]   // min 159
+    [InlineData(245, 245, 245, true)]
+    [InlineData(255, 255, 255, true)]
+    [InlineData(255, 254, 185, true)]    // the sunset sun core
+    [InlineData(250, 200, 160, false)]   // G under 250 (revision 6)
+    [InlineData(175, 215, 255, false)]   // pale sky
+    [InlineData(250, 235, 200, false)]   // sand
+    [InlineData(255, 222, 196, false)]   // skin
+    [InlineData(255, 250, 210, true)]    // a cream wall in full sun (a documented limit)
+    [InlineData(255, 230, 170, false)]   // a warm lamp core (a documented limit)
+    public void IsClipped_Rule(int r, int g, int b, bool clipped)
+    {
+        Assert.Equal(clipped, LdrLightEstimator.IsClipped((byte)r, (byte)g, (byte)b));
+        // The probe's mask uses the same rule.
+        var px = new byte[256 * 128 * 3];
+        px[0] = (byte)r; px[1] = (byte)g; px[2] = (byte)b;
+        Assert.Equal(clipped ? 1f : 0f, RadianceProbe.BuildSrgb8(px, 256, 128).Clip!.Fraction[0]);
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-27]
+    public void WarmClippedSkyBand_DoesNotSaturate_SunIsKey()
+    {
+        // Everything above 20° is a cream sky that the warm-core branch clips (33% of the sphere). The saturated-image
+        // gate counts only near-white clips, so the white sun below it is still the key; the cream band is broad.
+        var px = SyntheticImages.LdrPanorama(W, H, (_, el) =>
+            el > 20 ? ((byte)255, (byte)250, (byte)210) : el > 0 ? ((byte)90, (byte)140, (byte)220) : ((byte)60, (byte)50, (byte)40));
+        SyntheticImages.Lamp(px, W, H, 70, 8, 2, (255, 200, 120));
+        var (rig, stats) = Analyse(px);
+        Assert.False(stats.Saturated);
+        Assert.True(stats.ClipShare < 0.01, $"near-white share {stats.ClipShare}");
+        Assert.True(stats.Broad >= 1, "the cream band is a broad component");
+        Assert.True(Off(Assert.IsType<RigLight>(rig.Key), 70, 8) < 1.5, "the sun is the key");
+        // The same with a pale blue sky band (not clipped at all).
+        var pale = SyntheticImages.LdrPanorama(W, H, (_, el) => el > 20 ? ((byte)175, (byte)215, (byte)255) : ((byte)60, (byte)50, (byte)40));
+        SyntheticImages.Lamp(pale, W, H, 70, 8, 2, (255, 200, 120));
+        Assert.True(Off(Assert.IsType<RigLight>(Analyse(pale).Rig.Key), 70, 8) < 1.5);
+    }
+
     [Fact] // [EDGE-ldr-light-estimate-9]
-    public void ColouredSaturatedCore_NotClipped()
+    public void OrangeSignageCore_NotALight()
     {
         var px = SyntheticImages.LdrPanorama(W, H, (_, _) => BlueSky);
-        SyntheticImages.ClippedDisc(px, W, H, 40, 30, 1, (255, 255, 200));
+        SyntheticImages.ClippedDisc(px, W, H, 40, 30, 1, (255, 160, 40));
         var (rig, stats) = Analyse(px);
         Assert.Equal(0, stats.Components);
         Assert.Null(rig.Key);
+    }
+
+    [Fact] // [AC-ldr-light-estimate-1] [EDGE-ldr-light-estimate-46]
+    public void YellowSunsetCore_IsKey()
+    {
+        // A 1.5° sun core of (255,254,185) on an orange sky band with a warm glow: no pixel has min ≥ 245, so only the
+        // warm-core branch clips it.
+        var px = SyntheticImages.LdrPanorama(W, H, (_, el) => el > 0 ? ((byte)230, (byte)140, (byte)80) : ((byte)60, (byte)45, (byte)35));
+        SyntheticImages.Ring(px, W, H, -30, 6, 0, 0.75 + 4, (255, 190, 110));
+        SyntheticImages.ClippedDisc(px, W, H, -30, 6, 0.75, (255, 254, 185));
+        for (var i = 0; i < px.Length; i += 3) Assert.True(Math.Min(px[i], Math.Min(px[i + 1], px[i + 2])) < 245);
+        var (rig, _) = Analyse(px);
+        var key = Assert.IsType<RigLight>(rig.Key);
+        Assert.True(Off(key, -30, 6) < 1.5, "key at the sun");
+        Assert.True(key.Energy.X > key.Energy.Y && key.Energy.Y > key.Energy.Z, $"warm, got {key.Energy}");
     }
 
     [Fact] // [EDGE-ldr-light-estimate-22]
@@ -372,7 +429,7 @@ public class LdrLightEstimatorTests
     {
         // A clipped cloud edge (a 1° disc) touching the 2° sun: one small component, still the key, within 2°.
         var px = SyntheticImages.LdrPanorama(W, H, (_, _) => BlueSky);
-        SyntheticImages.Lamp(px, W, H, 40, 30, 2, (255, 220, 170), glowDeg: 6);
+        SyntheticImages.Lamp(px, W, H, 40, 30, 2, (255, 215, 150), glowDeg: 6);
         SyntheticImages.ClippedDisc(px, W, H, 41.7, 30, 0.6);
         var (rig, stats) = Analyse(px);
         Assert.Equal(1, stats.Components);
@@ -414,7 +471,7 @@ public class LdrLightEstimatorTests
     {
         const int w = 4096, h = 2048;
         var px = SyntheticImages.LdrPanorama(w, h, (_, _) => (128, 128, 128));
-        SyntheticImages.Lamp(px, w, h, 50, 20, 1.0, (255, 230, 200));
+        SyntheticImages.Lamp(px, w, h, 50, 20, 1.0, (255, 215, 150));
         SyntheticImages.WithScatter(px, w, h, 11, 0.02);
         var r = Detailed(px, w, h);
         var key = Assert.IsType<RigLight>(r.Rig.Key);
