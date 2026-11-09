@@ -20,7 +20,8 @@ public class PluginCommandTests
     [InlineData("  VFXLIGHT   2 ", 2, true)]
     [InlineData("vfxlight 3", 3, true)]
     [InlineData("vfxlight 4", 4, true)]
-    [InlineData("vfxlight 5", null, true)]
+    [InlineData("vfxlight 5", 5, true)]
+    [InlineData("vfxlight 6", null, true)]
     [InlineData("vfxlight -1", null, true)]
     [InlineData("vfxlight +1", null, true)]
     [InlineData("vfxlight x", null, true)]
@@ -29,7 +30,7 @@ public class PluginCommandTests
     [InlineData("vfxlightx 1", null, false)]
     [InlineData("off", null, false)]
     [InlineData("", null, false)]
-    public void VfxLight_ParsesOnlyModesZeroToFour(string args, int? expected, bool isVfxLight)
+    public void VfxLight_ParsesOnlyModesZeroToFive(string args, int? expected, bool isVfxLight)
     {
         Assert.Equal(expected, Plugin.ParseVfxLight(args));
         Assert.Equal(isVfxLight, Plugin.IsVfxLightCommand(args));
