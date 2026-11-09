@@ -208,4 +208,47 @@ public class ConfigurationTests
         var c = new Configuration { SyncUploadNoticeShown = true };
         Assert.True(JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(c))!.SyncUploadNoticeShown);
     }
+
+    [Fact] // [AC-scene-lighting-2]
+    public void SceneLightingDefaultsOff()
+    {
+        var c = new Configuration();
+        Assert.False(c.SceneLighting);
+        Assert.Equal(1f, c.LightStrength);
+        Assert.Equal(2, c.FillLightCount);
+        Assert.Equal((0f, 2f), Configuration.LightStrengthRange);
+        Assert.Equal((0, 3), Configuration.FillLightRange);
+    }
+
+    [Fact] // [EDGE-scene-lighting-27]
+    public void LightingFields_ClampedAndMissingDefaulted()
+    {
+        foreach (var (strength, expected) in new[] { (float.NaN, 1f), (float.PositiveInfinity, 1f), (-1f, 0f), (5f, 2f), (0.4f, 0.4f) })
+        {
+            var c = new Configuration { LightStrength = strength };
+            c.Clamp();
+            Assert.Equal(expected, c.LightStrength);
+        }
+        foreach (var (count, expected) in new[] { (-1, 2), (4, 2), (int.MaxValue, 2), (0, 0), (3, 3) })
+        {
+            var c = new Configuration { FillLightCount = count };
+            c.Clamp();
+            Assert.Equal(expected, c.FillLightCount);
+        }
+
+        // A v4 config saved before scene lighting existed: the fields take their defaults and the version stays.
+        var old = JsonConvert.DeserializeObject<Configuration>("{\"Version\":4,\"ImagePath\":\"p.hdr\",\"Brightness\":0.5}")!;
+        old.Migrate("config");
+        old.Clamp();
+        Assert.Equal(4, old.Version);
+        Assert.Equal(Configuration.CurrentVersion, old.Version);
+        Assert.False(old.SceneLighting);
+        Assert.Equal(1f, old.LightStrength);
+        Assert.Equal(2, old.FillLightCount);
+        Assert.Equal(0.5f, old.Brightness);
+
+        var on = new Configuration { SceneLighting = true, LightStrength = 1.5f, FillLightCount = 3 };
+        var back = JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(on))!;
+        Assert.Equal((true, 1.5f, 3), (back.SceneLighting, back.LightStrength, back.FillLightCount));
+    }
 }

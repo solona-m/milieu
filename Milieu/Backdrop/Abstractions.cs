@@ -56,7 +56,12 @@ public interface IGameState
     bool IsReady { get; }
 
     bool BetweenAreas { get; }
+
+    /// <summary>The real local player's position (object 0), not a GPose actor copy.</summary>
     Vector3? PlayerPosition { get; }
+
+    /// <summary>In GPose (scene lighting is GPose-only).</summary>
+    bool IsGPosing { get; }
 }
 
 /// <summary>The player's effective Penumbra collection and whether it is assigned to the character individually.</summary>

@@ -17,6 +17,8 @@ public sealed class GameState(IClientState clientState, ICondition condition, IO
 
     public Vector3? PlayerPosition => objects.LocalPlayer?.Position;
 
+    public bool IsGPosing => clientState.IsGPosing;
+
     public static bool IsBetweenAreas(Func<ConditionFlag, bool> flag) => flag(ConditionFlag.BetweenAreas) || flag(ConditionFlag.BetweenAreas51);
 
     /// <summary>

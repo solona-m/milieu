@@ -46,9 +46,20 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>The one-time notice that a user image is uploaded through PSync has been shown.</summary>
     public bool SyncUploadNoticeShown { get; set; }
 
+    /// <summary>Scene lighting (docs/adr/0009): add game lights in GPose that approximate the shown HDR image's light. Off by default.</summary>
+    public bool SceneLighting { get; set; }
+
+    /// <summary>Scales every scene light (0 = no lights).</summary>
+    public float LightStrength { get; set; } = 1f;
+
+    /// <summary>How many coloured fill lights accompany the key light.</summary>
+    public int FillLightCount { get; set; } = 2;
+
     public static readonly (float Min, float Max) RepeatRange = (0.5f, 4f);
     public static readonly (float Min, float Max) BrightnessRange = (0f, 2f);
     public static readonly (float Min, float Max) ExposureRange = (-10f, 10f);
+    public static readonly (float Min, float Max) LightStrengthRange = (0f, 2f);
+    public static readonly (int Min, int Max) FillLightRange = (0, 3);
 
     public DomeSettings ForMode(DomeMode mode) => mode == DomeMode.Sky ? Sky : Room;
 
@@ -113,6 +124,8 @@ public sealed class Configuration : IPluginConfiguration
         ExposureEv = DomeSettings.Fix(ExposureEv, ExposureRange, 0f);
         if (!Enum.IsDefined(ToneMap)) ToneMap = ToneMapOperator.Aces;
         if (MaxTextureWidth is not (4096 or 8192)) MaxTextureWidth = 8192;
+        LightStrength = DomeSettings.Fix(LightStrength, LightStrengthRange, 1f);
+        if (FillLightCount < FillLightRange.Min || FillLightCount > FillLightRange.Max) FillLightCount = 2;
         if (ImagePath != null && ImagePath.Trim().Length == 0) ImagePath = null;
         if (BackdropPins.IsBundledId(ImagePath) && !BackdropPins.TryParseId(ImagePath, out _)) ImagePath = null;
         UserImages = (UserImages ?? []).Where(p => !string.IsNullOrWhiteSpace(p))

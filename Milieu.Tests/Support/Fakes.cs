@@ -177,6 +177,7 @@ public sealed class FakeGame : IGameState
     public bool BetweenAreas { get; set; }
     public bool IsReady => IsLoggedIn && Ready && !BetweenAreas && !InCutscene && PlayerPosition != null;
     public Vector3? PlayerPosition { get; set; } = new Vector3(10, 20, 30);
+    public bool IsGPosing { get; set; }
 }
 
 /// <summary>Writes a tiny real texture file into the cache so the controller has something to register.</summary>

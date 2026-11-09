@@ -834,4 +834,77 @@ public sealed class BackdropControllerSyncTests : IDisposable
         Assert.Equal(MessageKey.SyncRedirectTimeout, c.Status.Message.Key);
         Assert.Equal(redraws + 1, pen.Redraws);
     }
+
+    // ---------------------------------------------------------------- scene lighting: the synced dome as drawn
+
+    [Fact] // [AC-scene-lighting-1] [EDGE-scene-lighting-22]
+    public void Lit_SetOnSyncedCommit_WithBakedYaw()
+    {
+        config.Current.YawDegrees = 60;
+        config.FlipHorizontal = true;
+        config.HorizontalRepeat = 1.5f;
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        c.Tick();                                            // registered, not yet resolved
+        Assert.Null(c.Lit);
+        c.Tick();
+        Assert.Equal(BackdropState.Shown, c.State);
+        var lit = Assert.IsType<Milieu.Lighting.LitBackdrop>(c.Lit);
+        Assert.Equal(userImage, lit.ImagePath);
+        Assert.Equal(new Milieu.Lighting.DomeView(MathF.PI / 3, true, 1f, 1.5f, 1f), lit.View);
+        Assert.Empty(spawner.Spawns);
+
+        // A yaw change rebuilds with the new baked yaw: Lit follows on the synced commit.
+        config.Current.YawDegrees = -90;
+        c.ApplyPlacement();
+        Assert.Equal(MathF.PI / 3, c.Lit!.View.YawRadians, 1e-6f);   // pending: the old item VFX is still drawn
+        c.Tick();
+        Assert.Equal(-MathF.PI / 2, c.Lit!.View.YawRadians, 1e-6f);
+    }
+
+    [Fact] // [EDGE-scene-lighting-22]
+    public void Lit_NullAfterSyncedRemoveAll()
+    {
+        ShowSynced();
+        Assert.NotNull(c.Lit);
+        c.Hide();
+        Assert.Null(c.Lit);
+        ShowSynced();
+        Assert.NotNull(c.Lit);
+        c.OnPenumbraDisposed();
+        Assert.Null(c.Lit);
+        ShowSynced();
+        c.Teardown();
+        Assert.Null(c.Lit);
+    }
+
+    [Fact] // [EDGE-scene-lighting-41]
+    public void Synced_ShowBWhileAShown_RebuildMidConversion_ThenBFaults_LitStaysA()
+    {
+        ShowSynced();
+        Assert.Equal(userImage, c.Lit!.ImagePath);
+
+        config.ImagePath = dir.File("b.hdr");
+        var gate = new TaskCompletionSource<PreparedTexture>();
+        preparer.Gates.Enqueue(gate);
+        c.Show();
+        Assert.Equal(BackdropState.Preparing, c.State);
+        c.ApplyRebuild();                                    // mid-conversion: registers nothing
+        c.Tick();
+        Assert.Equal(userImage, c.Lit!.ImagePath);
+
+        gate.SetException(new MilieuException(StatusMessage.Of(MessageKey.DecodeFailed, ("file", "b.hdr"))));
+        WaitJobs();
+        c.Tick();
+        Assert.Equal(BackdropState.Shown, c.State);
+        Assert.Equal(userImage, c.Lit!.ImagePath);
+
+        var sets = pen.SyncSets.Count;
+        config.HorizontalRepeat = 3f;
+        c.ApplyRebuild();                                    // rebuilds A's texture
+        c.Tick();
+        Assert.Equal(sets + 1, pen.SyncSets.Count);          // committed
+        Assert.Equal(3f, c.Lit!.View.URepeat);
+        Assert.Equal(userImage, c.Lit!.ImagePath);
+    }
 }

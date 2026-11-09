@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Milieu.Assets;
 using Milieu.GameFiles;
+using Milieu.Lighting;
 using Milieu.Sync;
 
 namespace Milieu.Backdrop;
@@ -70,6 +71,18 @@ public sealed class BackdropController : Gui.IGridController
     private volatile float progress;
     private PreparedTexture? texture;
 
+    // Scene lighting (docs/adr/0009): the image and build values of the dome as drawn. The image path travels with the
+    // texture: the job's request, then the texture when assigned, then the pending registration, then the shown dome.
+    private readonly record struct DomeBuild(bool Flip, float VerticalScale, float URepeat, float VRepeat, float? BakedYawRadians);
+
+    private string? jobImagePath;
+    private string? textureImagePath;
+    private string? pendingImagePath;
+    private DomeBuild? pendingBuild;
+    private string? shownImagePath;
+    private DomeBuild? shownBuild;
+    private float spawnedYaw;
+
     private Dictionary<string, string>? pendingSet;
     private string? pendingAvfxGamePath;
     private int waitTicks;
@@ -118,6 +131,27 @@ public sealed class BackdropController : Gui.IGridController
     }
 
     public BackdropStatus Status => new(state, progress, CurrentMessage(), warnings);
+
+    /// <summary>Raised at the end of <see cref="Hide"/> (so also on logout), <see cref="OnPenumbraDisposed"/> and <see cref="Teardown"/>.</summary>
+    public event Action? Hidden;
+
+    /// <summary>
+    /// The dome as drawn, for scene lighting: the image of the texture actually shown (never a pending or failed request)
+    /// and the build values and yaw of the drawn VFX; null when no dome is drawn (local VFX alive, or a committed synced
+    /// registration). Framework thread only.
+    /// </summary>
+    public LitBackdrop? Lit
+    {
+        get
+        {
+            if (shownImagePath == null || shownBuild is not { } b) return null;
+            if (synced?.Shown != null && b.BakedYawRadians is { } baked)
+                return new LitBackdrop(shownImagePath, new DomeView(baked, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat));
+            if (handle is { IsDead: false } && b.BakedYawRadians == null)
+                return new LitBackdrop(shownImagePath, new DomeView(spawnedYaw, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat));
+            return null;
+        }
+    }
 
     /// <summary>The delivery in force: the configured one when synced delivery is available, otherwise always Local.</summary>
     public DeliveryMode EffectiveDelivery => synced != null && syncedAvailable() ? config.Delivery : DeliveryMode.Local;
@@ -272,11 +306,13 @@ public sealed class BackdropController : Gui.IGridController
                     throw new MilieuException(StatusMessage.Of(MessageKey.WriteFailed));
                 }
             });
+            jobImagePath = request.ImagePath;
             holder.Job = job;
         }
         else
         {
             job = run(() => preparer.PrepareTextureAsync(request, reporter, cts.Token));
+            jobImagePath = request.ImagePath;
             currentStaging = null;
         }
         outstanding.RemoveAll(t => t.IsCompleted);
@@ -326,6 +362,7 @@ public sealed class BackdropController : Gui.IGridController
         CleanupStaging(keepShown: false);   // whenever the folder exists (e.g. a failed registration's atex); never creates it
         state = BackdropState.Hidden;
         message = StatusMessage.None;
+        Hidden?.Invoke();
     }
 
     /// <summary>
@@ -339,7 +376,7 @@ public sealed class BackdropController : Gui.IGridController
         // Synced: the game places the item's VFX, so height and yaw are baked into the file: one rebuild, one redraw.
         if (SyncedLive) { ApplyRebuild(); return; }
         if (state != BackdropState.Shown || handle is not { IsDead: false } old || shownAvfxGamePath == null) return;
-        var spawned = spawner.Spawn(shownAvfxGamePath, SpawnPosition(), YawRadians());
+        var spawned = SpawnDome(shownAvfxGamePath);
         if (spawned == null) return;
         spawner.Remove(old);
         handle = spawned;
@@ -403,6 +440,7 @@ public sealed class BackdropController : Gui.IGridController
         synced?.Forget();   // no IPC: Penumbra is gone, and its temp mods with it
         state = BackdropState.Hidden;
         if (wasShowing) message = StatusMessage.Of(MessageKey.PenumbraGone);
+        Hidden?.Invoke();
     }
 
     /// <summary>Penumbra (re)started: clear anything an earlier session left behind.</summary>
@@ -504,6 +542,7 @@ public sealed class BackdropController : Gui.IGridController
             return;
         }
         texture = done.Result;
+        textureImagePath = jobImagePath;   // only here: a cancelled or faulted job never rebinds the image
         warnings = texture.Warnings;
         if (currentStaging != null && ReferenceEquals(currentStaging.Job, done))
         {
@@ -556,10 +595,11 @@ public sealed class BackdropController : Gui.IGridController
         if (IsSynced) { RegisterSynced(tex); return; }
         byte[] avfx;
         var floorY = config.Current.FloorY();
+        var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, null);
         try
         {
-            avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, config.Current.VerticalScale,
-                config.HorizontalRepeat, config.VerticalRepeat, config.FlipHorizontal, config.Brightness, floorY));
+            avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, build.VerticalScale,
+                build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY));
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
         {
@@ -598,6 +638,8 @@ public sealed class BackdropController : Gui.IGridController
         pendingSet = set;
         pendingAvfxGamePath = CacheStore.AvfxGamePath(key);
         pendingFloorY = floorY;
+        pendingImagePath = textureImagePath;
+        pendingBuild = build;
         waitTicks = 0;
         state = BackdropState.AwaitingRedirect;
     }
@@ -618,12 +660,14 @@ public sealed class BackdropController : Gui.IGridController
         }
         var staging = stagingFor(modDir);
         var floorY = config.Current.FloorY();
+        var bakedYaw = YawRadians();
+        var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, bakedYaw);
         byte[] avfx;
         try
         {
-            avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, config.Current.VerticalScale,
-                config.HorizontalRepeat, config.VerticalRepeat, config.FlipHorizontal, config.Brightness, floorY,
-                BakedHeight: config.Current.HeightOffset, BakedYawRadians: YawRadians(), AttachToOwner: true));
+            avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, build.VerticalScale,
+                build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY,
+                BakedHeight: config.Current.HeightOffset, BakedYawRadians: bakedYaw, AttachToOwner: true));
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
         {
@@ -660,6 +704,8 @@ public sealed class BackdropController : Gui.IGridController
             return;
         }
         pendingFloorY = floorY;
+        pendingImagePath = textureImagePath;
+        pendingBuild = build;
         waitTicks = 0;
         state = BackdropState.AwaitingRedirect;
     }
@@ -676,6 +722,8 @@ public sealed class BackdropController : Gui.IGridController
                 if (!list.Any(x => x.Key == w.Key)) list.Add(w);
             warnings = list;
             shownFloorY = pendingFloorY;
+            shownImagePath = pendingImagePath;
+            shownBuild = pendingBuild;
             state = BackdropState.Shown;
             message = StatusMessage.Of(target.ShownMessage);
             CleanupStaging(keepShown: true);
@@ -701,7 +749,7 @@ public sealed class BackdropController : Gui.IGridController
                 centre = game.PlayerPosition ?? centre;
                 recenterOnRespawn = false;
             }
-            var spawned = spawner.Spawn(pendingAvfxGamePath, SpawnPosition(), YawRadians());
+            var spawned = SpawnDome(pendingAvfxGamePath);
             if (spawned == null)
             {
                 message = StatusMessage.Of(MessageKey.InteropUnavailable);
@@ -713,6 +761,8 @@ public sealed class BackdropController : Gui.IGridController
             shownSet = pendingSet;
             shownAvfxGamePath = pendingAvfxGamePath;
             shownFloorY = pendingFloorY;
+            shownImagePath = pendingImagePath;
+            shownBuild = pendingBuild;
             pendingSet = null; pendingAvfxGamePath = null;
             state = BackdropState.Shown;
             readyFrames = 0;
@@ -748,7 +798,7 @@ public sealed class BackdropController : Gui.IGridController
         if (++readyFrames < RespawnDelayFrames || shownAvfxGamePath == null) return;
         if (recenterOnRespawn && game.PlayerPosition is { } p) centre = p;
         recenterOnRespawn = false;
-        var spawned = spawner.Spawn(shownAvfxGamePath, SpawnPosition(), YawRadians());
+        var spawned = SpawnDome(shownAvfxGamePath);
         if (spawned == null) { readyFrames = 0; return; }
         handle = spawned;
         state = BackdropState.Shown;
@@ -767,6 +817,15 @@ public sealed class BackdropController : Gui.IGridController
     private Vector3 SpawnPosition() => centre + new Vector3(0, config.Current.HeightOffset, 0);
 
     private float YawRadians() => config.Current.YawDegrees * MathF.PI / 180f;
+
+    /// <summary>Every local dome spawn goes through here, so the drawn yaw (<see cref="Lit"/>) is the one actually spawned.</summary>
+    private VfxHandle? SpawnDome(string gamePath)
+    {
+        var yaw = YawRadians();
+        var spawned = spawner.Spawn(gamePath, SpawnPosition(), yaw);
+        if (spawned != null) spawnedYaw = yaw;
+        return spawned;
+    }
 
     private void RemoveDome()
     {
@@ -829,6 +888,7 @@ public sealed class BackdropController : Gui.IGridController
         if (synced is { HasRegistration: true }) synced.RemoveAll(redraw: true);
         CleanupStaging(keepShown: false);   // whenever the folder exists (e.g. a failed registration's atex); never creates it
         state = BackdropState.Hidden;
+        Hidden?.Invoke();
     }
 
     /// <summary>Cancels the conversion and returns its task, so Dispose can wait (bounded) for it to stop.</summary>
