@@ -122,6 +122,16 @@ public sealed class SceneGridViewModelTests
         Assert.Equal(new[] { "Show" }, controller.Calls);
     }
 
+    [Fact] // [AC-exr-support-1]
+    public void AddMore_Exr_AddsTileAndSelects()
+    {
+        vm.AddMore(@"C:\new.exr");
+        RunPosted();
+        Assert.Equal(new[] { @"C:\new.exr" }, config.UserImages);
+        Assert.Equal(@"C:\new.exr", config.ImagePath);
+        Assert.Contains(vm.Tiles, t => t.Id == @"C:\new.exr");
+    }
+
     [Fact] // [EDGE-hdri-backdrop-72]
     public void AddMore_DuplicatePathSelectsExisting()
     {

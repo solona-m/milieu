@@ -10,6 +10,8 @@ namespace Milieu.Imaging;
 /// <item>JPEG baseline ≈ 9 B/px (component planes + RGB output + managed copy); progressive ≈ 12 B/px (coefficients kept).</item>
 /// <item>PNG 8-bit = 2C + 6 B/px and 16-bit = 4C + 6 B/px for C file components (inflated + unfiltered + RGB + copy).</item>
 /// <item>HDR = 24 B/px (float RGB + managed copy).</item>
+/// <item>EXR = 12 B/px (the float RGB output, written in place) + <see cref="Exr.ExrLimits.WorkingSetBytes"/>, without the file
+/// length: the in-repo decoder streams the file one chunk at a time (ADR 0008).</item>
 /// </list>
 /// If in-game measurements show these are low, raise them here; the tests pin the examples.
 /// </summary>
@@ -21,6 +23,7 @@ public static class DecodeBudget
     public static double DecodeBytesPerPixel(ProbeInfo p) => p.Kind switch
     {
         ImageKind.Hdr => 24,
+        ImageKind.Exr => 12,
         ImageKind.Jpeg => p.Progressive ? 12 : 9,
         ImageKind.Png => (p.BitsPerChannel > 8 ? 4.0 : 2.0) * Math.Clamp(p.Components, 1, 4) + 6,
         _ => throw new ArgumentOutOfRangeException(nameof(p)),
@@ -32,8 +35,10 @@ public static class DecodeBudget
         var outH = outWidth / 2.0;
         var outPx = outWidth * outH;
 
-        var decode = DecodeBytesPerPixel(p) * px + p.FileBytes;
-        var resample = p.Kind == ImageKind.Hdr
+        var decode = p.Kind == ImageKind.Exr
+            ? DecodeBytesPerPixel(p) * px + Exr.ExrLimits.WorkingSetBytes
+            : DecodeBytesPerPixel(p) * px + p.FileBytes;
+        var resample = p.Kind.IsHdr()
             ? 12 * px + 3 * px + 4 * outPx          // float source + RGB8 after tone mapping + RGBA output
             : 3 * px + 4 * outPx;                   // RGB source kept + RGBA output
         var encode = 4 * outPx * 4 / 3              // RGBA mip chain

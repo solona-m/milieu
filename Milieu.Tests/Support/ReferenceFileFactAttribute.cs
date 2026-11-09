@@ -29,6 +29,7 @@ public static class ReferenceFiles
     public const string Avfx = "MILIEU_REFERENCE_AVFX";
     public const string Atex = "MILIEU_REFERENCE_ATEX";
     public const string HdriSourceDir = "MILIEU_HDRI_SOURCE_DIR";
+    public const string ExrSamplesDir = "MILIEU_EXR_SAMPLES_DIR";
 
     public static string Path(string envVar) =>
         Environment.GetEnvironmentVariable(envVar) ?? throw new InvalidOperationException($"{envVar} is not set.");

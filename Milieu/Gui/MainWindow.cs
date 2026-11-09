@@ -83,7 +83,7 @@ public sealed class MainWindow : Window, IDisposable
             DrawTile(tiles[i], size);
         }
         if (ImGui.Button("Add more…"))
-            files.OpenFileDialog("Choose a panorama", "Panoramas{.hdr,.png,.jpg,.jpeg}", (ok, path) => { if (ok) grid.AddMore(path); });
+            files.OpenFileDialog("Choose a panorama", ImageLoader.FileDialogFilter, (ok, path) => { if (ok) grid.AddMore(path); });
         if (grid.ShowDownloadAll)
         {
             ImGui.SameLine();

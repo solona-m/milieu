@@ -7,6 +7,7 @@ using Milieu.Assets;
 using Milieu.Backdrop;
 using Milieu.GameFiles;
 using Milieu.Imaging;
+using Milieu.Imaging.Exr;
 using Milieu.Tests.Support;
 using Xunit;
 
@@ -67,6 +68,82 @@ public sealed class BackdropPreparerTests : IDisposable
             Assert.Equal(8, AtexWriter.Layout(1024, 512).MipCount);
             Assert.Matches("sky_[0-9a-f]{16}\\.atex$", t.DiskPath);
         }
+    }
+
+    [Fact] // [AC-exr-support-2]
+    public async Task Exr_ProducesValidAtex()
+    {
+        var (p, _) = Make();
+        var exr = SyntheticExr.Write(dir.Path, "a.exr", new ExrSpec { Width = 64, Height = 32, Compression = 3 });
+        var t = await p.PrepareTextureAsync(Req(exr), null, default);
+        Assert.Equal((1024, 512), (t.Width, t.Height));
+        AssertAtex(t.DiskPath, 1024, 512);
+        Assert.Equal(ImageKind.Exr, t.Kind);
+        Assert.Equal(1, p.DecodeCount);
+    }
+
+    [Fact] // [AC-exr-support-3]
+    public async Task Exr_ToneMappedLikeHdr()
+    {
+        var (p, _) = Make();
+        var s = new ExrSpec
+        {
+            Width = 1024, Height = 512, Compression = 4,
+            Channels = [new("B", 2), new("G", 2), new("R", 2)],
+            Value = (x, y, c) => x * 0.01f + y * 0.003f + c * 0.5f,
+        };
+        var exr = SyntheticExr.Write(dir.Path, "tm.exr", s);
+        var floats = new float[1024 * 512 * 3];
+        for (var y = 0; y < 512; y++)
+            for (var x = 0; x < 1024; x++)
+                for (var k = 0; k < 3; k++)
+                    floats[(y * 1024 + x) * 3 + k] = s.Value(x, y, 2 - k);   // R, G, B are stored as channels 2, 1, 0
+        var expected = ToneMapper.ToSrgb8(floats, 1024, 512, 1.5f, ToneMapOperator.Reinhard);
+
+        byte[]? mip0 = null;
+        p.OnMip0 = m => mip0 = m;
+        await p.PrepareTextureAsync(Req(exr) with { ExposureEv = 1.5f, ToneMap = ToneMapOperator.Reinhard }, null, default);
+        Assert.NotNull(mip0);
+        for (var i = 0; i < 1024 * 512; i++)
+        {
+            Assert.Equal(expected[i * 3], mip0![i * 4]);
+            Assert.Equal(expected[i * 3 + 1], mip0[i * 4 + 1]);
+            Assert.Equal(expected[i * 3 + 2], mip0[i * 4 + 2]);
+            Assert.Equal(255, mip0[i * 4 + 3]);
+        }
+    }
+
+    [Fact] // [EDGE-exr-support-29]
+    public async Task Exr_CancelledDuringDecode()
+    {
+        var (p, _) = Make();
+        var exr = SyntheticExr.Write(dir.Path, "c.exr", new ExrSpec { Width = 64, Height = 32, Compression = 1 });
+        using var cts = new CancellationTokenSource();
+        var seen = -1;
+        ExrDecoder.OnChunk.Value = i => { seen = i; if (i == 1) cts.Cancel(); };
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => p.PrepareTextureAsync(Req(exr), null, cts.Token));
+        }
+        finally { ExrDecoder.OnChunk.Value = null; }
+        Assert.Equal(1, seen);   // stopped at the chunk where it was cancelled
+        Assert.Equal(1, p.DecodeCount);
+        Assert.True(!Directory.Exists(cache.Root) || Directory.GetFiles(cache.Root, "sky_*.atex").Length == 0);
+    }
+
+    [Fact] // [EDGE-exr-support-31]
+    public async Task UnsupportedOrOversizeExr_RefusedBeforeDecode()
+    {
+        var (p, e) = Make();
+        var dwaa = SyntheticExr.Write(dir.Path, "d.exr", new ExrSpec { Compression = 8 });
+        var big = SyntheticExr.WriteHeaderOnly(dir.Path, "big.exr", new ExrSpec { Width = 8193, Height = 4096, Compression = 3 });
+        Assert.Equal(MessageKey.UnsupportedExrCompression,
+                     (await Assert.ThrowsAsync<MilieuException>(() => p.PrepareTextureAsync(Req(dwaa), null, default))).Status.Key);
+        Assert.Equal(MessageKey.TooLargeHdr,
+                     (await Assert.ThrowsAsync<MilieuException>(() => p.PrepareTextureAsync(Req(big), null, default))).Status.Key);
+        Assert.Equal(0, p.DecodeCount);
+        Assert.Equal(0, e.Calls);
+        Assert.True(!Directory.Exists(cache.Root) || Directory.GetFiles(cache.Root, "sky_*.atex").Length == 0);
     }
 
     [Fact] // [AC-hdri-backdrop-5]

@@ -30,15 +30,65 @@ public class ImageLoaderTests
         Assert.Empty(ImageLoader.CheckLimits(ImageLoader.Probe(SyntheticImages.WritePngHeaderOnly(t.Path, "eight.png", 8192, 4096)), "eight.png", 8192));
     }
 
-    [Fact] // [EDGE-hdri-backdrop-6]
+    [Fact] // [EDGE-hdri-backdrop-6] [AC-exr-support-9]
     public void UnsupportedExtension_Rejected()
     {
         using var t = new TempDir();
-        var exr = t.File("pano.exr");
-        File.WriteAllBytes(exr, [1, 2, 3]);
-        var e = Assert.Throws<MilieuException>(() => ImageLoader.Probe(exr));
+        var tif = t.File("pano.tif");
+        File.WriteAllBytes(tif, [1, 2, 3]);
+        var e = Assert.Throws<MilieuException>(() => ImageLoader.Probe(tif));
         Assert.Equal(MessageKey.UnsupportedFormat, e.Status.Key);
-        Assert.Equal("pano.exr: only .hdr, .png and .jpg are supported.", e.Status.Text);
+        Assert.Equal("pano.tif: only .hdr, .exr, .png and .jpg are supported.", e.Status.Text);
+    }
+
+    [Fact] // [AC-exr-support-1]
+    public void FileDialogFilter_ListsEveryExtension()
+    {
+        Assert.Equal("Panoramas{.hdr,.exr,.png,.jpg,.jpeg}", ImageLoader.FileDialogFilter);
+        Assert.Equal(new[] { ".hdr", ".exr", ".png", ".jpg", ".jpeg" }, ImageLoader.SupportedExtensions);
+        Assert.All(ImageLoader.SupportedExtensions, e => Assert.NotNull(ImageLoader.KindOf("pano" + e)));
+    }
+
+    [Fact] // [EDGE-exr-support-30]
+    public void KindOf_ExrAnyCase()
+    {
+        foreach (var name in new[] { "a.exr", "a.EXR", "a.Exr", @"C:\x\y.eXr" })
+            Assert.Equal(ImageKind.Exr, ImageLoader.KindOf(name));
+        Assert.True(ImageKind.Exr.IsHdr());
+        Assert.True(ImageKind.Hdr.IsHdr());
+        Assert.False(ImageKind.Png.IsHdr());
+        Assert.False(ImageKind.Jpeg.IsHdr());
+    }
+
+    [Fact] // [AC-exr-support-4] [EDGE-exr-support-10]
+    public void Exr_LimitsLikeHdr()
+    {
+        using var t = new TempDir();
+        var big = SyntheticExr.WriteHeaderOnly(t.Path, "big.exr", new ExrSpec { Width = 8193, Height = 4096, Compression = 3 });
+        Assert.Equal(MessageKey.TooLargeHdr, Refused(big));
+        Assert.Equal("big.exr is 8193x4096. HDR images can be at most 8192x4096; downscale it first.",
+                     Assert.Throws<MilieuException>(() => ImageLoader.CheckLimits(ImageLoader.Probe(big), "big.exr", 8192)).Status.Text);
+        Assert.Equal(MessageKey.TooLargeHdr, Refused(SyntheticExr.WriteHeaderOnly(t.Path, "tall.exr", new ExrSpec { Width = 4096, Height = 4097, Compression = 3 })));
+
+        var ok = ImageLoader.Probe(SyntheticExr.WriteHeaderOnly(t.Path, "ok.exr", new ExrSpec { Width = 8192, Height = 4096, Compression = 4 }));
+        Assert.Empty(ImageLoader.CheckLimits(ok, "ok.exr", 8192));
+        Assert.Equal((ImageKind.Exr, 8192, 4096, 16, 3), (ok.Kind, ok.Width, ok.Height, ok.BitsPerChannel, ok.Components));
+
+        var mixed = ImageLoader.Probe(SyntheticExr.WriteHeaderOnly(t.Path, "f.exr",
+            new ExrSpec { Channels = [new("A"), new("B"), new("G", 2), new("R")] }));
+        Assert.Equal(32, mixed.BitsPerChannel);
+    }
+
+    [Fact] // [EDGE-exr-support-34]
+    public void Load_PassesMilieuExceptionThrough()
+    {
+        using var t = new TempDir();
+        var big = SyntheticExr.WriteHeaderOnly(t.Path, "big.exr", new ExrSpec { Width = 8193, Height = 4096, Compression = 3 });
+        Assert.Equal(MessageKey.TooLargeHdr, Assert.Throws<MilieuException>(() => ImageLoader.Load(big, ImageKind.Exr, default)).Status.Key);
+        var dwaa = SyntheticExr.Write(t.Path, "d.exr", new ExrSpec { Compression = 8 });
+        var e = Assert.Throws<MilieuException>(() => ImageLoader.Load(dwaa, ImageKind.Exr, default));
+        Assert.Equal(MessageKey.UnsupportedExrCompression, e.Status.Key);
+        Assert.Equal("d.exr uses DWAA compression, which Milieu can't read. Re-save it with ZIP or PIZ compression, or as .hdr.", e.Status.Text);
     }
 
     [Fact] // [EDGE-hdri-backdrop-7]
