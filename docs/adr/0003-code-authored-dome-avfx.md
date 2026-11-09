@@ -38,8 +38,8 @@ BC7 encoding uses BCnEncoder.Net per mip; its `EncodeToRawBytesAsync` observes t
 (`Bc7Tests.CancelInsideMip0_ReturnsPromptly`), so no strip-encoding fallback was needed.
 
 Experiment (testing builds, 2026-11-09; remove or decide before the next stable merge): `/milieu vfxlight 1|2|3`
-(`DomeAvfxBuilder.TestLightMode`, not saved) adds one VFX effector light (point, point with shadow flags, or
-directional) as an `Efct` chunk plus a second timeline item linking it. It tests in game whether VFX lights can carry
+(`DomeAvfxBuilder.TestLightMode`, not saved) adds one VFX effector light (a point light set up like the venue's, the same with 10x range and 3x
+brightness, or a directional light; the point modes with shadows, near 0.0001 / far 20) as an `Efct` chunk linked from the dome emitter (`Emit` `EfNo` 0), set up like the "Pickles Venue" lights. It tests in game whether VFX lights can carry
 scene lighting to synced viewers (ADR 0009 lights are local-only native objects). Mode 0, the default, gives
 byte-identical output.
 

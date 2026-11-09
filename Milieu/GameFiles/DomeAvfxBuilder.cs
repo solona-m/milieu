@@ -47,7 +47,9 @@ internal static class DomeAvfxBuilder
 
     /// <summary>
     /// Experiment (testing builds): a test light baked into the next dome VFX, to find out whether VFX effector lights can carry
-    /// scene lighting to synced viewers. 0 off (the default; output byte-identical), 1 point light, 2 point light with shadows,
+    /// scene lighting to synced viewers. 0 off (the default; output byte-identical), 1 point light set up like the venue's (with shadows;
+    /// red, A 1 and eye-height placement are ours),
+    /// 2 the same with 10x the range and 3x the brightness (so a dark mode 1 isn't mistaken for "VFX lights don't work"),
     /// 3 directional light. Set only by "/milieu vfxlight"; not saved.
     /// </summary>
     public static int TestLightMode;
@@ -63,8 +65,8 @@ internal static class DomeAvfxBuilder
         var light = p.TestLight is >= 1 and <= 3;
         Root(w, light);
         Scheduler(w);
-        Timeline(w, light);
-        Emitter(w, p);
+        Timeline(w);
+        Emitter(w, p, light);
         Particle(w, p);
         if (light) Effector(w, p.TestLight);
         w.CString("Tex", p.TextureGamePath);
@@ -128,54 +130,42 @@ internal static class DomeAvfxBuilder
     private static void SchedulerItem(AvfxChunkWriter w, int timeline) =>
         w.Int("bEna", 1).Int("StTm", 0).Int("TlNo", timeline);
 
-    private static void Timeline(AvfxChunkWriter w, bool light)
+    private static void Timeline(AvfxChunkWriter w)
     {
-        w.Begin("TmLn").Int("LpSt", 0).Int("LpEd", 0).Int("BnNo", -1).Int("TICn", light ? 2 : 1).Int("CpCn", 0);
-        w.Begin("Item");
-        TimelineItem(w, -1, 0);
-        w.End();
-        if (light)
-        {
-            // Timeline item chunk i holds items[0..i], as VFXEditor's AvfxTimeline writes them.
-            w.Begin("Item");
-            TimelineItem(w, -1, 0);
-            TimelineItem(w, 0, -1);
-            w.End();
-        }
+        w.Begin("TmLn").Int("LpSt", 0).Int("LpEd", 0).Int("BnNo", -1).Int("TICn", 1).Int("CpCn", 0);
+        w.Begin("Item").Int("bEna", 1).Int("StTm", 0).Int("EdTm", -1).Int("BdNo", -1).Int("EfNo", -1).Int("EmNo", 0)
+         .Int("Plfm", 0).End();
         w.End();
     }
 
-    private static void TimelineItem(AvfxChunkWriter w, int effector, int emitter) =>
-        w.Int("bEna", 1).Int("StTm", 0).Int("EdTm", -1).Int("BdNo", -1).Int("EfNo", effector).Int("EmNo", emitter).Int("Plfm", 0);
-
     /// <summary>
-    /// The experiment's one effector light (VFXEditor Effector/AvfxEffector.cs + Data/AvfxEffectorData{PointLight,DirectionalLight}.cs).
-    /// A strong red light so it is unmistakable in game, 2.5 units ahead of and 1.5 above the dome origin (eye height).
+    /// The experiment's one effector light (VFXEditor Effector/AvfxEffector.cs + Data/AvfxEffectorData{PointLight,DirectionalLight}.cs),
+    /// set up like the lights in the "Pickles Venue" ve0002.avfx (effectors 0 and 1): linked from the emitter (Emit EfNo), not a
+    /// timeline item; header RoOT 2, bAOV 1, bAGm 1; colour as RGB + A with no Bri key; DstS 1; Attn 1; shadows with near 0.0001
+    /// and far 20 (the near/far range Pickles says shadows depend on). Red so it stands out, offset 2.5 units ahead of and 1.5
+    /// above the emitter (the dome origin, at eye height). bAOV 1 as the venue: the dome particle itself is unlit (bLgt 0).
     /// </summary>
     private static void Effector(AvfxChunkWriter w, int mode)
     {
         var point = mode != 3;
-        // Header values as VFXEditor's known-good point light (Files/default_effector.vfxedit): rotation order 2, other VFX
-        // unaffected (so the light doesn't light the dome itself), the game affected.
-        w.Begin("Efct").Int("EfVT", point ? 0 : 1).Int("RoOT", 2).Int("CCOT", 0).Int("bAOV", 0).Int("bAGm", 1)
+        w.Begin("Efct").Int("EfVT", point ? 0 : 1).Int("RoOT", 2).Int("CCOT", 0).Int("bAOV", 1).Int("bAGm", 1)
          .Int("LpSt", 0).Int("LpEd", 0);
         w.Begin("Data");
         if (point)
         {
             w.Begin("Col");
             CurveRgb(w, "RGB", 1f, 0.15f, 0.15f);
-            Curve(w, "Bri", 4f);
+            Curve(w, "A", mode == 2 ? 3f : 1f);
             w.End();
-            Curve(w, "DstS", 30f);
+            Curve(w, "DstS", mode == 2 ? 10f : 1f);
             Axes(w, "Rot", 0);
             w.Begin("Pos").Int("ACT", 0).Int("ACTR", 0);
             Curve(w, "X", 0f);
             Curve(w, "Y", 1.5f);
             Curve(w, "Z", 2.5f);
             w.End();
-            var shadow = mode == 2 ? 1 : 0;
-            w.Int("Attn", 1).Int("bSdw", shadow).Int("bChS", shadow).Int("bMpS", shadow).Int("bMvS", shadow)
-             .Float("SCDN", 0.5f).Float("SCDF", 15f);
+            w.Int("Attn", 1).Int("bSdw", 1).Int("bChS", 1).Int("bMpS", 1).Int("bMvS", 1)
+             .Float("SCDN", 0.0001f).Float("SCDF", 20f);
         }
         else
         {
@@ -184,7 +174,7 @@ internal static class DomeAvfxBuilder
             w.End();
             w.Begin("Col");
             CurveRgb(w, "RGB", 1f, 0.15f, 0.15f);
-            Curve(w, "Bri", 3f);
+            Curve(w, "A", 1f);
             w.End();
             Curve(w, "Pow", 1f);
             w.Begin("Rot").Int("ACT", 0).Int("ACTR", 0);
@@ -196,10 +186,10 @@ internal static class DomeAvfxBuilder
         w.End();
     }
 
-    private static void Emitter(AvfxChunkWriter w, DomeAvfxParams p)
+    private static void Emitter(AvfxChunkWriter w, DomeAvfxParams p, bool light)
     {
         var a = p.AttachToOwner ? SyncedAttach : LocalAttach;
-        w.Begin("Emit").Int("SdNo", -1).Int("LpSt", 0).Int("LpEd", 0).Int("ClCn", 30).Int("EfNo", -1).Byte("bAD", 0)
+        w.Begin("Emit").Int("SdNo", -1).Int("LpSt", 0).Int("LpEd", 0).Int("ClCn", 30).Int("EfNo", light ? 0 : -1).Byte("bAD", 0)
          .Int("EVT", 0).Int("RBDT", 2).Int("CCOT", 0).Int("ROT", 2).Int("PrCn", 1).Int("EmCn", 0);
         w.Begin("Life").Float("Val", 60).Float("ValR", 0).Int("Type", 0).End();
         Curve(w, "CrC", 1);
@@ -345,12 +335,10 @@ internal static class DomeAvfxBuilder
         var schd = root.Need("Schd");
         Expect(schd.Need("Item").Children.Single(c => c.Tag == "TlNo").AsInt() == 0, "scheduler item → timeline 0");
         Expect(schd.All("Trgr").Count() == TriggerCount, "12 triggers");
-        Expect(root.Need("TmLn").All("Item").First().Need("EmNo").AsInt() == 0, "timeline → emitter 0");
-        var lastItem = root.Need("TmLn").All("Item").Last().Children;
-        var efNos = lastItem.Where(c => c.Tag == "EfNo").Select(c => c.AsInt()).ToArray();
-        Expect(root.Need("TmLn").Need("TICn").AsInt() == 1 + lights && root.Need("TmLn").All("Item").Count() == 1 + lights
-               && efNos.Length == 1 + lights
-               && efNos.All(i => i >= -1 && i < lights) && efNos.Count(i => i == 0) == lights, "timeline → effector links in range");
+        var tmln = root.Need("TmLn");
+        Expect(tmln.Need("TICn").AsInt() == 1 && tmln.All("Item").Count() == 1 && tmln.Need("Item").Need("EmNo").AsInt() == 0
+               && tmln.Need("Item").Need("EfNo").AsInt() == -1, "one timeline item → emitter 0, no effector");
+        Expect(root.Need("Emit").Need("EfNo").AsInt() == (lights == 1 ? 0 : -1), "emitter → effector link");
         var itpr = root.Need("Emit").Need("ItPr");
         Expect(itpr.Need("TgtB").AsInt() == 0, "emitter → particle 0");
         var attach = p.AttachToOwner ? SyncedAttach : LocalAttach;
