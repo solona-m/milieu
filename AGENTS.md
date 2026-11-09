@@ -69,7 +69,7 @@ Milieu/            the Dalamud plugin (Plugin.cs: services, events, /milieu, dis
   Imaging/         header probes, decode budget, tone mapping, resampling, band fill, seam check, mips, BC7
     Exr/           in-repo OpenEXR decoder (header, channel selection, RLE/ZIP, PIZ), bounded by ExrLimits (ADR 0008)
   Interop/         native signatures, static VFX spawner + remove hook, Penumbra IPC, game state, game data
-  Sync/            synced delivery (testing builds): item targets, IMC parsing, Penumbra meta, planning, staging, lifecycle
+  Sync/            synced delivery (experimental): item targets, IMC parsing, Penumbra meta, planning, staging, lifecycle
   Assets/          bundled-backdrop downloads (pinned release assets, resilient downloader)
   Gui/             main window and its pure view models
   DefaultBackdrops/  committed source JPEGs of the bundled scenes (NOT shipped; pre-converted .atex are built into artifacts/backdrops and published with tools/publish-backdrops.ps1)
@@ -93,7 +93,7 @@ tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 - Binary game-file writers (`.avfx`, `.atex`/`.tex` output) — a malformed VFX or texture can crash the game
 - Native interop: function signatures, hooks, unsafe struct access, VFX spawn/remove — a wrong signature or a dangling VFX pointer crashes the game
 - Penumbra IPC (temporary mods/redirects) — must be removed on dispose and never touch the user's own mods
-- Synced delivery (`Milieu/Sync/`, ADR 0006): writes into Penumbra's mod directory (`_milieu_sync`), an IMC manipulation and the `MilieuSync` temp mod in the player's collection, and the user's image leaving the machine via PSync (notice first); offered on testing/dev builds only
+- Synced delivery (`Milieu/Sync/`, ADR 0006): writes into Penumbra's mod directory (`_milieu_sync`), an IMC manipulation and the `MilieuSync` temp mod in the player's collection, and the user's image leaving the machine via PSync (notice first); offered on every build (`Plugin.SyncedAvailable` is the kill switch)
 - The OpenEXR decoder (`Milieu/Imaging/Exr/`, ADR 0008) — parses untrusted binary files in the game process; every size and offset is checked against `ExrLimits` before use, and the offset table before the output is allocated
 - `Milieu/Configuration.cs` migrations — a mistake loses user settings
 - Downloads (`Milieu/Assets/`) and `tools/publish-backdrops.ps1` — outbound GETs that write into the config directory, downloaded textures handed to the game; pinned size + header + SHA-256 before use; the publish script's guards keep pins and release assets identical

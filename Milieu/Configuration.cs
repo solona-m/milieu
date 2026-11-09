@@ -40,7 +40,7 @@ public sealed class Configuration : IPluginConfiguration
 
     public int MaxTextureWidth { get; set; } = 8192;
 
-    /// <summary>Who sees the backdrop: only the user (default), or PSync pairs through an item (experimental, testing builds).</summary>
+    /// <summary>Who sees the backdrop: only the user (default), or PSync pairs through an item (experimental).</summary>
     public Sync.DeliveryMode Delivery { get; set; } = Sync.DeliveryMode.Local;
 
     /// <summary>The one-time notice that a user image is uploaded through PSync has been shown.</summary>
@@ -98,7 +98,7 @@ public sealed class Configuration : IPluginConfiguration
         if (Version < CurrentVersion) Version = CurrentVersion;
     }
 
-    /// <param name="syncedAvailable">False on stable builds: a saved synced choice then falls back to Only me.</param>
+    /// <param name="syncedAvailable">False when the kill switch (Plugin.SyncedAvailable) is off: a saved synced choice then falls back to Only me.</param>
     public void Clamp(bool syncedAvailable = true)
     {
         if (!Enum.IsDefined(Delivery) || (!syncedAvailable && Delivery != Sync.DeliveryMode.Local)) Delivery = Sync.DeliveryMode.Local;

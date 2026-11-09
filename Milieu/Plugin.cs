@@ -33,7 +33,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 16;
+    public const int BuildNumber = 18;
 
     private const string CommandName = "/milieu";
 
@@ -108,10 +108,10 @@ public sealed class Plugin : IDalamudPlugin
     private void Save() => PluginInterface.SavePluginConfig(config);
 
     /// <summary>
-    /// Synced delivery (experimental, never tested in game yet) is offered on testing and dev builds only: on stable, PSync
-    /// pairs would receive untested VFX bytes without having opted in (docs/adr/0006). One line to enable it for stable.
+    /// Synced delivery is offered on every build (the owner enabled it for stable on 2026-11-09, docs/adr/0006). This is the
+    /// kill switch: return false to hide the "Visible to" options again and load a saved synced choice as Only me.
     /// </summary>
-    private static bool SyncedAvailable() => PluginInterface.IsTesting || PluginInterface.IsDev;
+    private static bool SyncedAvailable() => true;
 
     private void OnUpdate(IFramework _) => controller.Tick();
 

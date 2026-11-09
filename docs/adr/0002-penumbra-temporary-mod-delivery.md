@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted; partly superseded by ADR 0006 for synced delivery (experimental, testing builds).
+Accepted; partly superseded by ADR 0006 for synced delivery (experimental).
 
 ## Context
 

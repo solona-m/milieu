@@ -109,15 +109,15 @@ public class BackdropViewModelTests
     }
 
     [Fact] // [AC-synced-delivery-1] [EDGE-synced-delivery-35]
-    public void DeliveryOptions_HiddenWhenUnavailable_ShownOnTestingOrDev()
+    public void DeliveryOptions_HiddenWhenUnavailable_ShownWhenAvailable()
     {
         var c = Cfg();
-        var stable = new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, c, syncedAvailable: false);
-        Assert.False(stable.SyncedAvailable);
-        Assert.Equal(["Only me"], stable.DeliveryLabels);
-        var testing = new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, c, syncedAvailable: true);
-        Assert.True(testing.SyncedAvailable);
-        Assert.Equal(3, testing.DeliveryLabels.Count);
+        var hidden = new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, c, syncedAvailable: false);
+        Assert.False(hidden.SyncedAvailable);
+        Assert.Equal(["Only me"], hidden.DeliveryLabels);
+        var offered = new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, c, syncedAvailable: true);
+        Assert.True(offered.SyncedAvailable);
+        Assert.Equal(3, offered.DeliveryLabels.Count);
     }
 
     [Fact] // [AC-synced-delivery-1] [AC-synced-delivery-10]
