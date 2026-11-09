@@ -89,4 +89,27 @@ public class CacheStoreTests
         Assert.False(File.Exists(target));
         Assert.Empty(Directory.EnumerateFiles(store.Root));
     }
+
+    [Fact] // [EDGE-scene-lighting-31]
+    public void LightRigKey_IndependentOfExposureToneMapSize()
+    {
+        using var t = new TempDir();
+        var path = t.File("pano.hdr");
+        var a = new BackdropRequest(path, 8192, 0f, ToneMapOperator.Aces);
+        var b = new BackdropRequest(path, 4096, 2.5f, ToneMapOperator.Reinhard);
+        Assert.NotEqual(CacheStore.TextureKey(a, ImageKind.Hdr, 100, 5), CacheStore.TextureKey(b, ImageKind.Hdr, 100, 5));
+        var key = CacheStore.LightRigKey(path, 100, 5);
+        Assert.Matches("^[0-9a-f]{16}$", key);
+        Assert.Equal(key, CacheStore.LightRigKey(path.ToUpperInvariant(), 100, 5));   // the path is case-folded
+        Assert.NotEqual(key, CacheStore.LightRigKey(path, 101, 5));                   // the file changed
+        Assert.NotEqual(key, CacheStore.LightRigKey(path, 100, 6));
+        Assert.NotEqual(key, CacheStore.LightRigKey(t.File("other.hdr"), 100, 5));
+
+        // The rigs live in a subfolder: the top-level cleanup never touches them.
+        var store = new CacheStore(t.File("cache"));
+        Directory.CreateDirectory(store.LightRigDir);
+        File.WriteAllText(store.LightRigPath(key), "{}");
+        store.Cleanup(new HashSet<string>());
+        Assert.True(File.Exists(store.LightRigPath(key)));
+    }
 }
