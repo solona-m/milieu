@@ -71,8 +71,8 @@ Facts found while planning (they shape the gates below):
   discord when done"; "Once this is done, push a main release as well"): the canary, `testing-1`, its verification, the
   listing and sync, then the full suite on the release commit, `main`, the stable tag, its verification and the stable
   listing. Each gate stops with a Discord notice on failure; nothing is forced, and no tag is deleted or reused.
-- **What ships:** synced delivery (ADR 0006) is in both builds' code, but only testing and dev builds offer it; it is
-  untested in game, and the tag messages say so.
+- **What ships:** synced delivery (ADR 0006) is in both builds' code; until 2026-11-09 only testing and dev builds offered it,
+  since then every build does (ADR 0006 amendment). It is untested in game, and the tag messages say so.
 
 ## Consequences
 

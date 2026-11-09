@@ -139,7 +139,7 @@ public sealed class MainWindow : Window, IDisposable
         DrawDelivery(vm);
     }
 
-    /// <summary>"Visible to": only on testing and dev builds (synced delivery is experimental and hidden on stable).</summary>
+    /// <summary>"Visible to": hidden only when the kill switch (Plugin.SyncedAvailable) is off.</summary>
     private void DrawDelivery(BackdropViewModel vm)
     {
         if (!vm.SyncedAvailable) return;
