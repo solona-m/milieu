@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 
 namespace Milieu.Lighting;
@@ -17,6 +18,18 @@ public static class LightRigLayout
 
     public const float KeyPower = 30f;
     public const float FillPower = 10f;
+
+    /// <summary>
+    /// Estimated rigs (docs/adr/0010): the key's energy is this many times the sky's (TotalEnergy_Y, floored at
+    /// <see cref="EstimatedSkyFloorY"/>). Plan-time only: tuning it invalidates no cache or bundled rig. UNVERIFIED.
+    /// </summary>
+    public const float EstimatedKeyOverSky = 2f;
+
+    /// <summary>The sky energy an estimated key is scaled against at least (so a lamp on black still gets a key).</summary>
+    public const float EstimatedSkyFloorY = 0.05f * 4 * MathF.PI;
+
+    /// <summary>An estimated lamp's power, like <see cref="FillPower"/> for a region. Plan-time only. UNVERIFIED.</summary>
+    public const float LampPower = 30f;
 
     /// <summary>No colour channel exceeds this; a brighter light is scaled down uniformly (chroma kept).</summary>
     public const float MaxChannel = 120f;

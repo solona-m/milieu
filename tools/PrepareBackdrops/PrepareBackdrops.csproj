@@ -23,6 +23,13 @@
     <Compile Include="..\..\Milieu\Backdrop\TextureConversion.cs" Link="Backdrop\TextureConversion.cs" />
     <Compile Include="..\..\Milieu\Assets\BackdropPins.cs" Link="Assets\BackdropPins.cs" />
     <Compile Include="..\..\Milieu\Assets\MilieuAssets.cs" Link="Assets\MilieuAssets.cs" />
+    <!-- The LDR light estimate, for the bundled light rigs (`rigs`, docs/adr/0010). -->
+    <Compile Include="..\..\Milieu\Lighting\RadianceProbe.cs" Link="Lighting\RadianceProbe.cs" />
+    <Compile Include="..\..\Milieu\Lighting\LdrLightEstimator.cs" Link="Lighting\LdrLightEstimator.cs" />
+    <Compile Include="..\..\Milieu\Lighting\LightExtractor.cs" Link="Lighting\LightExtractor.cs" />
+    <Compile Include="..\..\Milieu\Lighting\LightRig.cs" Link="Lighting\LightRig.cs" />
+    <Compile Include="..\..\Milieu\Lighting\LightRigLayout.cs" Link="Lighting\LightRigLayout.cs" />
+    <Compile Include="..\..\Milieu\Lighting\LightRigStore.Json.cs" Link="Lighting\LightRigStore.Json.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="StbImageSharp" Version="2.30.16" />

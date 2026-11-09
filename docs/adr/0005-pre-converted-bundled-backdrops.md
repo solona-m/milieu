@@ -44,4 +44,5 @@ workflow for the repository. The cause is unknown.
 Easier: a bundled scene shows within a couple of seconds of downloading; players never wait for BC7.
 Harder: a new or changed scene means regenerating the textures on one machine, pasting the new pins, tagging a new
 `backdrops-vN` at that commit and running the publish script from that checkout. A full set is 341 MiB per version
-on GitHub (per-scene downloads keep what each player fetches small).
+on GitHub (per-scene downloads keep what each player fetches small). A changed scene image or pin also means
+regenerating the bundled light rigs with `PrepareBackdrops rigs` (ADR 0010); the tests fail until it is done.

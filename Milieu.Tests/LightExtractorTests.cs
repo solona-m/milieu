@@ -171,4 +171,72 @@ public class LightExtractorTests
         Assert.Equal(a.TotalEnergy, b.TotalEnergy);
         Assert.Equal(LightExtractor.Version, a.Version);
     }
+
+    /// <summary>A 256x128 grey source maps 1:1 onto the probe, so texel values are exact.</summary>
+    private static LightRig Grey1to1(Func<int, int, float> v)
+    {
+        const int w = RadianceProbe.Width, h = RadianceProbe.Height;
+        var img = new float[w * h * 3];
+        for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+        {
+            var o = (y * w + x) * 3;
+            img[o] = img[o + 1] = img[o + 2] = v(x, y);
+        }
+        return Extract(img, w, h);
+    }
+
+    // Row 21 is elevation 59.8°: one texel there holds dω ≈ 3.0e-4 sr. On a background of 2 (total ≈ 25.1), a texel of
+    // 1800 holds ≈ 2.1% of the energy at 900x the median; one of 417 holds ≈ 0.5% at about 209x.
+    private const int SunRow = 21, SunCol = 100;
+
+    [Fact] // [AC-ldr-light-estimate-9] [EDGE-ldr-light-estimate-36]
+    public void SmallStrongSun_LowShare_IsKey()
+    {
+        var rig = Grey1to1((x, y) => x == SunCol && y == SunRow ? 1800f : 2f);
+        var key = Assert.IsType<RigLight>(rig.Key);
+        var share = Y(key.Energy) / Y(rig.TotalEnergy);
+        Assert.InRange(share, 0.01f, 0.05f);   // under the 5% share: only the strong-peak branch makes it a key
+        var (az, el) = SyntheticImages.AzEl((SunCol + 0.5) / RadianceProbe.Width, (SunRow + 0.5) / RadianceProbe.Height);
+        Assert.True(SyntheticImages.AngleDeg(DirOf(key), SyntheticImages.Dir(az, el)) < 0.5);
+    }
+
+    [Fact] // [AC-ldr-light-estimate-9] [EDGE-ldr-light-estimate-37]
+    public void Overcast_PeakSeven_NoKey()
+    {
+        // A bright patch 7x the median within 6° of (0°, 20°): a large share, but no peak.
+        var centre = SyntheticImages.Dir(0, 20);
+        var rig = Grey1to1((x, y) =>
+        {
+            var (az, el) = SyntheticImages.AzEl((x + 0.5) / RadianceProbe.Width, (y + 0.5) / RadianceProbe.Height);
+            return SyntheticImages.AngleDeg(SyntheticImages.Dir(az, el), centre) <= 6 ? 7f : 1f;
+        });
+        Assert.Null(rig.Key);
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-38]
+    public void ModeratePeak_LowShare_NoKey()
+    {
+        // A 3x3 block of 100 on 2 at the equator: 50x the median, ≈ 2% of the energy.
+        var rig = Grey1to1((x, y) => x >= 100 && x < 103 && y >= 63 && y < 66 ? 100f : 2f);
+        Assert.Null(rig.Key);
+    }
+
+    [Fact] // [AC-ldr-light-estimate-9] [EDGE-ldr-light-estimate-43]
+    public void NightSky_ZeroMedian_StarNotKey()
+    {
+        // Black above a dim ground glow (the bottom 40% of rows): the covered median is 0. One star of 500 at 60° holds
+        // about 3% of the energy: under 5%, and the strong branch needs a non-zero median.
+        var rig = Grey1to1((x, y) => x == SunCol && y == SunRow ? 500f : y >= 77 ? 1f : 0f);
+        Assert.Null(rig.Key);
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-44]
+    public void StrongPeak_BelowOnePercent_NoKey()
+    {
+        var rig = Grey1to1((x, y) => x == SunCol && y == SunRow ? 417f : 2f);
+        Assert.Null(rig.Key);
+        // The same image with a 1800 sun (2%) is a key: only the share differs.
+        Assert.NotNull(Grey1to1((x, y) => x == SunCol && y == SunRow ? 1800f : 2f).Key);
+    }
 }

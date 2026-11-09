@@ -39,3 +39,4 @@ real decision.]
 - [0007](0007-plugin-releases-and-listing.md) Plugin releases, version stamping and the plugins-repo listing
 - [0008](0008-in-repo-openexr-decoder.md) OpenEXR is decoded by an in-repo bounded decoder
 - [0009](0009-scene-lighting-from-hdr.md) Scene lighting from HDR backdrops
+- [0010](0010-estimated-scene-lighting-for-ldr.md) Estimated scene lighting for JPG/PNG and bundled scenes

@@ -263,7 +263,9 @@ public sealed class MainWindow : Window, IDisposable
         }
         if (vm.StatusText.Length > 0)
             ImGui.TextColored(vm.StatusSeverity == Severity.Error ? Red : vm.StatusSeverity == Severity.Warning ? Yellow : Vector4.One, vm.StatusText);
+        ImGui.PushTextWrapPos(0f);   // the estimated note is long: wrap at the window edge
         foreach (var note in vm.Notes) ImGui.TextDisabled(note);
+        ImGui.PopTextWrapPos();
     }
 
     /// <summary>Every slider applies once, on release (single-swap rule: placement, height or rebuild).</summary>

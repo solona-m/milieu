@@ -46,6 +46,14 @@ public sealed class SceneLightingTests : IDisposable
 
     internal static readonly LightRig RigB = RigA with { Key = new RigLight(0.2f, 0.4f, new Vector3(1, 1, 3)) };
 
+    /// <summary>An estimated rig (docs/adr/0010): a warm key colour of luminance 1, one lamp at weight 0.5, four regions.</summary>
+    internal static readonly LightRig RigE = new(LightExtractor.Version, new RigLight(0.55f, 0.3f, new Vector3(1.3f, 0.95f, 0.7f)),
+        [new(0.3f, 0.3f, new Vector3(0.5f, 0.6f, 1f)), new(0.7f, 0.35f, new Vector3(0.4f, 0.5f, 0.9f)),
+         new(0.4f, 0.7f, new Vector3(0.3f, 0.2f, 0.1f)), new(0.8f, 0.75f, new Vector3(0.2f, 0.2f, 0.1f))],
+        new Vector3(1.4f, 1.5f, 2.1f), [new RigLight(0.45f, 0.4f, new Vector3(0.6f, 0.5f, 0.4f))], LdrLightEstimator.Version);
+
+    private static bool IsHdrPath(string path) => path.EndsWith(".hdr", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".exr", StringComparison.OrdinalIgnoreCase);
+
     private SceneLighting Make(Func<Func<Task<LightRig?>>, Task<LightRig?>>? run = null) =>
         new(spawner, game, () => lit, config, Load, sentinel, log, () => unloading, () => delivery,
             run ?? (f => { runs++; return f(); }));
@@ -54,7 +62,7 @@ public sealed class SceneLightingTests : IDisposable
     {
         loads.Add(path);
         if (loader != null) return loader(path, ct);
-        return Task.FromResult<LightRig?>(path == ImageB ? RigB : RigA);
+        return Task.FromResult<LightRig?>(!IsHdrPath(path) ? RigE : path == ImageB ? RigB : RigA);
     }
 
     private void Ticks(int n) { for (var i = 0; i < n; i++) s.Tick(); }
@@ -142,41 +150,98 @@ public sealed class SceneLightingTests : IDisposable
         Assert.Equal(3, spawner.Creates.Count);
     }
 
-    [Fact] // [AC-scene-lighting-2] [AC-scene-lighting-3] [AC-scene-lighting-9]
-    public void DefaultConfig_LightsHdrInGposeOnly()
+    [Fact] // [AC-scene-lighting-2] [AC-scene-lighting-3] [AC-scene-lighting-9] [AC-ldr-light-estimate-8]
+    public void DefaultConfig_LightsLdrAndHdrInGposeOnly()
     {
+        // AC-scene-lighting-3 (LDR gets no lights) is superseded by docs/adr/0010: a JPG/PNG now gets estimated lights.
         var fresh = new Configuration();                     // on by default (owner change)
         Assert.True(fresh.SceneLighting);
         s = new SceneLighting(spawner, game, () => lit, fresh, Load, sentinel, log, () => unloading, () => delivery, f => f());
         lit = new LitBackdrop(@"C:\pics\sky.png", View0);
+        game.IsGPosing = false;
         Ticks(Settle + 2);
-        Assert.Equal(0, spawner.NativeCalls);                // LDR: the note, no lights
-        Assert.Equal(LightingStatus.NeedsHdr, s.Status.Status);
+        Assert.Equal(0, spawner.NativeCalls);                // LDR outside GPose: none
+        Assert.Equal(LightingStatus.WaitingForGPose, s.Status.Status);
+        game.IsGPosing = true;
+        Ticks(Settle + 1);
+        Assert.Equal(3, spawner.Live.Count());               // LDR in GPose: estimated lights with no user action
+        Assert.True(s.Status.Estimated);
+        Assert.Equal(LightingStatus.OnWithKey, s.Status.Status);
         lit = new LitBackdrop(ImageA, View0);
         game.IsGPosing = false;
         Ticks(Settle + 2);
-        Assert.Equal(0, spawner.NativeCalls);                // HDR outside GPose: none
+        Assert.Empty(spawner.Live);                          // HDR outside GPose: none
         game.IsGPosing = true;
         Ticks(Settle + 1);
         Assert.Equal(3, spawner.Live.Count());               // HDR in GPose: lit with no user action
+        Assert.False(s.Status.Estimated);
         // The crash sentinel still latches a default-on config off.
         var guarded = new SceneLighting(new FakeLightSpawner(), game, () => lit, fresh, Load, new FakeSentinel(setAtStartup: true), log,
                                         () => false, () => delivery, f => f());
-        for (var i = 0; i < Settle + 2; i++) guarded.Tick();
+        for (var k = 0; k < Settle + 2; k++) guarded.Tick();
         Assert.Equal(LightingStatus.CrashGuard, guarded.Status.Status);
     }
 
-    [Theory] // [AC-scene-lighting-3]
+    [Theory] // [AC-scene-lighting-3] [AC-ldr-light-estimate-1]
     [InlineData(@"C:\pics\sky.png")]
     [InlineData(@"C:\pics\sky.jpg")]
-    [InlineData("bundled:moon")]
-    public void LdrLit_NoCreateNoJob(string image)
+    [InlineData(@"C:\pics\sky.jpeg")]
+    public void LdrLit_EstimatedLights(string image)
     {
         lit = new LitBackdrop(image, View0);
+        Ticks(Settle);
+        Assert.Empty(spawner.Creates);
+        s.Tick();
+        var expected = LightRigPlanner.Plan(RigE, View0, Anchor, 1f, 2).Lights.Select(l => l.P).ToList();
+        Assert.Equal(expected, spawner.Creates.Select(c => c.P));
+        Assert.Equal(LightShapeKind.Spot, spawner.Creates[0].P.Shape);
+        Assert.Equal(new LightingStatusSnapshot(LightingStatus.OnWithKey, Path.GetFileName(image), 2, Estimated: true), s.Status);
+        Assert.Equal([image], loads);
+        Assert.Contains(log.Lines, l => l.Level == "Information" && l.Text.Contains("estimated") && l.Text.Contains("key at azimuth"));
+    }
+
+    [Fact] // [AC-ldr-light-estimate-2]
+    public void BundledLit_EstimatedLights()
+    {
+        lit = new LitBackdrop("bundled:moon", View0);
+        Ticks(Settle + 1);
+        Assert.Equal(3, spawner.Live.Count());
+        Assert.Equal(new LightingStatusSnapshot(LightingStatus.OnWithKey, "Moon", 2, Estimated: true), s.Status);
+        Assert.Equal(["bundled:moon"], loads);
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-10]
+    public void NullRig_NoLightInfo_NoRepeatJob()
+    {
+        loader = (_, _) => Task.FromResult<LightRig?>(null);   // a bundled scene with no valid table entry
+        lit = new LitBackdrop("bundled:moon", View0);
+        Ticks(Settle * 2);
+        Assert.Equal(0, spawner.NativeCalls);
+        Assert.Equal(new LightingStatusSnapshot(LightingStatus.NoLightInfo, "Moon"), s.Status);
+        Assert.Single(loads);
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-20]
+    public void UnknownExtensionLit_NoLightInfo_NoJob()
+    {
+        lit = new LitBackdrop(@"C:\pics\sky.tga", View0);
         Ticks(Settle + 5);
         Assert.Equal(0, spawner.NativeCalls);
         Assert.Empty(loads);
-        Assert.Equal(LightingStatus.NeedsHdr, s.Status.Status);
+        Assert.Equal(new LightingStatusSnapshot(LightingStatus.NoLightInfo, "sky.tga"), s.Status);
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-13] [EDGE-ldr-light-estimate-29]
+    public void CancelledJob_LdrPath_LatchesReadFailed()
+    {
+        // A job that ended cancelled by itself (7fba370) latches ReadFailed for an estimated rig too.
+        loader = (_, _) => Task.FromCanceled<LightRig?>(new CancellationToken(true));
+        lit = new LitBackdrop(@"C:\pics\sky.jpg", View0);
+        Ticks(Settle * 2);
+        Assert.Single(loads);
+        Assert.Equal(new LightingStatusSnapshot(LightingStatus.ReadFailed, "sky.jpg"), s.Status);
+        Assert.Equal(0, spawner.NativeCalls);
+        Assert.Contains(log.Lines, l => l.Level == "Warning" && l.Text.Contains("cancelled"));
     }
 
     [Fact] // [AC-scene-lighting-4]
@@ -293,9 +358,13 @@ public sealed class SceneLightingTests : IDisposable
         Assert.Contains(log.Lines, l => l.Level == "Warning" && l.Text.Contains("closed"));
     }
 
-    [Fact] // [AC-scene-lighting-8]
-    public void JobRunsViaRun_NotInline()
+    [Theory] // [AC-scene-lighting-8] [AC-ldr-light-estimate-6]
+    [InlineData(ImageA)]
+    [InlineData(@"C:\pics\room.jpg")]
+    [InlineData("bundled:lodge")]
+    public void JobRunsViaRun_NotInline(string image)
     {
+        lit = new LitBackdrop(image, View0);
         Func<Task<LightRig?>>? captured = null;
         var tcs = new TaskCompletionSource<LightRig?>();
         s = Make(f => { captured = f; return tcs.Task; });
@@ -305,9 +374,10 @@ public sealed class SceneLightingTests : IDisposable
         Assert.Equal(LightingStatus.Analysing, s.Status.Status);
         Ticks(5);
         Assert.Empty(loads);
-        tcs.SetResult(RigA);
+        tcs.SetResult(image == ImageA ? RigA : RigE);
         Ticks(Settle + 1);
         Assert.Equal(3, spawner.Live.Count());
+        Assert.Equal(image != ImageA, s.Status.Estimated);
     }
 
     [Fact] // [AC-scene-lighting-8]
@@ -394,15 +464,27 @@ public sealed class SceneLightingTests : IDisposable
         Assert.Equal([ImageA, ImageB], loads);
     }
 
-    [Fact] // [EDGE-scene-lighting-12]
-    public void ImageChangeToLdr_RemovesOnCommit()
+    [Fact] // [EDGE-scene-lighting-12] [EDGE-ldr-light-estimate-14]
+    public void ImageChangeToLdr_ReplannedFromEstimate()
     {
         LightUp();
+        var held = spawner.Live.ToList();
+        var tcs = new TaskCompletionSource<LightRig?>();
+        loader = (p, _) => p.EndsWith(".png") ? tcs.Task : Task.FromResult<LightRig?>(RigA);
         lit = new LitBackdrop(@"C:\pics\next.png", View0);
+        var refreshes = spawner.Refreshes.Count;
         s.Tick();
-        Assert.Empty(spawner.Live);
-        Assert.Equal(LightingStatus.NeedsHdr, s.Status.Status);
-        Assert.Single(loads);
+        Assert.Equal(LightingStatus.Analysing, s.Status.Status);
+        Assert.Equal(held, spawner.Live);                    // the HDR lights stay while the estimate loads…
+        Ticks(3);
+        Assert.Equal(refreshes + 4 * 3, spawner.Refreshes.Count);   // …refreshed every tick
+        tcs.SetResult(RigE);
+        s.Tick();
+        Assert.Equal(held, spawner.Live);                    // re-planned in place, not recreated
+        Assert.Equal(LightRigPlanner.Plan(RigE, View0, Anchor, 1f, 2).Lights.Select(l => l.P), spawner.Live.Select(h =>
+            spawner.Updates.LastOrDefault(u => u.H == h).P ?? spawner.Creates.Single(c => c.H == h).P));
+        Assert.Equal(new LightingStatusSnapshot(LightingStatus.OnWithKey, "next.png", 2, Estimated: true), s.Status);
+        Assert.Equal(2, loads.Count);
     }
 
     [Fact] // [EDGE-scene-lighting-13]
@@ -450,7 +532,7 @@ public sealed class SceneLightingTests : IDisposable
     }
 
     [Fact] // [EDGE-scene-lighting-14]
-    public void JobFaults_ReadFailedLatched_NoRepeatJobs()
+    public void JobFaults_ReadFailedLatched_NoRepeatJobs()   // [EDGE-ldr-light-estimate-13]: the .jpg case at the end
     {
         loader = (_, _) => Task.FromException<LightRig?>(new MilieuException(StatusMessage.Of(MessageKey.DecodeFailed, ("file", "sky.hdr"))));
         Ticks(Settle * 2);
@@ -477,6 +559,14 @@ public sealed class SceneLightingTests : IDisposable
         config.SceneLighting = true;
         Ticks(Settle + 1);
         Assert.Equal(LightingStatus.OnWithKey, s.Status.Status);
+
+        // A JPG whose estimate fails latches the same way, with no repeated job.
+        loader = (_, _) => Task.FromException<LightRig?>(new MilieuException(StatusMessage.Of(MessageKey.DecodeFailed, ("file", "room.jpg"))));
+        lit = new LitBackdrop(@"C:\pics\room.jpg", View0);
+        Ticks(Settle * 2);
+        Assert.Equal(1, loads.Count(l => l.EndsWith("room.jpg")));
+        Assert.Equal(new LightingStatusSnapshot(LightingStatus.ReadFailed, "room.jpg"), s.Status);
+        Assert.Empty(spawner.Live);
     }
 
     [Fact] // [EDGE-scene-lighting-17]
@@ -839,7 +929,7 @@ public sealed class SceneLightingTests : IDisposable
     }
 
     [Fact] // [EDGE-scene-lighting-26] [EDGE-scene-lighting-12]
-    public void HdrPathRigNull_RemovesLights_NeedsHdr()
+    public void HdrPathRigNull_RemovesLights_NoLightInfo()
     {
         LightUp();
         const string odd = @"C:\pics\odd.hdr";
@@ -848,7 +938,7 @@ public sealed class SceneLightingTests : IDisposable
         s.Tick();
         Assert.Empty(spawner.Live);
         Assert.Equal(3, spawner.Destroys.Count);
-        Assert.Equal(LightingStatus.NeedsHdr, s.Status.Status);
+        Assert.Equal(LightingStatus.NoLightInfo, s.Status.Status);
         Assert.Equal(1, loads.Count(l => l == odd));
         var creates = spawner.CreateAttempts;
         Ticks(Settle * 2);

@@ -438,14 +438,17 @@ public sealed class BackdropPreparerTests : IDisposable
         Assert.NotNull(rig!.Key);
         Assert.Equal(Milieu.Lighting.LightRig.RegionCount, rig.Regions.Length);
 
-        // An EXR conversion stores one too; an LDR conversion doesn't.
+        // An EXR conversion stores one too; an LDR conversion stores an estimated one (docs/adr/0010, superseding the
+        // "doesn't" of scene-lighting).
         var exr = SyntheticExr.Write(dir.Path, "a.exr", new ExrSpec { Width = 64, Height = 32, Compression = 3 });
         await p.PrepareTextureAsync(Req(exr), null, default);
         var ei = new FileInfo(exr);
         Assert.NotNull(new Milieu.Lighting.LightRigStore(cache).Load(CacheStore.LightRigKey(exr, ei.Length, ei.LastWriteTimeUtc.Ticks)));
         var png = SyntheticImages.WritePng(dir.Path, "b.png", 64, 32);
         await p.PrepareTextureAsync(Req(png), null, default);
-        Assert.Equal(2, Directory.GetFiles(cache.LightRigDir, "lights_*.json").Length);
+        Assert.Equal(3, Directory.GetFiles(cache.LightRigDir, "lights_*.json").Length);
+        var pi = new FileInfo(png);
+        Assert.NotNull(new Milieu.Lighting.LightRigStore(cache).Load(CacheStore.EstimatedRigKey(png, pi.Length, pi.LastWriteTimeUtc.Ticks), estimated: true));
     }
 
     [Fact] // [AC-scene-lighting-8]
@@ -479,22 +482,6 @@ public sealed class BackdropPreparerTests : IDisposable
         Assert.Equal(1, fresh.DecodeCount);
         await fresh.PrepareLightsAsync(hdr, default);
         Assert.Equal(1, fresh.DecodeCount);
-    }
-
-    [Fact] // [EDGE-scene-lighting-26]
-    public async Task PrepareLights_BundledOrLdr_NullWithoutOpening()
-    {
-        var (p, _) = Make();
-        Assert.Null(await p.PrepareLightsAsync("bundled:moon", default));
-        // Neither file exists: a null (not a FileMissing error) proves it was never opened.
-        Assert.Null(await p.PrepareLightsAsync(dir.File("absent.png"), default));
-        Assert.Null(await p.PrepareLightsAsync(dir.File("absent.jpg"), default));
-        Assert.Equal(0, p.DecodeCount);
-        // An HDR that's missing is an error the caller latches (ReadFailed).
-        var ex = await Assert.ThrowsAsync<MilieuException>(() => p.PrepareLightsAsync(dir.File("absent.hdr"), default));
-        Assert.Equal(MessageKey.FileMissing, ex.Status.Key);
-        var huge = SyntheticImages.WriteHdrHeaderOnly(dir.Path, "huge.hdr", 16384, 8192);
-        Assert.Equal(MessageKey.TooLargeHdr, (await Assert.ThrowsAsync<MilieuException>(() => p.PrepareLightsAsync(huge, default))).Status.Key);
     }
 
     [Fact] // [EDGE-scene-lighting-30]
@@ -603,5 +590,197 @@ public sealed class BackdropPreparerTests : IDisposable
         };
         var hdr = SyntheticImages.WriteHdrRgb(dir.Path, "sun.hdr", 256, 128, SunImage(256, 128));
         await Assert.ThrowsAsync<InvalidOperationException>(() => p.PrepareLightsAsync(hdr, default));
+    }
+    // ---- Estimated rigs for PNG/JPG and the bundled table (docs/adr/0010) ----
+
+    /// <summary>A 512x256 sky with a clipped 6° sun at (60, 25) and a glow of <paramref name="glow"/> out to 4° beyond it.</summary>
+    private static byte[] LdrSun((byte, byte, byte)? glow = null)
+    {
+        var px = SyntheticImages.LdrPanorama(512, 256, (_, el) => el > 0 ? ((byte)90, (byte)140, (byte)220) : ((byte)70, (byte)60, (byte)50));
+        return SyntheticImages.Lamp(px, 512, 256, 60, 25, 6, glow ?? ((byte)255, (byte)200, (byte)140));
+    }
+
+    private Milieu.Lighting.LightRig? LoadEstimated(string path)
+    {
+        var info = new FileInfo(path);
+        return new Milieu.Lighting.LightRigStore(cache).Load(CacheStore.EstimatedRigKey(path, info.Length, info.LastWriteTimeUtc.Ticks), estimated: true);
+    }
+
+    private static void AssertSunKey(Milieu.Lighting.LightRig? rig)
+    {
+        Assert.NotNull(rig);
+        Assert.True(rig!.IsEstimated);
+        var key = Assert.IsType<Milieu.Lighting.RigLight>(rig.Key);
+        var (az, el) = SyntheticImages.AzEl(key.S, key.T);
+        Assert.True(SyntheticImages.AngleDeg(SyntheticImages.Dir(az, el), SyntheticImages.Dir(60, 25)) < 2, "key at the sun");
+    }
+
+    [Fact] // [AC-ldr-light-estimate-6]
+    public async Task LdrConversion_StoresEstimatedRig()
+    {
+        var (p, _) = Make();
+        var png = SyntheticImages.WritePng(dir.Path, "sun.png", 512, 256, LdrSun());
+        var jpg = SyntheticImages.WriteJpg(dir.Path, "sun.jpg", 512, 256, LdrSun());
+        foreach (var path in new[] { png, jpg })
+        {
+            await p.PrepareTextureAsync(Req(path), null, default);
+            AssertSunKey(LoadEstimated(path));
+            // Never under the HDR key.
+            var info = new FileInfo(path);
+            Assert.Null(new Milieu.Lighting.LightRigStore(cache).Load(CacheStore.LightRigKey(path, info.Length, info.LastWriteTimeUtc.Ticks)));
+        }
+    }
+
+    [Fact] // [AC-ldr-light-estimate-6]
+    public async Task PrepareLights_LdrStoreHit_NoDecode()
+    {
+        var (p, _) = Make();
+        var png = SyntheticImages.WritePng(dir.Path, "sun.png", 512, 256, LdrSun());
+        await p.PrepareTextureAsync(Req(png), null, default);
+        Assert.Equal(1, p.DecodeCount);
+        var rig = await p.PrepareLightsAsync(png, default);
+        AssertSunKey(rig);
+        Assert.Equal(1, p.DecodeCount);   // from the store
+        Assert.Equal(0, p.RigWaits);
+        var fresh = new BackdropPreparer(cache, new StubEncoder());
+        AssertSunKey(await fresh.PrepareLightsAsync(png, default));
+        Assert.Equal(0, fresh.DecodeCount);
+    }
+
+    [Fact] // [AC-ldr-light-estimate-2] [EDGE-ldr-light-estimate-11]
+    public async Task PrepareLights_Bundled_FromTable_NoFileOpened()
+    {
+        var asked = new System.Collections.Generic.List<string>();
+        var table = new Milieu.Lighting.LightRig(Milieu.Lighting.LightExtractor.Version, null,
+            Enumerable.Repeat(new Milieu.Lighting.RigLight(0.5f, 0.5f, System.Numerics.Vector3.One), 4).ToArray(), System.Numerics.Vector3.One * 4,
+            [], Milieu.Lighting.LdrLightEstimator.Version);
+        // No bundled-backdrops service at all: nothing can be opened or downloaded.
+        var p = new BackdropPreparer(cache, new StubEncoder(), bundled: null) { BundledRigLookup = stem => { asked.Add(stem); return table; } };
+        Assert.Same(table, await p.PrepareLightsAsync("bundled:moon", default));
+        Assert.Equal(["moon"], asked);
+        Assert.Equal(0, p.DecodeCount);
+        Assert.Equal(0, p.RigWaits);
+        Assert.False(Directory.Exists(cache.LightRigDir));
+        // The default lookup is the table built into the plugin.
+        var real = new BackdropPreparer(cache, new StubEncoder());
+        var moon = await real.PrepareLightsAsync("bundled:moon", default);
+        Assert.Equal(Milieu.Lighting.LightRigStore.Serialise(BundledLightRigs.Find("moon")!), Milieu.Lighting.LightRigStore.Serialise(moon!));
+        Assert.Null(await real.PrepareLightsAsync("bundled:nosuchscene", default));
+        Assert.Equal(0, real.DecodeCount);
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-13]
+    public async Task PrepareLights_LdrMissingOrTooLarge_Throws()
+    {
+        var (p, _) = Make();
+        foreach (var name in new[] { "absent.png", "absent.jpg", "absent.jpeg" })
+            Assert.Equal(MessageKey.FileMissing, (await Assert.ThrowsAsync<MilieuException>(() => p.PrepareLightsAsync(dir.File(name), default))).Status.Key);
+        var huge = SyntheticImages.WritePngHeaderOnly(dir.Path, "huge.png", 30000, 15000);
+        Assert.Equal(MessageKey.TooLargeLdr, (await Assert.ThrowsAsync<MilieuException>(() => p.PrepareLightsAsync(huge, default))).Status.Key);
+        Assert.Equal(0, p.DecodeCount);
+    }
+
+    [Fact] // [EDGE-scene-lighting-26]
+    public async Task PrepareLights_UnknownKind_NullWithoutOpening_HdrMissingThrows()
+    {
+        var (p, _) = Make();
+        // The file doesn't exist: a null (not a FileMissing error) proves it was never opened.
+        Assert.Null(await p.PrepareLightsAsync(dir.File("absent.tga"), default));
+        Assert.Equal(0, p.DecodeCount);
+        var ex = await Assert.ThrowsAsync<MilieuException>(() => p.PrepareLightsAsync(dir.File("absent.hdr"), default));
+        Assert.Equal(MessageKey.FileMissing, ex.Status.Key);
+        var hugeHdr = SyntheticImages.WriteHdrHeaderOnly(dir.Path, "huge.hdr", 16384, 8192);
+        Assert.Equal(MessageKey.TooLargeHdr, (await Assert.ThrowsAsync<MilieuException>(() => p.PrepareLightsAsync(hugeHdr, default))).Status.Key);
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-15]
+    public async Task RigStoreUnwritable_LdrConversionSucceeds()
+    {
+        var (p, _) = Make();
+        Directory.CreateDirectory(cache.Root);
+        File.WriteAllText(cache.LightRigDir, "a file where the rig folder should be");
+        var png = SyntheticImages.WritePng(dir.Path, "sun.png", 512, 256, LdrSun());
+        var t = await p.PrepareTextureAsync(Req(png), null, default);
+        AssertAtex(t.DiskPath, 1024, 512);
+        Assert.True(File.Exists(cache.LightRigDir));
+        AssertSunKey(await p.PrepareLightsAsync(png, default));   // estimated again, as nothing could be stored
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-16]
+    public async Task PrepareLights_GrayscaleAndRgbaPng_KeyFound()
+    {
+        var (p, _) = Make();
+        var grey = SyntheticImages.WritePng(dir.Path, "grey.png", 512, 256, LdrSun((200, 200, 200)), StbImageWriteSharp.ColorComponents.Grey);
+        var rgba = SyntheticImages.WritePng(dir.Path, "rgba.png", 512, 256, LdrSun(), StbImageWriteSharp.ColorComponents.RedGreenBlueAlpha);
+        AssertSunKey(await p.PrepareLightsAsync(grey, default));
+        AssertSunKey(await p.PrepareLightsAsync(rgba, default));
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-21]
+    public async Task LdrTextureCachedNoRig_DecodesOnceThenHits()
+    {
+        var (p, _) = Make();
+        var png = SyntheticImages.WritePng(dir.Path, "sun.png", 512, 256, LdrSun());
+        await p.PrepareTextureAsync(Req(png), null, default);
+        Directory.Delete(cache.LightRigDir, recursive: true);   // texture cached, rig gone
+        var fresh = new BackdropPreparer(cache, new StubEncoder());
+        await fresh.PrepareTextureAsync(Req(png), null, default);
+        Assert.Equal(0, fresh.DecodeCount);
+        AssertSunKey(await fresh.PrepareLightsAsync(png, default));
+        Assert.Equal(1, fresh.DecodeCount);
+        AssertSunKey(await fresh.PrepareLightsAsync(png, default));
+        Assert.Equal(1, fresh.DecodeCount);
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-21]
+    public async Task PrepareLights_LdrMiss_IncrementsRigWaits_HitDoesNot()
+    {
+        var (p, _) = Make();
+        var png = SyntheticImages.WritePng(dir.Path, "sun.png", 512, 256, LdrSun());
+        await p.PrepareLightsAsync(png, default);
+        Assert.Equal(1, p.RigWaits);    // a miss queued for the decode slot
+        await p.PrepareLightsAsync(png, default);
+        Assert.Equal(1, p.RigWaits);    // a store hit doesn't
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-28]
+    public async Task EstimatorThrowsDuringLdrConversion_TextureStillProduced()
+    {
+        var log = new FakeLog();
+        var p = new BackdropPreparer(cache, new StubEncoder(), log: log)
+        {
+            RigEstimator = (_, _, _, _) => throw new InvalidOperationException("an estimate bug"),
+        };
+        var png = SyntheticImages.WritePng(dir.Path, "sun.png", 512, 256, LdrSun());
+        var t = await p.PrepareTextureAsync(Req(png), null, default);
+        AssertAtex(t.DiskPath, 1024, 512);
+        Assert.Null(LoadEstimated(png));
+        Assert.Contains(log.Lines, l => l.Level == "Debug" && l.Text.Contains("Light rig not estimated"));
+        var cancelling = new BackdropPreparer(cache, new StubEncoder()) { RigEstimator = (_, _, _, _) => throw new OperationCanceledException() };
+        var other = SyntheticImages.WritePng(dir.Path, "other.png", 512, 256, LdrSun());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelling.PrepareTextureAsync(Req(other), null, default));
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-29]
+    public async Task EstimatorThrowsInPrepareLights_Propagates()
+    {
+        var p = new BackdropPreparer(cache, new StubEncoder()) { RigEstimator = (_, _, _, _) => throw new InvalidOperationException("an estimate bug") };
+        var png = SyntheticImages.WritePng(dir.Path, "sun.png", 512, 256, LdrSun());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => p.PrepareLightsAsync(png, default));
+    }
+
+    [Fact] // [EDGE-ldr-light-estimate-30]
+    public async Task StoreRigsOff_LdrConversion_NoEstimate_SeamNotCalled()
+    {
+        var calls = 0;
+        var p = new BackdropPreparer(cache, new StubEncoder(), storeRigs: false)
+        {
+            RigEstimator = (_, _, _, _) => { calls++; throw new InvalidOperationException("must not be called"); },
+        };
+        var png = SyntheticImages.WritePng(dir.Path, "sun.png", 512, 256, LdrSun());
+        var t = await p.PrepareTextureAsync(Req(png), null, default);
+        AssertAtex(t.DiskPath, 1024, 512);
+        Assert.Equal(0, calls);
+        Assert.False(Directory.Exists(cache.LightRigDir));
     }
 }

@@ -150,6 +150,174 @@ public static class SyntheticImages
         return data;
     }
 
+    // ---- 8-bit panoramas for the LDR light estimate (docs/adr/0010) ----
+
+    /// <summary>
+    /// The (azimuth, elevation) in degrees of a point (x, y) in pixel units (x = 2.5 is the centre of column 2) of a w x h
+    /// panorama. A band image (wider than 2:1 by more than 1%, EquirectLayout) spans 180°·2h/w of elevation.
+    /// </summary>
+    public static (double Az, double El) PixelAzEl(double x, double y, int w, int h)
+    {
+        var span = (double)w / h > 2.02 ? 180.0 * 2 * h / w : 180.0;
+        return ((x / w - 0.5) * 360.0, (0.5 - y / h) * span);
+    }
+
+    /// <summary>An 8-bit RGB panorama from a function of (azimuth, elevation) at pixel centres.</summary>
+    public static byte[] LdrPanorama(int w, int h, Func<double, double, (byte R, byte G, byte B)> f)
+    {
+        var px = new byte[(long)w * h * 3];
+        for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+        {
+            var (az, el) = PixelAzEl(x + 0.5, y + 0.5, w, h);
+            var (r, g, b) = f(az, el);
+            var o = ((long)y * w + x) * 3;
+            px[o] = r; px[o + 1] = g; px[o + 2] = b;
+        }
+        return px;
+    }
+
+    /// <summary>
+    /// Paints every pixel within <paramref name="radiusDeg"/> of (az, el) with <paramref name="colour"/>: a pixel is
+    /// inside when at least half of its 4x4 subsamples are. Only pixels near the disc are tested.
+    /// </summary>
+    public static byte[] ClippedDisc(byte[] px, int w, int h, double azDeg, double elDeg, double radiusDeg,
+                                     (byte R, byte G, byte B)? colour = null)
+    {
+        var (r, g, b) = colour ?? ((byte)255, (byte)255, (byte)255);
+        ForEachNear(w, h, azDeg, elDeg, radiusDeg, (x, y, inside) =>
+        {
+            if (inside < 0.5) return;
+            var o = ((long)y * w + x) * 3;
+            px[o] = r; px[o + 1] = g; px[o + 2] = b;
+        });
+        return px;
+    }
+
+    /// <summary>Paints the ring (innerDeg, outerDeg] around (az, el) (pixel centres) with a colour: a glow or a halo.</summary>
+    public static byte[] Ring(byte[] px, int w, int h, double azDeg, double elDeg, double innerDeg, double outerDeg, (byte R, byte G, byte B) colour)
+    {
+        var centre = Dir(azDeg, elDeg);
+        double cosIn = Math.Cos(innerDeg * Math.PI / 180), cosOut = Math.Cos(outerDeg * Math.PI / 180);
+        var (y0, y1) = RowsNear(h, w, elDeg, outerDeg);
+        for (var y = y0; y <= y1; y++)
+        for (var x = 0; x < w; x++)
+        {
+            var (az, el) = PixelAzEl(x + 0.5, y + 0.5, w, h);
+            var d = System.Numerics.Vector3.Dot(Dir(az, el), centre);
+            if (d < cosIn && d >= cosOut)
+            {
+                var o = ((long)y * w + x) * 3;
+                px[o] = colour.R; px[o + 1] = colour.G; px[o + 2] = colour.B;
+            }
+        }
+        return px;
+    }
+
+    /// <summary>A clipped white disc with a glow of <paramref name="glow"/> out to <paramref name="glowDeg"/> beyond its edge.</summary>
+    public static byte[] Lamp(byte[] px, int w, int h, double azDeg, double elDeg, double diameterDeg, (byte R, byte G, byte B) glow, double glowDeg = 4)
+    {
+        Ring(px, w, h, azDeg, elDeg, 0, diameterDeg / 2 + glowDeg, glow);
+        return ClippedDisc(px, w, h, azDeg, elDeg, diameterDeg / 2);
+    }
+
+    /// <summary>Sets about <paramref name="density"/> of the pixels (chosen by a seeded RNG) to 255: single clipped pixels.</summary>
+    public static byte[] WithScatter(byte[] px, int w, int h, int seed, double density)
+    {
+        var rng = new Random(seed);
+        var n = (long)Math.Round((long)w * h * density);
+        for (long i = 0; i < n; i++)
+        {
+            var o = ((long)rng.Next(h) * w + rng.Next(w)) * 3;
+            px[o] = px[o + 1] = px[o + 2] = 255;
+        }
+        return px;
+    }
+
+    /// <summary>
+    /// <paramref name="count"/> square stars of <paramref name="sizePx"/> x <paramref name="sizePx"/> white pixels on
+    /// black, at seeded positions with |elevation| ≤ <paramref name="maxLatDeg"/>, at least <paramref name="minSepDeg"/>
+    /// apart and from every point in <paramref name="avoid"/> (by 2x the separation). Returns the image and star centres.
+    /// </summary>
+    public static (byte[] Px, System.Collections.Generic.List<(double Az, double El)> Stars) StarField(
+        int w, int h, int seed, int count, int sizePx, double minSepDeg, double maxLatDeg, params (double Az, double El)[] avoid)
+    {
+        var px = new byte[(long)w * h * 3];
+        var rng = new Random(seed);
+        var stars = new System.Collections.Generic.List<(double Az, double El)>();
+        var dirs = new System.Collections.Generic.List<System.Numerics.Vector3>();
+        var cosSep = Math.Cos(minSepDeg * Math.PI / 180);
+        var cosAvoid = Math.Cos(2 * minSepDeg * Math.PI / 180);
+        while (stars.Count < count)
+        {
+            var x0 = rng.Next(w - sizePx);
+            var y0 = rng.Next(h - sizePx);
+            var (az, el) = PixelAzEl(x0 + sizePx / 2.0, y0 + sizePx / 2.0, w, h);
+            if (Math.Abs(el) > maxLatDeg) continue;
+            var d = Dir(az, el);
+            var ok = true;
+            foreach (var o in dirs) if (System.Numerics.Vector3.Dot(o, d) > cosSep) { ok = false; break; }
+            foreach (var a in avoid) if (System.Numerics.Vector3.Dot(Dir(a.Az, a.El), d) > cosAvoid) ok = false;
+            if (!ok) continue;
+            dirs.Add(d);
+            stars.Add((az, el));
+            for (var y = y0; y < y0 + sizePx; y++)
+            for (var x = x0; x < x0 + sizePx; x++)
+            {
+                var o = ((long)y * w + x) * 3;
+                px[o] = px[o + 1] = px[o + 2] = 255;
+            }
+        }
+        return (px, stars);
+    }
+
+    /// <summary>
+    /// <paramref name="count"/> clipped downlights of <paramref name="sizeDeg"/> across at elevation
+    /// <paramref name="elDeg"/>, evenly spaced in azimuth from 0°, each with a warm glow (sRGB 110,85,60, Y ≈ 0.1) out to
+    /// 4° beyond its edge, on a dim ceiling (sRGB 39, Y ≈ 0.02). Returns the image and the lamp azimuths.
+    /// </summary>
+    public static (byte[] Px, double[] Azimuths) Downlights(int w, int h, int count, double sizeDeg, double elDeg)
+    {
+        var px = LdrPanorama(w, h, (_, _) => (39, 39, 39));
+        var az = new double[count];
+        for (var i = 0; i < count; i++)
+        {
+            az[i] = -180 + 360.0 * i / count + 15;
+            Lamp(px, w, h, az[i], elDeg, sizeDeg, (110, 85, 60));
+        }
+        return (px, az);
+    }
+
+    private static (int Y0, int Y1) RowsNear(int h, int w, double elDeg, double radiusDeg)
+    {
+        var span = (double)w / h > 2.02 ? 180.0 * 2 * h / w : 180.0;
+        var top = (0.5 - Math.Min(90, elDeg + radiusDeg + 1) / span) * h;
+        var bottom = (0.5 - Math.Max(-90, elDeg - radiusDeg - 1) / span) * h;
+        return (Math.Clamp((int)Math.Floor(top) - 1, 0, h - 1), Math.Clamp((int)Math.Ceiling(bottom) + 1, 0, h - 1));
+    }
+
+    private static void ForEachNear(int w, int h, double azDeg, double elDeg, double radiusDeg, Action<int, int, double> visit)
+    {
+        var centre = Dir(azDeg, elDeg);
+        var cosR = Math.Cos(radiusDeg * Math.PI / 180);
+        var cosNear = Math.Cos((radiusDeg + 1.5) * Math.PI / 180);
+        var (y0, y1) = RowsNear(h, w, elDeg, radiusDeg);
+        for (var y = y0; y <= y1; y++)
+        for (var x = 0; x < w; x++)
+        {
+            var (az0, el0) = PixelAzEl(x + 0.5, y + 0.5, w, h);
+            if (System.Numerics.Vector3.Dot(Dir(az0, el0), centre) < cosNear) continue;
+            var hits = 0;
+            for (var sy = 0; sy < 4; sy++)
+            for (var sx = 0; sx < 4; sx++)
+            {
+                var (az, el) = PixelAzEl(x + (sx + 0.5) / 4, y + (sy + 0.5) / 4, w, h);
+                if (System.Numerics.Vector3.Dot(Dir(az, el), centre) >= cosR) hits++;
+            }
+            visit(x, y, hits / 16.0);
+        }
+    }
+
     /// <summary>Writes float RGB as a flat (non-RLE) Radiance .hdr.</summary>
     public static string WriteHdrRgb(string dir, string name, int w, int h, float[] rgb)
     {

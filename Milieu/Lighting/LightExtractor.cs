@@ -10,8 +10,9 @@ namespace Milieu.Lighting;
 /// [0,1]; longitude = (s − 0.5)·2π, latitude = (0.5 − t)·π, direction (cos lat cos lon, sin lat, cos lat sin lon).
 /// <list type="number">
 /// <item>Key: the texel with the highest luminance Y (ties: first in row-major order); its region is every texel within
-/// 6° with Y ≥ 10% of the peak. It is a key only if its energy is ≥ 5% of the total and the peak is ≥ 10x the median Y
-/// of the covered texels (a band panorama's empty rows don't count).</item>
+/// 6° with Y ≥ 10% of the peak. It is a key only if the peak is ≥ 10x the median Y of the covered texels (a band
+/// panorama's empty rows don't count) and either its energy is ≥ 5% of the total, or (a small, very strong sun) the
+/// median is above 0, the peak is ≥ 100x it and the energy is ≥ 1% of the total.</item>
 /// <item>Fills: the key region is zeroed, then a depth-2 median cut (Debevec) splits the rest into 4 rectangles along the
 /// longer angular extent at the energy median; ranked by energy per solid angle.</item>
 /// </list>
@@ -19,12 +20,16 @@ namespace Milieu.Lighting;
 public static class LightExtractor
 {
     /// <summary>Bump when the extraction changes: it is part of the rig cache key.</summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     public const double KeyRadiusDegrees = 6;
     public const float KeyRegionFraction = 0.1f;
     public const double KeyMinEnergyShare = 0.05;
     public const double KeyMinPeakOverMedian = 10;
+
+    /// <summary>The strong-peak branch: a peak this many times a non-zero median is a key from <see cref="KeyStrongMinShare"/> up.</summary>
+    public const double KeyStrongPeakOverMedian = 100;
+    public const double KeyStrongMinShare = 0.01;
     public const int CutDepth = 2;
 
     private const int W = RadianceProbe.Width;
@@ -101,7 +106,12 @@ public static class LightExtractor
                 sum += dirs[i] * (float)(y[i] * w);
             }
             var energy = new Vector3((float)er, (float)eg, (float)eb);
-            if (LightRig.Luminance(energy) >= KeyMinEnergyShare * totalY && yPeak >= KeyMinPeakOverMedian * CoveredMedian(y, probe))
+            var median = CoveredMedian(y, probe);
+            var keyY = LightRig.Luminance(energy);
+            var isKey = yPeak >= KeyMinPeakOverMedian * median
+                        && (keyY >= KeyMinEnergyShare * totalY
+                            || (median > 0 && yPeak >= KeyStrongPeakOverMedian * median && keyY >= KeyStrongMinShare * totalY));
+            if (isKey)
             {
                 var (s, t) = sum.Length() > 1e-12f ? ImageTexel(sum) : (((peak % W) + 0.5f) / W, ((peak / W) + 0.5f) / H);
                 key = new RigLight(s, t, energy);
@@ -129,6 +139,20 @@ public static class LightExtractor
     }
 
     private readonly record struct Rect(int X0, int X1, int Y0, int Y1);
+
+    /// <summary>The fills of a probe-sized linear RGB buffer (the median cut on its own, as the LDR estimate uses it).</summary>
+    internal static RigLight[] MedianCut(float[] rgb)
+    {
+        var dOmega = new double[H];
+        var dirs = new Vector3[W * H];
+        for (var row = 0; row < H; row++)
+        {
+            var t = (row + 0.5) / H;
+            dOmega[row] = 2 * Math.PI / W * (Math.PI / H) * Math.Cos(Latitude(t));
+            for (var x = 0; x < W; x++) dirs[row * W + x] = ImageDirection((x + 0.5) / W, t);
+        }
+        return MedianCut(rgb, dOmega, dirs);
+    }
 
     private static RigLight[] MedianCut(float[] rgb, double[] dOmega, Vector3[] dirs)
     {
