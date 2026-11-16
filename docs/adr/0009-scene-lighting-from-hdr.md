@@ -70,6 +70,8 @@ also local: PSync pairs never see them.
 - **Synced delivery.** Lights are local in both modes and the panel says pairs don't see them. Two assumptions: the
   item VFX's world yaw is the baked yaw (ICbR 0; ADR 0006's PICd 2 fallback would need the character's yaw), and a
   committed synced registration counts as drawn even if the item isn't (the lights then stay).
+  **Amended by ADR 0011 (2026-11-16):** under synced delivery the dome carries the rig as VFX lights that pairs see; native
+  lights step aside only when the drawn synced dome carries at least one VFX light.
 - **Brio coexistence.** Brio lists Milieu's lights as world lights and its DestroyAll doesn't free them; edits made in
   Brio last until Milieu's next planned change.
 - **Deferred:** an ambient WorldLight (untested `Create(WorldLight)`, exterior only) and the environment-lighting
