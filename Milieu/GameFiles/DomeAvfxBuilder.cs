@@ -9,8 +9,9 @@ namespace Milieu.GameFiles;
 /// <summary>
 /// One VFX point light (effector) baked into a synced dome (docs/adr/0011). <see cref="Position"/> is relative to the light's
 /// emitter (not world space: the emitter carries the player's world height). <see cref="Rgb"/> is the hue with each channel
-/// in [0, 1]; <see cref="Brightness"/> is the effector's Bri; <see cref="Range"/> its DstS. Shadows use the game's recipe
-/// (map + character shadows, no moving-object shadows) between <see cref="ShadowNear"/> and <see cref="ShadowFar"/>.
+/// in [0, 1]; <see cref="Brightness"/> is the effector's Bri; <see cref="Range"/> its DstS. A shadowed light has Attn 1 and all
+/// four shadow flags (bMvS gives character shadows, only near the light) between <see cref="ShadowNear"/> and
+/// <see cref="ShadowFar"/>; an unshadowed one has Attn 2 and no shadow flags.
 /// </summary>
 internal sealed record DomeLight(Vector3 Position, Vector3 Rgb, float Brightness, float Range, bool Shadows, float ShadowNear, float ShadowFar);
 

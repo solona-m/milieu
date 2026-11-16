@@ -95,7 +95,9 @@ public class DomeAvfxLightTests
     {
         var root = Build(Synced([Fill(1)]));
         Assert.Equal(0, Assert.Single(root.All("Emit")).Need("EfNo").AsInt());
-        Assert.Equal(0, Assert.Single(root.All("Efct")).Need("Data").Need("bSdw").AsInt());
+        var data = Assert.Single(root.All("Efct")).Need("Data");
+        Assert.Equal(0, data.Need("bSdw").AsInt());
+        Assert.Equal((2, 0), (data.Need("Attn").AsInt(), data.Need("bMvS").AsInt()));   // the recipe follows Shadows, not the slot
     }
 
     [Fact] // [AC-synced-lighting-7]
