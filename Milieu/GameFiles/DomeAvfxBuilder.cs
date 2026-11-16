@@ -309,7 +309,9 @@ internal static class DomeAvfxBuilder
     /// <summary>
     /// One point-light effector (EfVT 0) in the game's own shadow-light recipe, tested in game (2026-11-16): header RoOT 2,
     /// CCOT 0, bAOV 0 (doesn't light other VFX), bAGm 1 (lights the world); Data Col {RGB, Bri}, DstS (range), Rot (none),
-    /// Pos XYZ (emitter-relative), Attn 2 (cubic), shadows bSdw/bChS/bMpS (map + characters) with bMvS 0, SCDN/SCDF. Chunk
+    /// Pos XYZ (emitter-relative), SCDN/SCDF. A shadowed light has Attn 1 (Pickles Venue's falloff, which KeyBrightness was
+    /// tuned with) and bSdw/bChS/bMpS/bMvS 1: map shadows need bMpS, character shadows need bMvS, and in game characters
+    /// shadow only within a few units of the light (2026-11-16). An unshadowed light has Attn 2 and no shadow flags. Chunk
     /// order follows VFXEditor's AvfxEffector / AvfxEffectorDataPointLight.
     /// </summary>
     private static void Effector(AvfxChunkWriter w, DomeLight l)

@@ -10,10 +10,6 @@ public static class VfxLightLayout
     /// <summary>Key distance from the anchor (sky); in room mode it is clamped inside the dome.</summary>
     public const float KeyDistance = 30f;
 
-
-    /// <summary>WIP test: the key's highest elevation, so its shadow falls long beside the character, not under it.</summary>
-    public const float MaxKeyElevationDegrees = 15f;
-
     /// <summary>Fill distance from the anchor.</summary>
     public const float FillDistance = 8f;
 
@@ -23,8 +19,11 @@ public static class VfxLightLayout
     /// <summary>Room mode keeps lights inside the dome: distance ≤ this fraction of the radius.</summary>
     public const float RoomDistanceFraction = 0.9f;
 
-    /// <summary>Key Bri at strength 1, meant to roughly match the sun (Bri 5 cast a faint shadow next to it in game).</summary>
-    public const float KeyBrightness = 200f;   // WIP: in game, Bri 200 at 30 units looked right (strength 0.05 of Bri 4000)
+    /// <summary>
+    /// Key Bri at strength 1, tuned in game (2026-11-16, Mad Bird Ring, sky dome, key 30 units out, Attn 1): Bri 4000 was far too
+    /// bright and Bri 200 looked right.
+    /// </summary>
+    public const float KeyBrightness = 200f;
 
     /// <summary>
     /// The stand-in key's share of <see cref="KeyBrightness"/>, for an image with no sun (ADR 0011). 1: full key brightness,
@@ -32,15 +31,12 @@ public static class VfxLightLayout
     /// </summary>
     public const float StandInKeyScale = 1f;
 
-    /// <summary>Key range (DstS) beyond the key's distance: the light reaches past the anchor by this much.</summary>
-    public const float KeyRange = 30f;
+    /// <summary>Key range (DstS).</summary>
+    public const float KeyRange = 60f;
 
     /// <summary>Key shadow range (SCDN/SCDF); the game's recipe used 0.5/15 at short range, both near/far variants cast shadows.</summary>
-    public const float KeyShadowNear = 0.1f;
-    public const float KeyShadowFar = 20f;   // beyond the key's distance, like KeyRange
-
-    /// <summary>WIP: the shadow's near plane as a fraction of the key's distance (a tighter depth span, sharper shadows).</summary>
-    public const float KeyShadowNearFraction = 0.5f;
+    public const float KeyShadowNear = 0.5f;
+    public const float KeyShadowFar = 45f;
 
     /// <summary>The strongest fill's Bri at strength 1; weaker fills scale by their share.</summary>
     public const float FillBrightness = 4f;

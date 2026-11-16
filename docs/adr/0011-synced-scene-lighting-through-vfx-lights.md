@@ -25,6 +25,19 @@ Tested in game with the owner (testing builds 3-5 and dev builds 23-28, 2026-11-
 - **Static VFX (local delivery) never run effectors**, not even the Pickles Venue's own file.
 - An effector links from an emitter (`Emit.EfNo`), never from a timeline item; one effector per emitter.
 
+Tuned in game with the owner after the merge (dev builds 32-41, 2026-11-16, Mad Bird Ring, sky dome):
+
+- With bMvS 0 the key shadowed furniture (map) but never the character; **bMvS 1 adds character shadows**, so the
+  shadowed key now sets all four shadow flags.
+- **Characters shadow only within a few units of the light.** Range (DstS 8-60), shadow range (SCDN 0.1-15, SCDF
+  15-70), falloff (Attn 1 or 2), brightness and a 15° elevation cap all left that unchanged; map shadows reach the whole
+  scene. So a key at the dome wall lights the scene and shadows furniture but not characters. The owner chose that over a
+  light that follows the character (a light near the player, untested). The Pickles Venue's character-shadowing pool
+  lights are small lamps (DstS 1, Attn 1, bAOV 1, SCDF 20), consistent with this.
+- **Brightness:** at 30 units with Attn 1, Bri 4000 was far too bright and Bri 200 looked right (`KeyBrightness`).
+  The shadowed key uses Attn 1, the falloff that brightness was judged with; fills keep Attn 2.
+- The game's own sun still lights and shadows the scene through the dome: a shadow seen at distance came from it.
+
 ## Decision
 
 Under a synced delivery with scene lighting on, the synced dome carries Milieu's light rig as VFX point lights.
@@ -89,8 +102,9 @@ UNVERIFIED in game:
 
 1. A particle-less emitter carries a point light (then turn `FillsOnOwnEmitters` on). When fills turn on, revisit the
    stand-in's fill slot (EDGE-synced-lighting-54: fill count N gives the stand-in + N − 1 fills).
-2. Key brightness matches the sun at strength 1; key and fill range (`KeyRange`, `FillRange`) reach the player.
-3. Key shadows at distance 30 (and 9 in room mode) with near 0.5 / far 45.
+2. Key brightness at strength 1 (seen in the sky dome at 30 units: Bri 200 looks right); in room mode, and fill range
+   (`FillRange`) reaching the player.
+3. Key map shadows at distance 9 in room mode (seen at 30 in the sky dome). Character shadows: only near the light (above).
 4. The light direction when the character turns: ICbR 0 sits in the dome emitter's ItPr and only stops the *particle*
    inheriting the emitter's rotation. The effectors hang off the emitters themselves, which follow the VFX root including
    its rotation, so the lights may swing with the carrier while the dome doesn't (follow-up if seen).

@@ -46,7 +46,7 @@ public class DomeAvfxLightTests
         Assert.Equal(40f, d.Need("Col").Need("Bri").CurveValue());
         Assert.Equal(60f, d.Need("DstS").CurveValue());
         Assert.Equal((3f, 20f, -4f), (d.Need("Pos").Need("X").CurveValue(), d.Need("Pos").Need("Y").CurveValue(), d.Need("Pos").Need("Z").CurveValue()));
-        Assert.Equal((2, 1, 1, 1, 0), (d.Need("Attn").AsInt(), d.Need("bSdw").AsInt(), d.Need("bChS").AsInt(), d.Need("bMpS").AsInt(), d.Need("bMvS").AsInt()));
+        Assert.Equal((1, 1, 1, 1, 1), (d.Need("Attn").AsInt(), d.Need("bSdw").AsInt(), d.Need("bChS").AsInt(), d.Need("bMpS").AsInt(), d.Need("bMvS").AsInt()));   // character shadows need bMvS (in game)
         Assert.Equal((0.5f, 45f), (d.Need("SCDN").AsFloat(), d.Need("SCDF").AsFloat()));
         // One emitter: the dome's, linked to effector 0.
         Assert.Equal(0, Assert.Single(root.All("Emit")).Need("EfNo").AsInt());
@@ -79,7 +79,10 @@ public class DomeAvfxLightTests
         var effs = root.All("Efct").ToArray();
         Assert.Equal(1, effs[0].Need("Data").Need("bSdw").AsInt());
         for (var i = 1; i < n; i++)
+        {
             foreach (var f in new[] { "bSdw", "bChS", "bMpS", "bMvS" }) Assert.Equal(0, effs[i].Need("Data").Need(f).AsInt());   // fills: no shadows
+            Assert.Equal(2, effs[i].Need("Data").Need("Attn").AsInt());   // fills keep the cubic falloff; only the key uses Attn 1
+        }
         var items = root.Need("TmLn").All("Item").ToArray();
         Assert.Equal(n, root.Need("TmLn").Need("TICn").AsInt());
         Assert.Equal(Enumerable.Range(0, n), items[^1].Children.Where(c => c.Tag == "EmNo").Select(c => c.AsInt()));
