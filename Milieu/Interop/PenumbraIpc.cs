@@ -209,7 +209,13 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, Sync.ISyncM
 
     // ---------------------------------------------------------------- ISyncModApi: thin wrappers, -1 when the IPC throws
 
-    bool Sync.ISyncModApi.PenumbraPresent => State == PenumbraState.Available;
+    bool Sync.ISyncModApi.PenumbraPresent => IsReachable(State);
+
+    /// <summary>
+    /// Penumbra answers IPC: every state but Missing and Incompatible (the set OnPenumbraInitialized accepts). Synced
+    /// delivery works under ModsDisabled and NoBaseCollection, so taking the mod down must work there too.
+    /// </summary>
+    internal static bool IsReachable(PenumbraState state) => state is not (PenumbraState.Missing or PenumbraState.Incompatible);
 
     int Sync.ISyncModApi.ReloadMod(string dir, string name) => Call(() => realReloadMod.InvokeFunc(dir, name), "ReloadMod");
 

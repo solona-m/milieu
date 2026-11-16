@@ -1,4 +1,5 @@
 using System;
+using Milieu.Backdrop;
 using Milieu.Interop;
 using Xunit;
 
@@ -79,4 +80,13 @@ public class PenumbraIpcLabelTests
         Assert.Equal("Penumbra.GetPlayerMetaManipulations", PenumbraIpc.LabelGetPlayerMetaManipulations);
         Assert.Equal("Penumbra.RedrawObject.V5", PenumbraIpc.LabelRedrawObject);
     }
+
+    [Theory] // [AC-synced-lighting-8] [EDGE-synced-lighting-36]
+    [InlineData(PenumbraState.Available, true)]
+    [InlineData(PenumbraState.ModsDisabled, true)]
+    [InlineData(PenumbraState.NoBaseCollection, true)]
+    [InlineData(PenumbraState.Missing, false)]
+    [InlineData(PenumbraState.Incompatible, false)]
+    public void Reachable_EveryStateButMissingOrIncompatible(PenumbraState state, bool reachable) =>
+        Assert.Equal(reachable, PenumbraIpc.IsReachable(state));
 }

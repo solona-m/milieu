@@ -994,4 +994,38 @@ public sealed class BackdropControllerSyncTests : IDisposable
         c.Teardown();
         Assert.True(pen.SyncClears.Count > clears);   // disabled (when possible) and emptied on disk
     }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void PendingRebuildTimesOut_ShownPutBackRefused_GoesHidden_RaisesHidden_LitNull()
+    {
+        ShowSynced();
+        var hidden = 0;
+        c.Hidden += () => hidden++;
+        pen.ResolvePlayerWorks = false;            // the rebuild never resolves
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();
+        c.Tick();
+        Assert.Equal(BackdropState.AwaitingRedirect, c.State);
+        pen.SetSyncedResult = 9;                   // putting the shown dome back is refused
+        Ticks(BackdropController.RedirectTimeoutTicks + 1);
+        Assert.Equal(BackdropState.Hidden, c.State);
+        Assert.Equal(1, hidden);
+        Assert.Null(c.Lit);
+        Assert.DoesNotContain(pen.Player!.Value.Id, pen.Synced.Keys);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void ShowSupersedesPending_ShownPutBackRefused_LitNull()
+    {
+        ShowSynced();
+        pen.ResolvePlayerWorks = false;
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();
+        c.Tick();
+        Assert.Equal(BackdropState.AwaitingRedirect, c.State);
+        pen.SetSyncedResult = 9;                   // every call refused from here on
+        c.Show();                                  // supersedes the pending one; the shown one can't be put back
+        Assert.Null(c.Lit);
+        Assert.DoesNotContain(pen.Player!.Value.Id, pen.Synced.Keys);
+    }
 }

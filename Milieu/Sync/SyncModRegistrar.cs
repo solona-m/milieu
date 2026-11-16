@@ -12,6 +12,7 @@ namespace Milieu.Sync;
 /// </summary>
 public interface ISyncModApi
 {
+    /// <summary>Penumbra answers IPC (also with mods disabled or no Base collection); false when it is missing or incompatible.</summary>
     bool PenumbraPresent { get; }
     int ReloadMod(string dir, string name);
     int AddMod(string dir);
