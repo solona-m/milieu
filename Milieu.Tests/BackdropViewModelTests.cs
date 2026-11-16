@@ -120,7 +120,7 @@ public class BackdropViewModelTests
         Assert.Equal(3, offered.DeliveryLabels.Count);
     }
 
-    [Fact] // [AC-synced-delivery-1] [AC-synced-delivery-10]
+    [Fact] // [AC-synced-delivery-1] [AC-synced-delivery-10] [AC-synced-lighting-10] [EDGE-synced-lighting-34]
     public void DeliveryLabels_TooltipsAndHints()
     {
         var c = Cfg();
@@ -132,8 +132,8 @@ public class BackdropViewModelTests
         Assert.Null(BackdropViewModel.DeliveryTooltip(Milieu.Sync.DeliveryMode.Local));
         Assert.Equal("", vm.DeliveryHint);
         c.Delivery = Milieu.Sync.DeliveryMode.Cushion;
-        Assert.Equal("Experimental. Summon your Plush Cushion. PSync uploads your image to its server and sends it to all your pairs, who see the dome around you after their next sync. Every change redraws your character.",
-                     vm.DeliveryHint);
+        Assert.Equal("Experimental. Summon your Plush Cushion. PSync uploads your image to its server and sends it to all your pairs, who see the dome around you after their next sync. Every change redraws your character. Mods that change the cushion's model or textures can stop the backdrop showing; turn them off if it doesn't appear.",
+                     vm.DeliveryHint);   // [AC-synced-lighting-10]
         c.Delivery = Milieu.Sync.DeliveryMode.MadBirdRing;
         Assert.Equal("Experimental. Wear the Mad Bird Ring on your right hand. PSync uploads your image to its server and sends it to all your pairs, who see the dome around you after their next sync. Every change redraws your character.",
                      vm.DeliveryHint);
@@ -187,5 +187,19 @@ public class BackdropViewModelTests
         action();
         Assert.Equal(Milieu.Sync.DeliveryMode.MadBirdRing, c.Delivery);
         Assert.Equal(["save", "apply"], calls);
+    }
+
+    [Fact] // [EDGE-synced-lighting-34]
+    public void CushionConflictSentence_OnlyForTheCushion()
+    {
+        var c = Cfg();
+        var vm = new BackdropViewModel(St(BackdropState.Hidden), MessageKey.None, c, true);
+        foreach (var mode in new[] { Milieu.Sync.DeliveryMode.Local, Milieu.Sync.DeliveryMode.MadBirdRing })
+        {
+            c.Delivery = mode;
+            Assert.DoesNotContain(BackdropViewModel.CushionConflictSentence, vm.DeliveryHint);
+        }
+        c.Delivery = Milieu.Sync.DeliveryMode.Cushion;
+        Assert.EndsWith(BackdropViewModel.CushionConflictSentence, vm.DeliveryHint);
     }
 }
