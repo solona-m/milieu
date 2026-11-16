@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Milieu.Backdrop;
 using Milieu.Lighting;
+using Milieu.Sync;
 using Milieu.Tests.Support;
 using Xunit;
 
@@ -17,6 +18,8 @@ public sealed class PluginWiringTests : IDisposable
     private readonly Configuration config = new() { NightWhileShown = true };
     private readonly BackdropController c;
     private readonly NightWhileShown night;
+    private readonly FakeSunSwitch sw = new();
+    private readonly SunOff sunOff;
 
     public PluginWiringTests()
     {
@@ -24,6 +27,15 @@ public sealed class PluginWiringTests : IDisposable
         config.ImagePath = dir.File("pano.jpg");
         c = new BackdropController(new FakeSpawner(), pen, game, new KeyedPreparer(cache), cache, config, new FakeLog(), run: f => f());
         night = new NightWhileShown(env, game, () => c.IsDrawn, config, new FakeSentinel(), new FakeLog(), () => false);
+        sunOff = new SunOff(sw, game, () => c.Lit, () => c.EffectiveDelivery, config, new FakeSentinel(), new FakeLog(), () => false);
+    }
+
+    private void ShowAndSunOff()
+    {
+        c.Show(); c.Tick(); c.Tick();
+        Assert.True(c.IsDrawn);
+        sunOff.Tick();
+        Assert.True(sw.Shared.Writing);
     }
 
     public void Dispose() => dir.Dispose();
@@ -48,15 +60,84 @@ public sealed class PluginWiringTests : IDisposable
         Assert.Equal(50500f, env.Writes[^1]);   // before any further tick
     }
 
-    [Fact] // [EDGE-synced-lighting-28]
+    [Fact] // [EDGE-synced-lighting-28] [AC-sun-off-2] [EDGE-sun-off-8]
     public void Unwire_Detaches()
     {
-        Plugin.Wire(c, null, night);
-        Plugin.Unwire(c, null, night);
+        Plugin.Wire(c, null, night, sunOff);
+        Plugin.Unwire(c, null, night, sunOff);
         ShowAndNight();
+        sunOff.Tick();
+        Assert.True(sw.Shared.Writing);
         var writes = env.Writes.Count;
         c.Hide();
         Assert.Equal(writes, env.Writes.Count);
+        Assert.True(sw.Shared.Writing);   // detached: the Hide didn't reach sun off
+    }
+
+    [Theory] // [AC-sun-off-2] [EDGE-sun-off-8]
+    [InlineData("Hide")]
+    [InlineData("PenumbraDisposed")]
+    public void Wire_HiddenStopsSunOffWithinTheCall(string how)
+    {
+        Plugin.Wire(c, null, null, sunOff);
+        ShowAndSunOff();
+        if (how == "Hide") c.Hide(); else c.OnPenumbraDisposed();
+        Assert.False(sw.Shared.Writing);   // before any further tick
+    }
+
+    [Fact] // [AC-sun-off-2] [EDGE-sun-off-9]
+    public void ZoneOrLogout_StopsSunOff_RestartsOnNextReadyTick()
+    {
+        Plugin.Wire(c, null, night, sunOff);
+        ShowAndSunOff();
+        using var buf = new EnvBuffer();
+        buf.SetColours(0.8f, 0.7f, 0.6f, 0f, 0f, 0f);
+        buf.Post(sw.Shared);
+        sunOff.Tick();
+        Assert.Equal(SunOffProbe.Passed, sw.Shared.Probe);
+        Plugin.OnZoneOrLogout(c.OnTerritoryChanged, null, night, zone: true, sunOff);
+        Assert.False(sw.Shared.Writing);
+        for (var i = 0; i < 2 * BackdropController.RespawnDelayFrames && !c.IsDrawn; i++) c.Tick();
+        Assert.True(c.IsDrawn);
+        sunOff.Tick();
+        Assert.True(sw.Shared.Writing);
+        Assert.Equal(SunOffStatus.On, sunOff.Status);   // no second capture
+        Assert.Equal(1, sw.Installs);
+
+        game.IsLoggedIn = false;
+        Plugin.OnZoneOrLogout(c.OnLogout, null, night, zone: false, sunOff);
+        Assert.False(sw.Shared.Writing);
+    }
+
+    [Fact] // [AC-sun-off-7] [EDGE-sun-off-3]
+    public void CreateSunOff_KillSwitchOff_ReturnsNull_NeverCallsFactories()
+    {
+        int switches = 0, sentinels = 0;
+        SunOff? Make(bool available, out ISunSwitch? created) => Plugin.CreateSunOff(available, () => { switches++; return new FakeSunSwitch(); },
+            new FakeGame(), () => null, () => DeliveryMode.Local, new Configuration(), () => { sentinels++; return new FakeSentinel(); },
+            new FakeLog(), () => false, out created);
+        Assert.Null(Make(false, out var none));
+        Assert.Null(none);
+        Assert.Equal((0, 0), (switches, sentinels));
+        Assert.NotNull(Make(true, out var made));
+        Assert.NotNull(made);
+        Assert.Equal((1, 1), (switches, sentinels));
+    }
+
+    [Fact] // [EDGE-sun-off-16]
+    public void TickAll_ControllerLightingNightSunOff()
+    {
+        var order = new List<string>();
+        Plugin.TickAll(() => order.Add("controller"), () => order.Add("lighting"), () => order.Add("night"), () => order.Add("sun"));
+        Assert.Equal(["controller", "lighting", "night", "sun"], order);
+    }
+
+    [Fact] // [AC-sun-off-2] [EDGE-sun-off-11]
+    public void TeardownOrder_LightingNightSunOffController()
+    {
+        var order = new List<string>();
+        Plugin.TeardownOrder(() => order.Add("lighting"), () => order.Add("night"), () => order.Add("controller"), () => order.Add("sun"));
+        Assert.Equal(["lighting", "night", "sun", "controller"], order);
     }
 
     [Fact] // [AC-synced-lighting-5] [EDGE-synced-lighting-22]

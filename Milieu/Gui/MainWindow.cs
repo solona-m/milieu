@@ -29,6 +29,8 @@ public sealed class MainWindow : Window, IDisposable
     private readonly bool lightingAvailable;
     private readonly Func<NightStatus> nightStatus;
     private readonly bool nightAvailable;
+    private readonly Func<SunOffStatus> sunOffStatus;
+    private readonly bool sunOffAvailable;
     private readonly FileDialogManager files = new();
 
     private static readonly Vector4 Red = new(1f, 0.4f, 0.4f, 1f);
@@ -37,9 +39,12 @@ public sealed class MainWindow : Window, IDisposable
 
     public MainWindow(BackdropController controller, Configuration config, Action save, SceneGridViewModel grid, ThumbnailCache thumbs,
                       Func<bool>? syncedAvailable = null, Func<LightingStatusSnapshot>? lightingStatus = null, bool lightingAvailable = false,
-                      Func<NightStatus>? nightStatus = null, bool nightAvailable = false)
+                      Func<NightStatus>? nightStatus = null, bool nightAvailable = false,
+                      Func<SunOffStatus>? sunOffStatus = null, bool sunOffAvailable = false)
         : base($"Milieu (build {Plugin.BuildNumber})###MilieuMain")
     {
+        this.sunOffStatus = sunOffStatus ?? (() => SunOffStatus.Off);
+        this.sunOffAvailable = sunOffAvailable;
         this.nightStatus = nightStatus ?? (() => NightStatus.Off);
         this.nightAvailable = nightAvailable;
         this.syncedAvailable = syncedAvailable ?? (() => false);
@@ -237,7 +242,25 @@ public sealed class MainWindow : Window, IDisposable
             if (ImGui.SmallButton("Credits")) Dalamud.Utility.Util.OpenLink(BackdropPins.CreditsUrl);
         }
         DrawLighting(vm);
+        DrawSunOff();
         DrawNight();
+    }
+
+    /// <summary>"Game sun" (docs/adr/0013), only when the kill switch (Plugin.SunOffAvailable) is on.</summary>
+    private void DrawSunOff()
+    {
+        var vm = new SunOffViewModel(sunOffStatus(), sunOffAvailable);
+        if (!vm.Visible) return;
+        ImGui.Separator();
+        ImGui.TextUnformatted(SunOffViewModel.Header);
+        var on = config.SunOffWhileShown;
+        using (ImRaii.Disabled(!vm.ControlsEnabled))
+            if (ImGui.Checkbox(SunOffViewModel.ToggleLabel, ref on)) controller.Post(SunOffViewModel.Change(config, on, save));
+        if (vm.StatusText.Length > 0)
+            ImGui.TextColored(vm.StatusSeverity == Severity.Error ? Red : vm.StatusSeverity == Severity.Warning ? Yellow : Vector4.One, vm.StatusText);
+        ImGui.PushTextWrapPos(0f);
+        ImGui.TextDisabled(SunOffViewModel.Note);
+        ImGui.PopTextWrapPos();
     }
 
     /// <summary>"Time of day" (docs/adr/0012), only when the kill switch (Plugin.NightAvailable) is on.</summary>

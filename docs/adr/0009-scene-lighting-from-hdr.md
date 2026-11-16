@@ -39,7 +39,9 @@ also local: PSync pairs never see them.
   no game function.) `LightInterop` scans
   `Scene.Light.Addresses.Create` and calls only that pointer (never the generated static), with a null pool name;
   virtual functions go through the instance's own vtable (the generated members). Layouts are ClientStructs' as bundled
-  with Dalamud (no local mirrors, so no frozen offsets). No hooks: each light's vtable is recorded at create and compared
+  with Dalamud (no local mirrors, so no frozen offsets; ADR 0013, sun off, makes a scoped exception: 24 bytes of the
+  environment state mirrored from Brio/Ktisis, behind a plausibility check, and the static-pointer read from the hooked
+  function's thread). No hooks: each light's vtable is recorded at create and compared
   before every later call (a heuristic for a light the game freed). The lifecycle is adapted from Brio (GPL-3.0,
   credited in THIRD_PARTY_NOTICES): render transform bound to the object's transform, per-frame
   UpdateRender/UpdateCulling/UpdateMaterials, CleanupRender then Dtor.
@@ -77,7 +79,8 @@ also local: PSync pairs never see them.
 - **Brio coexistence.** Brio lists Milieu's lights as world lights and its DestroyAll doesn't free them; edits made in
   Brio last until Milieu's next planned change.
 - **Deferred:** an ambient WorldLight (untested `Create(WorldLight)`, exterior only) and the environment-lighting
-  override (needs a per-frame hook on a Brio-only signature and would fight Brio). No calibration slider.
+  override (needs a per-frame hook on a Brio-only signature and would fight Brio; taken up for the sun and moon colour by
+  ADR 0013, sun off under "Only me"). No calibration slider.
 
 ## Consequences
 

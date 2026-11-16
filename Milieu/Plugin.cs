@@ -36,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 45;
+    public const int BuildNumber = 50;
 
     private const string CommandName = "/milieu";
 
@@ -50,6 +50,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly BackdropController controller;
     private readonly SceneLighting? lighting;
     private readonly NightWhileShown? night;
+    private readonly SunOff? sunOff;
+    private readonly IDisposable? sunOffInterop;
     private readonly DefaultBackdropsDownloadService downloads;
     private readonly SceneGridViewModel grid;
 
@@ -82,7 +84,12 @@ public sealed class Plugin : IDalamudPlugin
         night = CreateNight(NightAvailable(), () => new EnvTimeInterop(Framework, log), gameState, () => controller.IsDrawn, config,
                             () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.NightFileName), log, "Night sentinel"), log,
                             () => Framework.IsFrameworkUnloading);
-        Wire(controller, lighting, night);   // the None tile and /milieu off remove the lights and restore the time within the call
+        sunOff = CreateSunOff(SunOffAvailable(), () => new SunOffInterop(SigScanner, Hooks, Framework, log), gameState, () => controller.Lit,
+                              () => controller.EffectiveDelivery, config,
+                              () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.SunOffFileName), log, "Sun-off sentinel"),
+                              log, () => Framework.IsFrameworkUnloading, out var sunSwitch);
+        sunOffInterop = sunSwitch as IDisposable;
+        Wire(controller, lighting, night, sunOff);   // the None tile and /milieu off remove the lights, restore the time and the sun within the call
         var userImages = config.UserImages.ToArray();
         Task.Run(() =>
         {
@@ -107,7 +114,8 @@ public sealed class Plugin : IDalamudPlugin
         grid = new SceneGridViewModel(config, Save, controller.Post, controller, downloads, File.Exists);
         mainWindow = new MainWindow(controller, config, Save, grid, new ThumbnailCache(TextureProvider, thumbStore), SyncedAvailable,
                                     () => lighting?.Status ?? LightingStatusSnapshot.Initial, lighting != null,
-                                    () => night?.Status ?? NightStatus.Off, night != null);
+                                    () => night?.Status ?? NightStatus.Off, night != null,
+                                    () => sunOff?.Status ?? SunOffStatus.Off, sunOff != null);
         windows.AddWindow(mainWindow);
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -156,6 +164,27 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private static bool NightAvailable() => true;
 
+    /// <summary>
+    /// Sun off's kill switch (docs/adr/0013): return false and nothing sun-related is scanned, hooked, constructed or drawn.
+    /// Release gate: no testing or stable tag ships with this true (and the option on by default) until ADR 0013's
+    /// UNVERIFIED items 1, 2, 3 and 5 have passed in game; otherwise flip this to false, or the default to off, before tagging.
+    /// </summary>
+    private static bool SunOffAvailable() => true;
+
+    /// <summary>
+    /// Test seam: builds sun off and its switch, or nothing at all (the factories are never called) when the kill switch is
+    /// off. <paramref name="created"/> is the switch, disposed with the hooks.
+    /// </summary>
+    internal static SunOff? CreateSunOff(bool available, Func<ISunSwitch> switchFactory, Backdrop.IGameState game, Func<LitBackdrop?> lit,
+                                         Func<DeliveryMode> delivery, Configuration config, Func<ILightingSentinel> sentinelFactory,
+                                         ILogSink log, Func<bool> isUnloading, out ISunSwitch? created)
+    {
+        created = null;
+        if (!available) return null;
+        created = switchFactory();
+        return new SunOff(created, game, lit, delivery, config, sentinelFactory(), log, isUnloading);
+    }
+
     /// <summary>Test seam: builds night while shown, or nothing at all (the factories are never called) when the kill switch is off.</summary>
     internal static NightWhileShown? CreateNight(bool available, Func<IEnvTime> envFactory, Backdrop.IGameState game, Func<bool> drawn,
                                                  Configuration config, Func<ILightingSentinel> sentinelFactory, ILogSink log,
@@ -189,47 +218,53 @@ public sealed class Plugin : IDalamudPlugin
         return running.Length == 0 ? null : Task.WhenAll(running);
     }
 
-    private void OnUpdate(IFramework _) => TickAll(controller.Tick, lighting == null ? null : lighting.Tick, night == null ? null : night.Tick);
+    private void OnUpdate(IFramework _) => TickAll(controller.Tick, lighting == null ? null : lighting.Tick, night == null ? null : night.Tick,
+                                                   sunOff == null ? null : sunOff.Tick);
 
-    private void OnTerritoryChanged(uint _) => OnZoneOrLogout(controller.OnTerritoryChanged, lighting, night, zone: true);
+    private void OnTerritoryChanged(uint _) => OnZoneOrLogout(controller.OnTerritoryChanged, lighting, night, zone: true, sunOff);
 
-    private void OnLogout(int type, int code) => OnZoneOrLogout(controller.OnLogout, lighting, night, zone: false);
+    private void OnLogout(int type, int code) => OnZoneOrLogout(controller.OnLogout, lighting, night, zone: false, sunOff);
 
     /// <summary>
-    /// Test seam, the tick order: controller, then lighting, then night, so a dome that went away this tick takes its lights
-    /// and the night with it in the same tick.
+    /// Test seam, the tick order: controller, then lighting, then night, then sun off, so a dome that went away this tick
+    /// takes its lights, the night and the sun off with it in the same tick.
     /// </summary>
-    internal static void TickAll(Action controllerTick, Action? lightingTick, Action? nightTick)
+    internal static void TickAll(Action controllerTick, Action? lightingTick, Action? nightTick, Action? sunOffTick = null)
     {
         controllerTick();
         lightingTick?.Invoke();
         nightTick?.Invoke();
+        sunOffTick?.Invoke();
     }
 
     /// <summary>
     /// Test seam: a zone change or logout. The night is forgotten <em>first</em> (nothing written now; restored on the first
     /// ready tick), because the controller's logout hides the backdrop and its Hidden event would otherwise restore the time
-    /// during the logout. Then the controller's own handling, then the lights.
+    /// during the logout. Then the sun comes back (writes stop), then the controller's own handling, then the lights.
     /// </summary>
-    internal static void OnZoneOrLogout(Action controllerEvent, SceneLighting? lighting, NightWhileShown? night, bool zone)
+    internal static void OnZoneOrLogout(Action controllerEvent, SceneLighting? lighting, NightWhileShown? night, bool zone,
+                                        SunOff? sunOff = null)
     {
         if (zone) night?.OnTerritoryChanged();
         else night?.Forget();
+        sunOff?.Release();
         controllerEvent();
         lighting?.RemoveAll();
     }
 
     /// <summary>Test seam: the Hidden subscriptions (lights removed and the time restored within the Hide call).</summary>
-    internal static void Wire(BackdropController controller, SceneLighting? lighting, NightWhileShown? night)
+    internal static void Wire(BackdropController controller, SceneLighting? lighting, NightWhileShown? night, SunOff? sunOff = null)
     {
         if (lighting != null) controller.Hidden += lighting.RemoveAll;
         if (night != null) controller.Hidden += night.Release;
+        if (sunOff != null) controller.Hidden += sunOff.Release;
     }
 
-    internal static void Unwire(BackdropController controller, SceneLighting? lighting, NightWhileShown? night)
+    internal static void Unwire(BackdropController controller, SceneLighting? lighting, NightWhileShown? night, SunOff? sunOff = null)
     {
         if (lighting != null) controller.Hidden -= lighting.RemoveAll;
         if (night != null) controller.Hidden -= night.Release;
+        if (sunOff != null) controller.Hidden -= sunOff.Release;
     }
 
     // Penumbra events fire on Penumbra's thread: hop to the framework thread before touching the VFX or the IPC.
@@ -253,19 +288,25 @@ public sealed class Plugin : IDalamudPlugin
             log: log);
     }
 
-    private void TeardownAll() => TeardownOrder(lighting == null ? null : lighting.Teardown, night == null ? null : night.Teardown, controller.Teardown);
+    private void TeardownAll() => TeardownOrder(lighting == null ? null : lighting.Teardown, night == null ? null : night.Teardown,
+                                                controller.Teardown, sunOff == null ? null : sunOff.Teardown);
 
-    /// <summary>Test seam: the lights, then the night, go before the dome (no native call is made while the game is exiting).</summary>
-    internal static void TeardownOrder(Action? lightingTeardown, Action? nightTeardown, Action controllerTeardown)
+    /// <summary>
+    /// Test seam: the lights, then the night, then sun off, go before the dome (no native call is made while the game is
+    /// exiting). The sun-off hook itself is disposed later, in Unhook (its flag is closed first).
+    /// </summary>
+    internal static void TeardownOrder(Action? lightingTeardown, Action? nightTeardown, Action controllerTeardown, Action? sunOffTeardown = null)
     {
         lightingTeardown?.Invoke();
         nightTeardown?.Invoke();
+        sunOffTeardown?.Invoke();
         controllerTeardown();
     }
 
     private void Unhook()
     {
-        Unwire(controller, lighting, night);
+        Unwire(controller, lighting, night, sunOff);
+        sunOffInterop?.Dispose();   // closes the flag, then disposes the hook
         vfx.GameRemoved -= controller.OnGameRemoved;
         vfx.Dispose();
         penumbra.Initialized -= OnPenumbraInitialized;

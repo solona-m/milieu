@@ -386,3 +386,21 @@ public sealed class FakeEnvTime : Milieu.Lighting.IEnvTime
         return Milieu.Lighting.EnvWrite.Ok;
     }
 }
+
+/// <summary>The environment-update hook behind ISunSwitch, with a real SunOffShared for the post-step (docs/adr/0013).</summary>
+public sealed class FakeSunSwitch : Milieu.Lighting.ISunSwitch
+{
+    public bool Available { get; set; } = true;
+    public bool InstallResult = true;
+    public int Installs;
+    public Milieu.Lighting.SunOffShared Shared { get; } = new();
+    /// <summary>Optional log shared with a FakeSentinel's Calls, to assert the order of calls across both.</summary>
+    public List<string>? Order;
+
+    public bool Install()
+    {
+        Installs++;
+        Order?.Add("Install");
+        return InstallResult;
+    }
+}

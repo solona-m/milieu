@@ -42,3 +42,4 @@ real decision.]
 - [0010](0010-estimated-scene-lighting-for-ldr.md) Estimated scene lighting for JPG/PNG and bundled scenes
 - [0011](0011-synced-scene-lighting-through-vfx-lights.md) Synced scene lighting through VFX lights
 - [0012](0012-night-while-shown.md) Night while the backdrop is shown
+- [0013](0013-sun-off-while-shown.md) Sun off while the backdrop is shown to you only

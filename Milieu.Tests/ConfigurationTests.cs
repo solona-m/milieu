@@ -270,4 +270,15 @@ public class ConfigurationTests
         var on = new Configuration { NightWhileShown = true };
         Assert.True(JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(on))!.NightWhileShown);
     }
+
+    [Fact] // [AC-sun-off-4] [EDGE-sun-off-18]
+    public void SunOffDefaultsOn()
+    {
+        Assert.True(new Configuration().SunOffWhileShown);
+        var old = JsonConvert.DeserializeObject<Configuration>("{\"Version\":4,\"SceneLighting\":true,\"NightWhileShown\":false}")!;
+        Assert.True(old.SunOffWhileShown);
+        Assert.Equal(4, Configuration.CurrentVersion);
+        var off = new Configuration { SunOffWhileShown = false };
+        Assert.False(JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(off))!.SunOffWhileShown);
+    }
 }

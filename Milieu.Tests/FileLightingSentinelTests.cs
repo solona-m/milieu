@@ -7,6 +7,18 @@ namespace Milieu.Tests;
 
 public class FileLightingSentinelTests
 {
+    [Fact] // [EDGE-sun-off-21]
+    public void SunOffFileName_Distinct()
+    {
+        Assert.NotEqual(FileLightingSentinel.FileName, FileLightingSentinel.SunOffFileName);
+        Assert.NotEqual(FileLightingSentinel.NightFileName, FileLightingSentinel.SunOffFileName);
+        using var t = new TempDir();
+        var sun = new FileLightingSentinel(t.File(FileLightingSentinel.SunOffFileName), new FakeLog(), "Sun-off sentinel");
+        sun.Set();
+        Assert.False(new FileLightingSentinel(t.File(FileLightingSentinel.FileName), new FakeLog()).WasSetAtStartup);
+        Assert.True(new FileLightingSentinel(t.File(FileLightingSentinel.SunOffFileName), new FakeLog()).WasSetAtStartup);
+    }
+
     [Fact] // [EDGE-scene-lighting-34]
     public void SetClearWasSet_RoundTrip()
     {
