@@ -8,7 +8,7 @@ namespace Milieu.Lighting;
 public static class VfxLightLayout
 {
     /// <summary>Key distance from the anchor (sky); in room mode it is clamped inside the dome.</summary>
-    public const float KeyDistance = 8f;
+    public const float KeyDistance = 3f;
 
     /// <summary>Fill distance from the anchor.</summary>
     public const float FillDistance = 8f;
@@ -29,7 +29,7 @@ public static class VfxLightLayout
     public const float StandInKeyScale = 1f;
 
     /// <summary>Key range (DstS).</summary>
-    public const float KeyRange = 60f;
+    public const float KeyRange = 8f;
 
     /// <summary>Key shadow range (SCDN/SCDF); the game's recipe used 0.5/15 at short range, both near/far variants cast shadows.</summary>
     public const float KeyShadowNear = 0.5f;
