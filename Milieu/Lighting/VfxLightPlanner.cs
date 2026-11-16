@@ -73,9 +73,10 @@ internal static class VfxLightPlanner
         {
             var d = Distance(VfxLightLayout.KeyDistance, radius);
             var bri = VfxLightLayout.KeyBrightness * (standIn ? standInKeyScale : 1f) * strength
-                      * Compensation(d, VfxLightLayout.KeyDistance, distanceExponent);
-            lights.Add(new DomeLight(anchor + LowerKey(k.Dir) * d, keyHue, bri, VfxLightLayout.KeyRange, true,
-                                     VfxLightLayout.KeyShadowNear, VfxLightLayout.KeyShadowFar));
+                      * Compensation(d, VfxLightLayout.KeyDistance, distanceExponent)
+                      * MathF.Pow(d / VfxLightLayout.KeyBrightnessReferenceDistance, 2f);
+            lights.Add(new DomeLight(anchor + LowerKey(k.Dir) * d, keyHue, bri, d + VfxLightLayout.KeyRange, true,
+                                     VfxLightLayout.KeyShadowNear, d + VfxLightLayout.KeyShadowFar));
         }
         var hasKey = lights.Count == 1;
 

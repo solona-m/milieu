@@ -8,7 +8,13 @@ namespace Milieu.Lighting;
 public static class VfxLightLayout
 {
     /// <summary>Key distance from the anchor (sky); in room mode it is clamped inside the dome.</summary>
-    public const float KeyDistance = 3f;
+    public const float KeyDistance = 30f;
+
+    /// <summary>
+    /// WIP test: the distance at which KeyBrightness was tuned (Bri 40 at 3 units shadowed the character only near the light).
+    /// A farther key gets Bri × (d / this)², so it still outshines the ambient light across the room, as the sun does.
+    /// </summary>
+    public const float KeyBrightnessReferenceDistance = 3f;
 
     /// <summary>WIP test: the key's highest elevation, so its shadow falls long beside the character, not under it.</summary>
     public const float MaxKeyElevationDegrees = 15f;
@@ -31,12 +37,12 @@ public static class VfxLightLayout
     /// </summary>
     public const float StandInKeyScale = 1f;
 
-    /// <summary>Key range (DstS).</summary>
+    /// <summary>Key range (DstS) beyond the key's distance: the light reaches past the anchor by this much.</summary>
     public const float KeyRange = 30f;
 
     /// <summary>Key shadow range (SCDN/SCDF); the game's recipe used 0.5/15 at short range, both near/far variants cast shadows.</summary>
     public const float KeyShadowNear = 0.1f;
-    public const float KeyShadowFar = 40f;
+    public const float KeyShadowFar = 40f;   // beyond the key's distance, like KeyRange
 
     /// <summary>The strongest fill's Bri at strength 1; weaker fills scale by their share.</summary>
     public const float FillBrightness = 4f;
