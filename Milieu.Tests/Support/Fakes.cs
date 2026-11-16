@@ -18,6 +18,30 @@ public sealed class FakeLog : ILogSink
     public void Error(string message) { lock (Lines) Lines.Add(("Error", message)); }
 }
 
+/// <summary>Records every mod-management call the registrar makes, in order; each call's result is configurable.</summary>
+public sealed class FakeSyncModApi : Milieu.Sync.ISyncModApi
+{
+    public readonly List<string> Calls = [];
+    public bool PenumbraPresent { get; set; } = true;
+    public int ReloadResult = 0, AddResult = 0, PriorityResult = 0, EnableResult = 0, DisableResult = 0;
+    public List<Guid> KnownCollections = [];
+
+    public int ReloadMod(string dir, string name) { Calls.Add($"Reload {dir}"); Names.Add(name); return ReloadResult; }
+    public int AddMod(string dir) { Calls.Add($"Add {dir}"); return AddResult; }
+    public int SetModPriority(Guid c, string dir, string name, int priority) { Calls.Add($"Priority {c} {priority}"); Names.Add(name); return PriorityResult; }
+
+    /// <summary>Every mod name passed to a lookup (must be empty: lookup by folder only).</summary>
+    public readonly List<string> Names = [];
+    public int SetModEnabled(Guid c, string dir, string name, bool enabled)
+    {
+        Calls.Add($"Enabled {c} {enabled}");
+        Names.Add(name);
+        return enabled ? EnableResult : DisableResult;
+    }
+    public void RemoveLegacyTempMod(Guid c) => Calls.Add($"Legacy {c}");
+    public IReadOnlyCollection<Guid> Collections() => KnownCollections;
+}
+
 public sealed class FakeSpawner : IVfxSpawner
 {
     public bool Available { get; set; } = true;
@@ -107,6 +131,8 @@ public sealed class FakePenumbra : IPenumbraRedirects, IPenumbraSync
     public Guid? Base = Guid.Parse("00000000-0000-0000-0000-0000000000ba");
     public Guid[] Listed = [];
     public int SetSyncedResult;
+    /// <summary>When non-empty, each SetSynced call takes its result from here first (then SetSyncedResult).</summary>
+    public readonly Queue<int> SetSyncedResults = [];
     public bool SetSyncedThrows;
     public bool ResolvePlayerWorks = true;
     public string Meta = "";
@@ -128,7 +154,8 @@ public sealed class FakePenumbra : IPenumbraRedirects, IPenumbraSync
         SyncCalls.Add("SetSynced");
         Order?.Add("SetSynced");
         if (SetSyncedThrows) return -1;   // the real wrapper maps a throw to -1
-        if (SetSyncedResult != 0) return SetSyncedResult;
+        var result = SetSyncedResults.Count > 0 ? SetSyncedResults.Dequeue() : SetSyncedResult;
+        if (result != 0) return result;
         SyncSets.Add((collection, paths, manips));
         Synced[collection] = new Dictionary<string, string>(paths);
         return 0;
@@ -333,4 +360,29 @@ public sealed class FakeSentinel : Milieu.Lighting.ILightingSentinel
     public FakeSentinel(bool setAtStartup = false) { WasSetAtStartup = setAtStartup; IsSet = setAtStartup; }
     public void Set() { Sets++; IsSet = true; Calls.Add("Set"); }
     public void Clear() { Clears++; IsSet = false; Calls.Add("Clear"); }
+}
+
+/// <summary>A game clock and time-of-day field to drive NightWhileShown.</summary>
+public sealed class FakeEnvTime : Milieu.Lighting.IEnvTime
+{
+    public bool Available { get; set; } = true;
+    public float? Day = 50000f;     // ~13:53 ET
+    public float? Clock = 50000f;
+    public Milieu.Lighting.EnvWrite WriteResult = Milieu.Lighting.EnvWrite.Ok;
+    public int Reads;
+    public readonly List<float> Writes = [];
+    /// <summary>Optional log shared with a FakeSentinel, to assert the order of calls across both.</summary>
+    public List<string>? Order;
+
+    public float? ReadDayTimeSeconds() { Reads++; return Day; }
+    public float? ReadEorzeaDaySeconds() { Reads++; return Clock; }
+
+    public Milieu.Lighting.EnvWrite WriteDayTimeSeconds(float seconds)
+    {
+        if (WriteResult != Milieu.Lighting.EnvWrite.Ok) return WriteResult;
+        Writes.Add(seconds);
+        Order?.Add("Write");
+        Day = seconds;
+        return Milieu.Lighting.EnvWrite.Ok;
+    }
 }

@@ -58,6 +58,12 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>How many coloured fill lights accompany the key light.</summary>
     public int FillLightCount { get; set; } = 2;
 
+    /// <summary>
+    /// Night while the backdrop is shown (docs/adr/0012): hold the local time of day at night while a dome is drawn, so the
+    /// game's sun doesn't compete with the backdrop's lights. Off by default; a config saved without it loads off.
+    /// </summary>
+    public bool NightWhileShown { get; set; }
+
     public static readonly (float Min, float Max) RepeatRange = (0.5f, 4f);
     public static readonly (float Min, float Max) BrightnessRange = (0f, 2f);
     public static readonly (float Min, float Max) ExposureRange = (-10f, 10f);

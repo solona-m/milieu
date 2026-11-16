@@ -29,6 +29,7 @@ public sealed class SceneLightingTests : IDisposable
     private LitBackdrop? lit = new(ImageA, View0);
     private bool unloading;
     private DeliveryMode delivery = DeliveryMode.Local;
+    private bool syncedLightsOn = true;
     private readonly List<string> loads = [];
     private Func<string, CancellationToken, Task<LightRig?>>? loader;
     private int runs;
@@ -55,7 +56,7 @@ public sealed class SceneLightingTests : IDisposable
     private static bool IsHdrPath(string path) => path.EndsWith(".hdr", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".exr", StringComparison.OrdinalIgnoreCase);
 
     private SceneLighting Make(Func<Func<Task<LightRig?>>, Task<LightRig?>>? run = null) =>
-        new(spawner, game, () => lit, config, Load, sentinel, log, () => unloading, () => delivery,
+        new(spawner, game, () => lit, config, Load, sentinel, log, () => unloading, () => delivery, () => syncedLightsOn,
             run ?? (f => { runs++; return f(); }));
 
     private Task<LightRig?> Load(string path, CancellationToken ct)
@@ -136,7 +137,7 @@ public sealed class SceneLightingTests : IDisposable
         var prep = new FakePreparer(cache);
         config.ImagePath = dir.File("sky.hdr");
         var c = new BackdropController(vfx, pen, game, prep, cache, config, log, run: f => f());
-        s = new SceneLighting(spawner, game, () => c.Lit, config, Load, sentinel, log, () => unloading, () => delivery, f => f());
+        s = new SceneLighting(spawner, game, () => c.Lit, config, Load, sentinel, log, () => unloading, () => delivery, () => syncedLightsOn, f => f());
         c.Hidden += s.RemoveAll;
         c.Show(); c.Tick(); c.Tick();
         Assert.Equal(BackdropState.Shown, c.State);
@@ -156,7 +157,7 @@ public sealed class SceneLightingTests : IDisposable
         // AC-scene-lighting-3 (LDR gets no lights) is superseded by docs/adr/0010: a JPG/PNG now gets estimated lights.
         var fresh = new Configuration();                     // on by default (owner change)
         Assert.True(fresh.SceneLighting);
-        s = new SceneLighting(spawner, game, () => lit, fresh, Load, sentinel, log, () => unloading, () => delivery, f => f());
+        s = new SceneLighting(spawner, game, () => lit, fresh, Load, sentinel, log, () => unloading, () => delivery, () => syncedLightsOn, f => f());
         lit = new LitBackdrop(@"C:\pics\sky.png", View0);
         game.IsGPosing = false;
         Ticks(Settle + 2);
@@ -177,7 +178,7 @@ public sealed class SceneLightingTests : IDisposable
         Assert.False(s.Status.Estimated);
         // The crash sentinel still latches a default-on config off.
         var guarded = new SceneLighting(new FakeLightSpawner(), game, () => lit, fresh, Load, new FakeSentinel(setAtStartup: true), log,
-                                        () => false, () => delivery, f => f());
+                                        () => false, () => delivery, () => syncedLightsOn, f => f());
         for (var k = 0; k < Settle + 2; k++) guarded.Tick();
         Assert.Equal(LightingStatus.CrashGuard, guarded.Status.Status);
     }
@@ -288,7 +289,7 @@ public sealed class SceneLightingTests : IDisposable
         var cache = new CacheStore(dir.File("cache"));
         config.ImagePath = dir.File("sky.hdr");
         var c = new BackdropController(vfx, new FakePenumbra(), game, new FakePreparer(cache), cache, config, log, run: f => f());
-        s = new SceneLighting(spawner, game, () => c.Lit, config, Load, sentinel, log, () => unloading, () => delivery, f => f());
+        s = new SceneLighting(spawner, game, () => c.Lit, config, Load, sentinel, log, () => unloading, () => delivery, () => syncedLightsOn, f => f());
         c.Show(); c.Tick(); c.Tick();
         LightUp();
 
@@ -303,10 +304,10 @@ public sealed class SceneLightingTests : IDisposable
         Assert.Equal(3, spawner.Creates.Count);
     }
 
-    [Fact] // [AC-scene-lighting-6] [EDGE-scene-lighting-22]
-    public void SyncedLit_CreatesLocally()
+    [Fact] // [AC-scene-lighting-6] [EDGE-scene-lighting-22] [EDGE-synced-lighting-35]
+    public void SyncedConfig_LocalDomeDrawn_NativeLightsCreated()
     {
-        delivery = DeliveryMode.MadBirdRing;
+        delivery = DeliveryMode.MadBirdRing;   // a synced config, but the drawn dome is local (e.g. a synced blocker)
         lit = new LitBackdrop(ImageA, View0 with { YawRadians = 1.2f });
         LightUp();
         Assert.Equal(LightRigPlanner.Plan(RigA, lit.View, Anchor, 1f, 2).Lights.Select(l => l.P), spawner.Creates.Select(c => c.P));
@@ -746,7 +747,7 @@ public sealed class SceneLightingTests : IDisposable
         var path = dir.File(FileLightingSentinel.FileName);
         File.WriteAllBytes(path, []);
         var file = new FileLightingSentinel(path, log);
-        s = new SceneLighting(spawner, game, () => lit, config, Load, file, log, () => unloading, () => delivery, f => f());
+        s = new SceneLighting(spawner, game, () => lit, config, Load, file, log, () => unloading, () => delivery, () => syncedLightsOn, f => f());
         Ticks(Settle * 2);
         Assert.Equal(LightingStatus.CrashGuard, s.Status.Status);
         Assert.True(File.Exists(path));
@@ -804,13 +805,13 @@ public sealed class SceneLightingTests : IDisposable
     {
         var path = dir.File(FileLightingSentinel.FileName);
         var file = new FileLightingSentinel(path, log);
-        s = new SceneLighting(spawner, game, () => lit, config, Load, file, log, () => unloading, () => delivery, f => f());
+        s = new SceneLighting(spawner, game, () => lit, config, Load, file, log, () => unloading, () => delivery, () => syncedLightsOn, f => f());
         LightUp();
         Ticks(LightRigLayout.StableTicks / 2);
         // The game "crashes" here: the next session's sentinel sees the attempt.
         var next = new FileLightingSentinel(path, log);
         Assert.True(next.WasSetAtStartup);
-        var after = new SceneLighting(new FakeLightSpawner(), game, () => lit, config, Load, next, log, () => false, () => delivery, f => f());
+        var after = new SceneLighting(new FakeLightSpawner(), game, () => lit, config, Load, next, log, () => false, () => delivery, () => syncedLightsOn, f => f());
         after.Tick();
         Assert.Equal(LightingStatus.CrashGuard, after.Status.Status);
     }
@@ -830,7 +831,7 @@ public sealed class SceneLightingTests : IDisposable
         Assert.False(sentinel.IsSet);
         // With no lights there's nothing to clear: a CrashGuard sentinel is never wiped by a RemoveAll.
         var guarded = new FakeSentinel(setAtStartup: true);
-        var g = new SceneLighting(spawner, game, () => lit, config, Load, guarded, log, () => false, () => delivery, f => f());
+        var g = new SceneLighting(spawner, game, () => lit, config, Load, guarded, log, () => false, () => delivery, () => syncedLightsOn, f => f());
         g.RemoveAll();
         g.Tick();
         Assert.True(guarded.IsSet);
@@ -840,7 +841,7 @@ public sealed class SceneLightingTests : IDisposable
     public void RemoveAll_OneOfThreeRefused_SentinelStays()
     {
         var refusing = new RefusingSpawner(spawner);
-        var t = new SceneLighting(refusing, game, () => lit, config, Load, sentinel, log, () => false, () => delivery, f => f());
+        var t = new SceneLighting(refusing, game, () => lit, config, Load, sentinel, log, () => false, () => delivery, () => syncedLightsOn, f => f());
         for (var i = 0; i < Settle + 1; i++) t.Tick();
         Assert.Equal(3, t.LiveCount);
         Assert.True(sentinel.IsSet);
@@ -974,5 +975,63 @@ public sealed class SceneLightingTests : IDisposable
         s.Teardown();
         Assert.Equal(calls, spawner.NativeCalls);
         Assert.Single(loads);
+    }
+
+    [Fact] // [AC-synced-lighting-4]
+    public void SyncedDrawn_CreatesNoNativeLights_StatusInSyncedBackdrop()
+    {
+        delivery = DeliveryMode.MadBirdRing;
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 1);
+        Ticks(Settle + 5);
+        Assert.Empty(spawner.Creates);
+        Assert.Equal(LightingStatus.InSyncedBackdrop, s.Status.Status);
+        Assert.True(s.Status.GPose);
+        Assert.Equal(0, runs);   // no rig job either
+    }
+
+    [Fact] // [AC-synced-lighting-4]
+    public void SyncedDomeAppears_NativeLightsGo()
+    {
+        LightUp();
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 1);
+        s.Tick();
+        Assert.Empty(spawner.Live);
+    }
+
+    [Fact] // [EDGE-synced-lighting-47]
+    public void SyncedDome_NoVfxLights_NativeLightsRun()
+    {
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 0);   // a key not drawn with fills off, nothing drawn, or a null rig
+        LightUp();
+    }
+
+    [Fact] // [EDGE-synced-lighting-53]
+    public void SyncedDome_NoKeyRigStandIn_InSyncedBackdrop_NoNativeLights()
+    {
+        LightUp();
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 1);   // a no-key rig carries the stand-in
+        s.Tick();
+        Assert.Empty(spawner.Live);
+        Assert.Equal(LightingStatus.InSyncedBackdrop, s.Status.Status);
+    }
+
+    [Fact] // [EDGE-synced-lighting-40]
+    public void SyncedLightsKillSwitchOff_NativeLightsUnderSynced()
+    {
+        syncedLightsOn = false;
+        s = Make();
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 1);
+        LightUp();
+    }
+
+    [Fact] // [EDGE-synced-lighting-30]
+    public void SyncedToLocalInGPose_NativeLightsResumeAfterSettle()
+    {
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 1);
+        Ticks(Settle + 5);
+        Assert.Empty(spawner.Creates);
+        lit = new LitBackdrop(ImageA, View0);   // switched to Only me in GPose
+        Ticks(Settle + 1);
+        Assert.Equal(3, spawner.Live.Count());
     }
 }

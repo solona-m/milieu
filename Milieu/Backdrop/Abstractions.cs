@@ -68,8 +68,9 @@ public interface IGameState
 public readonly record struct PlayerCollectionInfo(Guid Id, bool IndividualSet);
 
 /// <summary>
-/// Synced delivery's Penumbra calls: one temporary mod (tag "MilieuSync", priority 1,000,000) in the local player's
-/// collection only, carrying the IMC VFX id and the redirects. Every member swallows IPC exceptions.
+/// Synced delivery's Penumbra calls: the real "Milieu Sync" mod (priority 1,000,000), enabled in the local player's
+/// collection only, carrying the IMC VFX id and the redirects; emptied at rest (docs/adr/0006). Every member swallows IPC
+/// exceptions.
 /// </summary>
 public interface IPenumbraSync
 {
@@ -82,12 +83,13 @@ public interface IPenumbraSync
     /// <summary>The Base (default) collection's Guid; null when unset.</summary>
     Guid? BaseCollection();
 
-    /// <summary>Adds or replaces the synced temp mod in one collection. Penumbra's code (0 = success), or -1 when the call throws.</summary>
+    /// <summary>Writes the synced mod and enables it in one collection. Penumbra's code (0 = success), or -1 on a write failure or a throw.</summary>
     int SetSynced(Guid collection, IReadOnlyDictionary<string, string> paths, string manips);
 
+    /// <summary>Disables the synced mod in one collection and empties it (and removes an older build's temp mod there).</summary>
     void ClearSynced(Guid collection);
 
-    /// <summary>Removes the synced temp mod from every listed collection and from <paramref name="alsoClear"/>.</summary>
+    /// <summary>Disables the synced mod in every collection and in <paramref name="alsoClear"/>, removes legacy temp mods, and empties it.</summary>
     void ClearSyncedEverywhere(IEnumerable<Guid> alsoClear);
 
     string ResolvePlayer(string gamePath);

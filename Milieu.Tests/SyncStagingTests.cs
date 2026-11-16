@@ -43,14 +43,14 @@ public sealed class SyncStagingTests : IDisposable
     }
 
     [Fact] // [EDGE-synced-delivery-17]
-    public void EnsureFolder_SetsHidden_AlsoWhenExistingVisible()
+    public void EnsureFolder_Visible_UnhidesAnOlderBuildsHiddenFolder()   // [AC-synced-lighting-8] [EDGE-synced-lighting-18]
     {
         var s = new SyncStaging(dir.File("mods"));
         s.EnsureFolder();
-        Assert.True(new DirectoryInfo(s.Root).Attributes.HasFlag(FileAttributes.Hidden));
-        new DirectoryInfo(s.Root).Attributes = FileAttributes.Directory;
+        Assert.False(new DirectoryInfo(s.Root).Attributes.HasFlag(FileAttributes.Hidden));   // a real mod: Penumbra must see it
+        new DirectoryInfo(s.Root).Attributes = FileAttributes.Directory | FileAttributes.Hidden;   // an older build's folder
         s.EnsureFolder();
-        Assert.True(new DirectoryInfo(s.Root).Attributes.HasFlag(FileAttributes.Hidden));
+        Assert.False(new DirectoryInfo(s.Root).Attributes.HasFlag(FileAttributes.Hidden));
     }
 
     [Fact] // [EDGE-synced-delivery-21]

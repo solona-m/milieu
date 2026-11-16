@@ -14,32 +14,14 @@ public class PluginCommandTests
         Assert.Equal(CommandAction.ToggleWindow, Plugin.ParseCommand("offset"));
     }
 
-    [Theory]
-    [InlineData("vfxlight 0", 0, true)]
-    [InlineData("vfxlight 1", 1, true)]
-    [InlineData("  VFXLIGHT   2 ", 2, true)]
-    [InlineData("vfxlight 3", 3, true)]
-    [InlineData("vfxlight 4", 4, true)]
-    [InlineData("vfxlight 5", 5, true)]
-    [InlineData("vfxlight 6", null, true)]
-    [InlineData("vfxlight -1", null, true)]
-    [InlineData("vfxlight +1", null, true)]
-    [InlineData("vfxlight x", null, true)]
-    [InlineData("vfxlight", null, true)]
-    [InlineData("vfxlight 1 2", null, true)]
-    [InlineData("vfxlightx 1", null, false)]
-    [InlineData("off", null, false)]
-    [InlineData("", null, false)]
-    public void VfxLight_ParsesOnlyModesZeroToFive(string args, int? expected, bool isVfxLight)
+    [Theory] // [AC-synced-lighting-11] [EDGE-synced-lighting-31]
+    [InlineData("vfxlight 3")]
+    [InlineData("vfxlight")]
+    [InlineData("VFXLIGHT x")]
+    public void VfxLightExperiment_Removed_ArgsJustToggleTheWindow(string args)
     {
-        Assert.Equal(expected, Plugin.ParseVfxLight(args));
-        Assert.Equal(isVfxLight, Plugin.IsVfxLightCommand(args));
-    }
-
-    [Fact]
-    public void VfxLight_DoesNotChangeOffHandling()
-    {
-        Assert.Equal(CommandAction.Hide, Plugin.ParseCommand("off"));
-        Assert.Equal(CommandAction.ToggleWindow, Plugin.ParseCommand("vfxlight 1"));
+        Assert.Equal(CommandAction.ToggleWindow, Plugin.ParseCommand(args));
+        Assert.Null(typeof(Plugin).GetMethod("ParseVfxLight"));
+        Assert.Null(typeof(Milieu.GameFiles.DomeAvfxBuilder).GetField("TestLightMode"));
     }
 }

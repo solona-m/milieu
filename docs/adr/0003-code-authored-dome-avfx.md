@@ -37,16 +37,11 @@ Parity tests compare the structure with the reference when `MILIEU_REFERENCE_AVF
 BC7 encoding uses BCnEncoder.Net per mip; its `EncodeToRawBytesAsync` observes the cancellation token inside a mip
 (`Bc7Tests.CancelInsideMip0_ReturnsPromptly`), so no strip-encoding fallback was needed.
 
-Experiment (testing builds, 2026-11-09; remove or decide before the next stable merge): `/milieu vfxlight 1-5`
-(`DomeAvfxBuilder.TestLightMode`, not saved) adds one VFX effector light, to test in game whether VFX lights can carry
-scene lighting to synced viewers (ADR 0009 lights are local-only native objects). Modes 1-2: a point light linked from the
-dome emitter (`Emit` `EfNo` 0), set up like the "Pickles Venue" lights (mode 2 with 10x range and 3x brightness), shadows
-with near 0.0001 / far 20. Modes 3-4: a directional light on its own particle-less emitter with its own timeline item, set up
-like the game's world-lighting directional lights (found by scanning the game's VFX: 19 of 506 directional effectors have
-bAGm 1, and 18 of those 19 use bAOV 0, RGB + Bri and their own particle-less emitter, most (15) with black ambient); mode 3 copies the most
-common one, mode 4 is red, brighter and tilted. Mode 5 is mode 4's light linked from the dome emitter (the 19th game light
-is linked from a particle emitter), to tell whether the separate emitter matters.
-Mode 0, the default, gives byte-identical output.
+Experiment result (testing builds 3-5, 2026-11-09..16; the `/milieu vfxlight` command is removed, issue #1): VFX
+effector lights were tested in game. **Point lights (EfVT 0) linked from the dome emitter light the character and cast
+shadows from a synced dome** with the game's own recipe (Attn 2, shadow flags 1/1/1/0, near 0.5 / far 15, brightness as
+Bri). Directional effectors (EfVT 1) never lit anything, and static (local) VFX never run effectors. Synced scene lighting
+uses them (ADR 0011): point-light effectors linked from the dome emitter (the key), and from particle-less emitters for fills, which ship off.
 
 ## Open questions (to record after in-game checks)
 

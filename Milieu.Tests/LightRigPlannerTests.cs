@@ -294,4 +294,15 @@ public class LightRigPlannerTests
         Assert.True(key.Colour.Length() > 0, "the floor keeps a non-zero key");
         Assert.True(plan.KeyDrawn);
     }
+
+    [Fact] // [EDGE-synced-lighting-53] [AC-synced-lighting-3]
+    public void NoKeyRig_NativePlan_FillsOnly_NoShadowedLight()
+    {
+        var rig = new LightRig(LightExtractor.Version, null,
+            [new(0.3f, 0.3f, new Vector3(0.5f, 0.6f, 1f)), new(0.7f, 0.35f, new Vector3(0.4f, 0.5f, 0.9f))], new Vector3(10, 10, 10));
+        var plan = LightRigPlanner.Plan(rig, Default, Anchor, 1f, 2);
+        Assert.False(plan.RigHasKey);
+        Assert.DoesNotContain(plan.Lights, l => l.Slot == LightRigPlanner.KeySlot);
+        Assert.All(plan.Lights, l => Assert.False(l.P.CharacterShadows));
+    }
 }

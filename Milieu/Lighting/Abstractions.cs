@@ -51,7 +51,9 @@ public interface ILightSpawner
 public readonly record struct DomeView(float YawRadians, bool Flip, float VerticalScale, float URepeat, float VRepeat);
 
 /// <summary>The image the drawn dome shows, and how it is drawn.</summary>
-public sealed record LitBackdrop(string ImagePath, DomeView View);
+/// <param name="Synced">The drawn dome is a committed synced registration (not a local dome under a synced config).</param>
+/// <param name="VfxLightCount">How many VFX lights that synced dome carries (0 otherwise).</param>
+public sealed record LitBackdrop(string ImagePath, DomeView View, bool Synced = false, int VfxLightCount = 0);
 
 /// <summary>
 /// "A lighting attempt is in progress": set before lights are created, cleared once they proved stable or were removed.

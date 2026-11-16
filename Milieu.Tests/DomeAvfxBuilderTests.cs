@@ -184,6 +184,37 @@ public class DomeAvfxBuilderTests
         Assert.Null(ptcl.Need("Rot").Child("Y"));
     }
 
+    /// <summary>
+    /// Golden SHA-256 values captured from `test` (da8171b) before synced lighting touched the builder: the local dome over
+    /// a parameter matrix, and a non-default synced dome without lights (equals EmitterBaseHeight 0).
+    /// </summary>
+    [Theory] // [AC-synced-lighting-3]
+    [InlineData("default", "5A2E7FE433FFEA4D71952FA2177C162D0D0EEF8A27DC477336A7E9FB07539D81")]
+    [InlineData("flip", "E1C0B9302FD4BB626C46A854384F820A706DA92AD873A0BD6407AE02067E92CF")]
+    [InlineData("repeats3x1.5", "A8E1FD1E5D6D93277A531A8AD4EDCBDC0AC772467AE8D401D476EF21DE5F85D8")]
+    [InlineData("vscale0.7", "D1B57018BC415B5429EC86A7A9329B882F512187B3DCC6FFA0359FA1020F8112")]
+    [InlineData("bri1.5", "DF73353954BC784A1792917672246E6E52CAE7B02C0023F6340AC25A0DBF04E1")]
+    [InlineData("floorNull_r10", "516DF977470DC1E59C809C09307B207C06163A0CB98711104F6F87259E3916FB")]
+    [InlineData("floor0.16_r10", "C1D206A17F008FDD7775A9383C0C9A065BC905A3D050EED8327D8B5F08A3C9E7")]
+    [InlineData("synced_h1.6_yaw0.7_rep3x1.5", "2DCAB3079C2BB5016E0719D3D9DFE8173815D936B9D466DBEE756275FBC8D03F")]
+    public void GoldenMatrix_ByteIdenticalToPreFeature(string name, string sha)
+    {
+        var b = new DomeAvfxParams("bgcommon/milieu/aabbccddeeff0011/sky.atex", 20000, 1, 2, 1, false, 1);
+        var p = name switch
+        {
+            "default" => b,
+            "flip" => b with { Flip = true },
+            "repeats3x1.5" => b with { URepeat = 3, VRepeat = 1.5f },
+            "vscale0.7" => b with { VerticalScale = 0.7f },
+            "bri1.5" => b with { Brightness = 1.5f },
+            "floorNull_r10" => b with { Radius = 10 },
+            "floor0.16_r10" => b with { Radius = 10, FloorY = 0.16f },
+            "synced_h1.6_yaw0.7_rep3x1.5" => b with { AttachToOwner = true, BakedHeight = 1.6f, BakedYawRadians = 0.7f, URepeat = 3, VRepeat = 1.5f },
+            _ => throw new ArgumentOutOfRangeException(nameof(name)),
+        };
+        Assert.Equal(sha, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(DomeAvfxBuilder.Build(p))));
+    }
+
     [Fact] // [EDGE-synced-delivery-27]
     public void DefaultParams_ByteIdenticalToLegacy()
     {
@@ -219,5 +250,25 @@ public class DomeAvfxBuilderTests
         Assert.Equal(["ACT", "ACTR", "Y"], ptcl.Need("Rot").Children.Select(c => c.Tag).ToArray());
         var mesh = SphereMesh.Build(floorY: p.FloorY);
         Assert.Throws<InvalidDataException>(() => DomeAvfxBuilder.SelfCheck(DomeAvfxBuilder.Build(Params()), p, mesh));
+    }
+
+    [Fact] // [AC-synced-lighting-7]
+    public void EmitterBaseHeight_RaisesTheEmitter_ParticleBakedHeightUnchanged()
+    {
+        var p = Params() with { AttachToOwner = true, BakedHeight = 1.6f, EmitterBaseHeight = 18.25f };
+        var root = Build(p);
+        Assert.Equal(18.25f, root.Need("Emit").Need("Pos").Need("Y").CurveValue());
+        Assert.Equal(1.6f, root.Need("Ptcl").Need("Pos").Need("Y").CurveValue());
+        Assert.Null(Build(Params()).Need("Emit").Need("Pos").Child("Y"));   // 0: no key, byte-identical to before
+    }
+
+    [Theory] // [EDGE-synced-lighting-9]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    [InlineData(10000.5f)]
+    [InlineData(-10001f)]
+    public void EmitterBaseHeight_NonFiniteOrOutOfRange_Rejected(float y)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => DomeAvfxBuilder.Build(Params() with { AttachToOwner = true, EmitterBaseHeight = y }));
     }
 }

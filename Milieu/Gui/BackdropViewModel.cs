@@ -35,10 +35,16 @@ public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker,
     public static string? DeliveryTooltip(Sync.DeliveryMode mode) =>
         mode == Sync.DeliveryMode.Local ? null : "Experimental. " + UploadSentence;
 
+    /// <summary>
+    /// Seen in game (2026-11-16): with mods that change the cushion's model or textures enabled, the backdrop didn't show on
+    /// it. The cause is unknown, so it is only surfaced, for the cushion option alone.
+    /// </summary>
+    public const string CushionConflictSentence = "Mods that change the cushion's model or textures can stop the backdrop showing; turn them off if it doesn't appear.";
+
     /// <summary>The hint under the radios for the selected option.</summary>
     public string DeliveryHint => EffectiveDelivery switch
     {
-        Sync.DeliveryMode.Cushion => "Experimental. Summon your Plush Cushion. " + HintUploadSentence,
+        Sync.DeliveryMode.Cushion => "Experimental. Summon your Plush Cushion. " + HintUploadSentence + " " + CushionConflictSentence,
         Sync.DeliveryMode.MadBirdRing => "Experimental. Wear the Mad Bird Ring on your right hand. " + HintUploadSentence,
         _ => "",
     };

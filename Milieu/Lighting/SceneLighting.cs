@@ -29,13 +29,16 @@ public enum LightingStatus
     OnWithKey,
     OnNoKey,
     OnKeyNotDrawn,
+    /// <summary>The drawn synced dome carries VFX lights (docs/adr/0011): no native lights, so the light isn't doubled.</summary>
+    InSyncedBackdrop,
 }
 
 /// <summary>
 /// The lighting state as of the last tick. <see cref="FileName"/> is the image's file name only (a bundled scene's display
 /// name), never a path. <see cref="Estimated"/>: the lights come from an estimated rig (an 8-bit image, docs/adr/0010).
+/// <see cref="GPose"/>: in GPose (for the synced panel's "applies when you leave GPose" note).
 /// </summary>
-public sealed record LightingStatusSnapshot(LightingStatus Status, string FileName = "", int Fills = 0, bool Estimated = false)
+public sealed record LightingStatusSnapshot(LightingStatus Status, string FileName = "", int Fills = 0, bool Estimated = false, bool GPose = false)
 {
     public static readonly LightingStatusSnapshot Initial = new(LightingStatus.Off);
 }
@@ -69,6 +72,7 @@ public sealed class SceneLighting
     private readonly ILogSink log;
     private readonly Func<bool> isUnloading;
     private readonly Func<DeliveryMode> delivery;
+    private readonly Func<bool> syncedLightsAvailable;
     private readonly Func<Func<Task<LightRig?>>, Task<LightRig?>> run;
 
     private readonly Dictionary<string, (LightHandle Handle, LightParams P)> lights = [];
@@ -92,8 +96,10 @@ public sealed class SceneLighting
 
     public SceneLighting(ILightSpawner spawner, IGameState game, Func<LitBackdrop?> lit, Configuration config,
                          Func<string, CancellationToken, Task<LightRig?>> loadRig, ILightingSentinel sentinel, ILogSink log,
-                         Func<bool> isUnloading, Func<DeliveryMode> delivery, Func<Func<Task<LightRig?>>, Task<LightRig?>>? run = null)
+                         Func<bool> isUnloading, Func<DeliveryMode> delivery, Func<bool> syncedLightsAvailable,
+                         Func<Func<Task<LightRig?>>, Task<LightRig?>>? run = null)
     {
+        this.syncedLightsAvailable = syncedLightsAvailable;
         this.spawner = spawner;
         this.game = game;
         this.lit = lit;
@@ -230,6 +236,11 @@ public sealed class SceneLighting
     /// <summary>Why there must be no lights right now (the status to show), or null when <c>ShouldLight</c> holds.</summary>
     private LightingStatusSnapshot? Blocked(bool enabled, LitBackdrop? current)
     {
+        // The drawn synced dome carries the lights itself (VFX lights; docs/adr/0011): no native lights, so the light isn't
+        // doubled. Only a committed synced registration with at least one VFX light counts: a local dome under a synced
+        // config, or a synced dome without lights (no rig, a key not drawn with fills off, nothing drawn), keeps native lights.
+        if (enabled && current is { Synced: true, VfxLightCount: > 0 } && syncedLightsAvailable())
+            return new(LightingStatus.InSyncedBackdrop, FileOf(current.ImagePath), GPose: game.IsGPosing);
         if (!spawner.Available) return new(LightingStatus.Unavailable);   // first: the panel disables its controls
         if (!enabled) return new(LightingStatus.Off);
         switch (latch)

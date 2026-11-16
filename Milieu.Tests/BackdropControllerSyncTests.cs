@@ -143,7 +143,7 @@ public sealed class BackdropControllerSyncTests : IDisposable
         var dome = Assert.Single(staged, f => f.StartsWith("dome_"));
         var set = Assert.Single(pen.SyncSets);
         Assert.Equal(pen.Player!.Value.Id, set.Collection);
-        Assert.Equal(Path.Combine(Staging, dome), set.Paths["chara/monster/m8058/obj/body/b0001/vfx/eff/vm0200.avfx"]);
+        Assert.Equal(Path.Combine(Staging, dome), set.Paths["chara/monster/m8058/obj/body/b0001/vfx/eff/vm0001.avfx"]);
         Assert.Equal(Path.Combine(Staging, "sky_00112233445566ff.atex"), set.Paths["vfx/milieu/00112233445566ff/sky.atex"]);
         Assert.Equal(1, pen.Redraws);
         Assert.Empty(spawner.Spawns);
@@ -157,7 +157,7 @@ public sealed class BackdropControllerSyncTests : IDisposable
     public void Ring_Show_RegistersA0028RightRing()
     {
         ShowSynced(DeliveryMode.MadBirdRing);
-        Assert.Contains("chara/accessory/a0028/vfx/eff/va0200.avfx", pen.SyncSets.Single().Paths.Keys);
+        Assert.Contains("chara/accessory/a0028/vfx/eff/va0001.avfx", pen.SyncSets.Single().Paths.Keys);
         Assert.Equal(MessageKey.SyncShownRing, c.Status.Message.Key);
     }
 
@@ -170,7 +170,7 @@ public sealed class BackdropControllerSyncTests : IDisposable
         c.Tick();
         Assert.Equal(2, pen.SyncSets.Count);
         Assert.Equal(2, pen.Redraws);
-        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0200.avfx"];
+        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"];
         Assert.Equal(MathF.PI / 2, Avfx(dome).Need("Ptcl").Need("Rot").Need("Y").CurveValue(), 4);
         Assert.Empty(spawner.Spawns);
     }
@@ -518,7 +518,7 @@ public sealed class BackdropControllerSyncTests : IDisposable
         c.Tick();
         Assert.Equal(2, pen.SyncSets.Count);
         Assert.Equal(2, pen.Redraws);
-        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0200.avfx"];
+        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"];
         Assert.Equal(3f, Avfx(dome).Need("Ptcl").Need("Pos").Need("Y").CurveValue());
         Assert.Empty(spawner.Spawns);
         c.Recenter();
@@ -778,20 +778,63 @@ public sealed class BackdropControllerSyncTests : IDisposable
         Assert.Equal(BackdropState.Hidden, c.State);
     }
 
-    [Fact] // [EDGE-synced-delivery-4] [EDGE-synced-delivery-5]
-    public void FailedRebuildWithPendingOnly_StaysAwaiting_ThenTimesOutClean()
+    [Fact] // [EDGE-synced-delivery-4] [EDGE-synced-delivery-5] [EDGE-synced-lighting-46]
+    public void FailedRebuildWithPendingOnly_PendingPutBack_StaysAwaiting_ThenTimesOutClean()
     {
         pen.ResolvePlayerWorks = false;
         config.Delivery = DeliveryMode.MadBirdRing;
         c.Show();
         c.Tick();
-        pen.SetSyncedResult = 11;
+        pen.SetSyncedResults.Enqueue(11);                       // only the rebuild is refused; putting the pending one back works
         config.Current.Radius = 9000;
-        c.ApplyRebuild();                                      // refused: the earlier pending one is still registered
+        c.ApplyRebuild();
         Assert.Equal(BackdropState.AwaitingRedirect, c.State);
         Ticks(BackdropController.RedirectTimeoutTicks + 1);
         Assert.Empty(pen.Synced);
         Assert.Equal(BackdropState.Hidden, c.State);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46] [EDGE-synced-lighting-37]
+    public void FailedRebuildWithPendingOnly_PutBackRefusedToo_Hidden_CleanedOnHide()
+    {
+        pen.ResolvePlayerWorks = false;
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        c.Tick();
+        pen.SetSyncedResult = 11;                               // Penumbra refuses everything: the shared mod's pending plan is gone
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();
+        Assert.Equal(BackdropState.Hidden, c.State);
+        var clears = pen.SyncClears.Count;
+        c.Hide();                                               // the unsettled collection is still cleaned up
+        Assert.True(pen.SyncClears.Count > clears);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void FailedRebuildOfShownDome_PutBackRefused_GoesHidden_RaisesHidden_LitNull()
+    {
+        ShowSynced();
+        var hidden = 0;
+        c.Hidden += () => hidden++;
+        pen.SetSyncedResult = 9;
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();
+        Assert.Equal(BackdropState.Hidden, c.State);
+        Assert.Equal(1, hidden);
+        Assert.Null(c.Lit);
+        Assert.Equal(MessageKey.SyncShownLost, c.Status.Message.Key);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void FailedRebuildOfShownDome_PutBack_StaysShown()
+    {
+        ShowSynced();
+        pen.SetSyncedResults.Enqueue(9);
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();
+        Assert.Equal(BackdropState.Shown, c.State);
+        Assert.NotNull(c.Lit);
+        Assert.Equal(MessageKey.SyncRefused, c.Status.Message.Key);
     }
 
     [Fact] // [EDGE-synced-delivery-2] [EDGE-synced-delivery-16]
@@ -906,5 +949,83 @@ public sealed class BackdropControllerSyncTests : IDisposable
         Assert.Equal(sets + 1, pen.SyncSets.Count);          // committed
         Assert.Equal(3f, c.Lit!.View.URepeat);
         Assert.Equal(userImage, c.Lit!.ImagePath);
+    }
+
+    [Fact] // [AC-synced-lighting-7]
+    public void SyncedBuild_RaisesTheDomeToThePlayersWorldHeight()
+    {
+        game.PlayerPosition = new System.Numerics.Vector3(1, 18.25f, 2);
+        ShowSynced();
+        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"];
+        Assert.Equal(18.25f, Avfx(dome).Need("Emit").Need("Pos").Need("Y").CurveValue());
+        Assert.Contains(log.Lines, l => l.Text.Contains("anchor height 18.25"));
+    }
+
+    [Fact] // [EDGE-synced-lighting-8]
+    public void SyncedBuild_PlayerPositionGone_AnchorsAtZero_Logged()
+    {
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        game.PlayerPosition = null;   // the job completes while no position is readable
+        c.Tick();
+        Assert.NotEmpty(pen.SyncSets);
+        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"];
+        Assert.Null(Avfx(dome).Need("Emit").Need("Pos").Child("Y"));   // 0: no key
+        Assert.Contains(log.Lines, l => l.Text.Contains("anchor height 0.00"));
+    }
+
+    [Fact] // [EDGE-synced-lighting-9]
+    public void SyncedBuild_AbsurdPlayerHeight_WriteFailed_NothingRegistered()
+    {
+        game.PlayerPosition = new System.Numerics.Vector3(0, 1e6f, 0);
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        c.Tick();
+        Assert.Empty(pen.SyncSets);
+        Assert.Equal(MessageKey.WriteFailed, c.Status.Message.Key);
+    }
+
+    [Fact] // [AC-synced-lighting-8] [EDGE-synced-lighting-36]
+    public void SyncedShown_PenumbraDisposed_ThenUnload_StillClearsTheMod()
+    {
+        ShowSynced();
+        c.OnPenumbraDisposed();
+        var clears = pen.SyncClears.Count;
+        c.Teardown();
+        Assert.True(pen.SyncClears.Count > clears);   // disabled (when possible) and emptied on disk
+    }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void PendingRebuildTimesOut_ShownPutBackRefused_GoesHidden_RaisesHidden_LitNull()
+    {
+        ShowSynced();
+        var hidden = 0;
+        c.Hidden += () => hidden++;
+        pen.ResolvePlayerWorks = false;            // the rebuild never resolves
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();
+        c.Tick();
+        Assert.Equal(BackdropState.AwaitingRedirect, c.State);
+        pen.SetSyncedResult = 9;                   // putting the shown dome back is refused
+        Ticks(BackdropController.RedirectTimeoutTicks + 1);
+        Assert.Equal(BackdropState.Hidden, c.State);
+        Assert.Equal(1, hidden);
+        Assert.Null(c.Lit);
+        Assert.DoesNotContain(pen.Player!.Value.Id, pen.Synced.Keys);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void ShowSupersedesPending_ShownPutBackRefused_LitNull()
+    {
+        ShowSynced();
+        pen.ResolvePlayerWorks = false;
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();
+        c.Tick();
+        Assert.Equal(BackdropState.AwaitingRedirect, c.State);
+        pen.SetSyncedResult = 9;                   // every call refused from here on
+        c.Show();                                  // supersedes the pending one; the shown one can't be put back
+        Assert.Null(c.Lit);
+        Assert.DoesNotContain(pen.Player!.Value.Id, pen.Synced.Keys);
     }
 }

@@ -27,6 +27,8 @@ public sealed class MainWindow : Window, IDisposable
     private readonly Func<bool> syncedAvailable;
     private readonly Func<LightingStatusSnapshot> lightingStatus;
     private readonly bool lightingAvailable;
+    private readonly Func<NightStatus> nightStatus;
+    private readonly bool nightAvailable;
     private readonly FileDialogManager files = new();
 
     private static readonly Vector4 Red = new(1f, 0.4f, 0.4f, 1f);
@@ -34,9 +36,12 @@ public sealed class MainWindow : Window, IDisposable
     private static readonly Vector2 TileSize = new(176, 88);
 
     public MainWindow(BackdropController controller, Configuration config, Action save, SceneGridViewModel grid, ThumbnailCache thumbs,
-                      Func<bool>? syncedAvailable = null, Func<LightingStatusSnapshot>? lightingStatus = null, bool lightingAvailable = false)
+                      Func<bool>? syncedAvailable = null, Func<LightingStatusSnapshot>? lightingStatus = null, bool lightingAvailable = false,
+                      Func<NightStatus>? nightStatus = null, bool nightAvailable = false)
         : base($"Milieu (build {Plugin.BuildNumber})###MilieuMain")
     {
+        this.nightStatus = nightStatus ?? (() => NightStatus.Off);
+        this.nightAvailable = nightAvailable;
         this.syncedAvailable = syncedAvailable ?? (() => false);
         this.lightingStatus = lightingStatus ?? (() => LightingStatusSnapshot.Initial);
         this.lightingAvailable = lightingAvailable;
@@ -232,6 +237,23 @@ public sealed class MainWindow : Window, IDisposable
             if (ImGui.SmallButton("Credits")) Dalamud.Utility.Util.OpenLink(BackdropPins.CreditsUrl);
         }
         DrawLighting(vm);
+        DrawNight();
+    }
+
+    /// <summary>"Time of day" (docs/adr/0012), only when the kill switch (Plugin.NightAvailable) is on.</summary>
+    private void DrawNight()
+    {
+        var vm = new NightViewModel(nightStatus(), nightAvailable);
+        if (!vm.Visible) return;
+        ImGui.Separator();
+        ImGui.TextUnformatted(NightViewModel.Header);
+        var on = config.NightWhileShown;
+        if (ImGui.Checkbox(NightViewModel.ToggleLabel, ref on)) controller.Post(NightViewModel.Change(config, on, save));
+        if (vm.StatusText.Length > 0)
+            ImGui.TextColored(vm.StatusSeverity == Severity.Error ? Red : vm.StatusSeverity == Severity.Warning ? Yellow : Vector4.One, vm.StatusText);
+        ImGui.PushTextWrapPos(0f);
+        ImGui.TextDisabled(NightViewModel.Note);
+        ImGui.PopTextWrapPos();
     }
 
     /// <summary>
@@ -246,20 +268,26 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.TextUnformatted(LightingViewModel.Header);
         using (ImRaii.Disabled(!vm.ControlsEnabled))
         {
+            // Every lighting control goes through LightChange: set + save + a synced light rebuild request (docs/adr/0011).
             var on = config.SceneLighting;
             if (ImGui.Checkbox(LightingViewModel.ToggleLabel, ref on))
-            {
-                config.SceneLighting = on;
-                save();
-            }
+                controller.Post(LightingViewModel.LightChange(config, c => c.SceneLighting = on, save, controller.RequestLightRebuild));
             var strength = config.LightStrength;
             if (ImGui.SliderFloat(LightingViewModel.StrengthLabel, ref strength, Configuration.LightStrengthRange.Min, Configuration.LightStrengthRange.Max, "%.2f"))
                 config.LightStrength = Math.Clamp(strength, Configuration.LightStrengthRange.Min, Configuration.LightStrengthRange.Max);
-            if (ImGui.IsItemDeactivatedAfterEdit()) save();
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
+                var s = config.LightStrength;
+                controller.Post(LightingViewModel.LightChange(config, c => c.LightStrength = s, save, controller.RequestLightRebuild));
+            }
             var fills = config.FillLightCount;
             if (ImGui.SliderInt(LightingViewModel.FillsLabel, ref fills, Configuration.FillLightRange.Min, Configuration.FillLightRange.Max))
                 config.FillLightCount = Math.Clamp(fills, Configuration.FillLightRange.Min, Configuration.FillLightRange.Max);
-            if (ImGui.IsItemDeactivatedAfterEdit()) save();
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
+                var f = config.FillLightCount;
+                controller.Post(LightingViewModel.LightChange(config, c => c.FillLightCount = f, save, controller.RequestLightRebuild));
+            }
         }
         if (vm.StatusText.Length > 0)
             ImGui.TextColored(vm.StatusSeverity == Severity.Error ? Red : vm.StatusSeverity == Severity.Warning ? Yellow : Vector4.One, vm.StatusText);

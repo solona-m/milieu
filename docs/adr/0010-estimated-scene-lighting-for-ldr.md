@@ -83,7 +83,7 @@ around them. The brightness has to be assumed.
 - Bundled scenes, as estimated:
   - **Sunset is fills only.** The committed `sunset.jpeg`'s sun core was softened by its preparation (R ≥ 250 but G
     240–249 and B 100–180), so too few pixels clip to form a blob larger than a speck. The original source does get
-    its key.
+    its key. Synced delivery gives it a stand-in key (ADR 0011).
   - **Forest:** the sun behind the trunks isn't clipped, so bright fog gaps near the horizon become the key and lamps.
   - **Warehouse:** one false lamp on a sunlit wall patch.
 - Follow-up: hand-tuned rig overrides for Sunset and Forest.

@@ -8,11 +8,12 @@ namespace Milieu.Interop;
 
 /// <summary>
 /// Penumbra IPC by label (labels and signatures copied from Penumbra.Api's IpcSubscribers, MIT). Local delivery creates
-/// one temporary mod, tag "Milieu", priority 0, in all collections. Synced delivery (docs/adr/0006) creates one temporary
-/// mod, tag "MilieuSync", priority 1,000,000, in the local player's collection only. Milieu reads Penumbra's enabled
-/// state, collections, mod directory and the player's meta; it never calls a mod-settings or mod-management API.
+/// one temporary mod, tag "Milieu", priority 0, in all collections. Synced delivery (docs/adr/0006, 2026-11-16 amendment)
+/// writes the real mod "Milieu Sync" and makes mod-management calls on it only (ReloadMod/AddMod, TrySetModPriority,
+/// TrySetMod, through <see cref="Sync.SyncModRegistrar"/>), in the local player's collection; it never touches the user's
+/// own mods. It also reads Penumbra's enabled state, collections, mod directory and the player's meta.
 /// </summary>
-public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
+public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, Sync.ISyncModApi, IDisposable
 {
     public const string LabelApiVersion = "Penumbra.ApiVersion.V5";
     public const string LabelGetEnabledState = "Penumbra.GetEnabledState";
@@ -30,6 +31,11 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
     public const string LabelResolvePlayerPath = "Penumbra.ResolvePlayerPath";
     public const string LabelGetPlayerMetaManipulations = "Penumbra.GetPlayerMetaManipulations";
     public const string LabelRedrawObject = "Penumbra.RedrawObject.V5";
+    public const string LabelAddMod = "Penumbra.AddMod.V5";
+    public const string LabelRedrawAll = "Penumbra.RedrawAll.V5";
+    public const string LabelReloadMod = "Penumbra.ReloadMod.V5";
+    public const string LabelTrySetMod = "Penumbra.TrySetMod.V5";
+    public const string LabelTrySetModPriority = "Penumbra.TrySetModPriority.V5";
 
     public const string Tag = "Milieu";
     public const int Priority = 0;
@@ -56,6 +62,11 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
     private readonly ICallGateSubscriber<string, string> resolvePlayer;
     private readonly ICallGateSubscriber<string> playerMeta;
     private readonly ICallGateSubscriber<int, int, object> redrawObject;
+    private readonly ICallGateSubscriber<string, int> realAddMod;
+    private readonly ICallGateSubscriber<int, object> redrawAll;
+    private readonly ICallGateSubscriber<string, string, int> realReloadMod;
+    private readonly ICallGateSubscriber<Guid, string, string, bool, int> realSetMod;
+    private readonly ICallGateSubscriber<Guid, string, string, int, int> realSetPriority;
     private readonly Action onInitialized;
     private readonly Action onDisposed;
 
@@ -84,6 +95,11 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
         resolvePlayer = pi.GetIpcSubscriber<string, string>(LabelResolvePlayerPath);
         playerMeta = pi.GetIpcSubscriber<string>(LabelGetPlayerMetaManipulations);
         redrawObject = pi.GetIpcSubscriber<int, int, object>(LabelRedrawObject);
+        realAddMod = pi.GetIpcSubscriber<string, int>(LabelAddMod);
+        redrawAll = pi.GetIpcSubscriber<int, object>(LabelRedrawAll);
+        realReloadMod = pi.GetIpcSubscriber<string, string, int>(LabelReloadMod);
+        realSetMod = pi.GetIpcSubscriber<Guid, string, string, bool, int>(LabelTrySetMod);
+        realSetPriority = pi.GetIpcSubscriber<Guid, string, string, int, int>(LabelTrySetModPriority);
         onInitialized = () => Initialized?.Invoke();
         onDisposed = () => Disposed?.Invoke();
         initialized.Subscribe(onInitialized);
@@ -161,28 +177,80 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
         catch (Exception) { return null; }
     }
 
+    private Sync.SyncModRegistrar? registrar;
+
+    /// <summary>The real-mod sequence (docs/adr/0006 amendment); created lazily so the registrar sees this instance.</summary>
+    private Sync.SyncModRegistrar Registrar => registrar ??= new Sync.SyncModRegistrar(this, () => ModDirectory, log);
+
+    /// <summary>Synced delivery as the real "Milieu Sync" mod: write, add/reload, priority 1,000,000, enable. 0 on success.</summary>
     public int SetSynced(Guid collection, IReadOnlyDictionary<string, string> paths, string manips)
     {
-        try { return addMod.InvokeFunc(SyncTag, collection, new Dictionary<string, string>(paths), manips, SyncPriority); }
+        try { return Registrar.Enable(collection, paths, manips); }
         catch (Exception e)
         {
-            log.Warning("[Milieu] AddTemporaryMod failed: " + LogText.Describe(e, Sensitive));
+            log.Warning("[Milieu] Setting up the Milieu Sync mod failed: " + LogText.Describe(e, Sensitive));
             return -1;
         }
     }
 
+    /// <summary>Disables "Milieu Sync" in <paramref name="collection"/>, removes an older build's temp mod, and empties the mod.</summary>
     public void ClearSynced(Guid collection)
+    {
+        try { Registrar.Clear(collection); }
+        catch (Exception e) { log.Debug("[Milieu] Clearing the Milieu Sync mod failed: " + LogText.Describe(e, Sensitive)); }
+    }
+
+    /// <summary>Startup / re-init cleanup: "Milieu Sync" off in every collection, legacy temp mods removed, the mod emptied.</summary>
+    public void ClearSyncedEverywhere(IEnumerable<Guid> alsoClear)
+    {
+        try { Registrar.DisableEverywhere(alsoClear); }
+        catch (Exception e) { log.Debug("[Milieu] Clearing the Milieu Sync mod everywhere failed: " + LogText.Describe(e, Sensitive)); }
+    }
+
+    // ---------------------------------------------------------------- ISyncModApi: thin wrappers, -1 when the IPC throws
+
+    bool Sync.ISyncModApi.PenumbraPresent => IsReachable(State);
+
+    /// <summary>
+    /// Penumbra answers IPC: every state but Missing and Incompatible (the set OnPenumbraInitialized accepts). Synced
+    /// delivery works under ModsDisabled and NoBaseCollection, so taking the mod down must work there too.
+    /// </summary>
+    internal static bool IsReachable(PenumbraState state) => state is not (PenumbraState.Missing or PenumbraState.Incompatible);
+
+    int Sync.ISyncModApi.ReloadMod(string dir, string name) => Call(() => realReloadMod.InvokeFunc(dir, name), "ReloadMod");
+
+    int Sync.ISyncModApi.AddMod(string dir) => Call(() => realAddMod.InvokeFunc(dir), "AddMod");
+
+    int Sync.ISyncModApi.SetModPriority(Guid collection, string dir, string name, int priority) =>
+        Call(() => realSetPriority.InvokeFunc(collection, dir, name, priority), "TrySetModPriority");
+
+    int Sync.ISyncModApi.SetModEnabled(Guid collection, string dir, string name, bool enabled) =>
+        Call(() => realSetMod.InvokeFunc(collection, dir, name, enabled), "TrySetMod");
+
+    void Sync.ISyncModApi.RemoveLegacyTempMod(Guid collection)
     {
         try { removeMod.InvokeFunc(SyncTag, collection, SyncPriority); }
         catch (Exception e) { log.Debug("[Milieu] RemoveTemporaryMod failed: " + LogText.Describe(e, Sensitive)); }
     }
 
-    public void ClearSyncedEverywhere(IEnumerable<Guid> alsoClear)
+    IReadOnlyCollection<Guid> Sync.ISyncModApi.Collections()
     {
-        var all = new HashSet<Guid>(alsoClear);
-        try { foreach (var id in getCollections.InvokeFunc().Keys) all.Add(id); }
-        catch (Exception e) { log.Debug("[Milieu] GetCollections failed: " + LogText.Describe(e, Sensitive)); }
-        foreach (var id in all) ClearSynced(id);
+        try { return getCollections.InvokeFunc().Keys; }
+        catch (Exception e)
+        {
+            log.Debug("[Milieu] GetCollections failed: " + LogText.Describe(e, Sensitive));
+            return [];
+        }
+    }
+
+    private int Call(Func<int> f, string what)
+    {
+        try { return f(); }
+        catch (Exception e)
+        {
+            log.Debug($"[Milieu] {what} failed: " + LogText.Describe(e, Sensitive));
+            return -1;
+        }
     }
 
     public string ResolvePlayer(string gamePath)
@@ -201,10 +269,23 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
         }
     }
 
-    public void RedrawPlayer()
+    /// <summary>
+    /// Redraws everything, not just the player: the cushion is its own object and a player redraw doesn't reload its VFX
+    /// (seen in game, 2026-11-16), so synced rebuilds never showed on it.
+    /// </summary>
+    public void RedrawPlayer() =>
+        RedrawWithFallback(() => redrawAll.InvokeAction(0), () => redrawObject.InvokeAction(0, 0), log, Sensitive);
+
+    /// <summary>RedrawAll, else a player redraw; both failing only logs at Debug. Never throws.</summary>
+    internal static void RedrawWithFallback(Action all, Action player, ILogSink log, params string?[] sensitive)
     {
-        try { redrawObject.InvokeAction(0, 0); }
-        catch (Exception e) { log.Debug("[Milieu] RedrawObject failed: " + LogText.Describe(e, Sensitive)); }
+        try { all(); }
+        catch (Exception e)
+        {
+            log.Debug("[Milieu] RedrawAll failed: " + LogText.Describe(e, sensitive));
+            try { player(); }
+            catch (Exception e2) { log.Debug("[Milieu] RedrawObject failed: " + LogText.Describe(e2, sensitive)); }
+        }
     }
 
     public bool Set(IReadOnlyDictionary<string, string> redirects)

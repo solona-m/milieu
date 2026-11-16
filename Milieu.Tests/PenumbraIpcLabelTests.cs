@@ -1,4 +1,5 @@
 using System;
+using Milieu.Backdrop;
 using Milieu.Interop;
 using Xunit;
 
@@ -26,6 +27,11 @@ public class PenumbraIpcLabelTests
         Assert.Equal("Penumbra.ResolveDefaultPath", PenumbraIpc.LabelResolveDefaultPath);
         Assert.Equal("Penumbra.Initialized", PenumbraIpc.LabelInitialized);
         Assert.Equal("Penumbra.Disposed", PenumbraIpc.LabelDisposed);
+        Assert.Equal("Penumbra.AddMod.V5", PenumbraIpc.LabelAddMod);
+        Assert.Equal("Penumbra.ReloadMod.V5", PenumbraIpc.LabelReloadMod);
+        Assert.Equal("Penumbra.TrySetMod.V5", PenumbraIpc.LabelTrySetMod);
+        Assert.Equal("Penumbra.TrySetModPriority.V5", PenumbraIpc.LabelTrySetModPriority);
+        Assert.Equal("Penumbra.RedrawAll.V5", PenumbraIpc.LabelRedrawAll);
         Assert.Equal("Milieu", PenumbraIpc.Tag);
         Assert.Equal(0, PenumbraIpc.Priority);
         Assert.Equal(0xE0, PenumbraIpc.BaseCollectionType);
@@ -74,4 +80,13 @@ public class PenumbraIpcLabelTests
         Assert.Equal("Penumbra.GetPlayerMetaManipulations", PenumbraIpc.LabelGetPlayerMetaManipulations);
         Assert.Equal("Penumbra.RedrawObject.V5", PenumbraIpc.LabelRedrawObject);
     }
+
+    [Theory] // [AC-synced-lighting-8] [EDGE-synced-lighting-36]
+    [InlineData(PenumbraState.Available, true)]
+    [InlineData(PenumbraState.ModsDisabled, true)]
+    [InlineData(PenumbraState.NoBaseCollection, true)]
+    [InlineData(PenumbraState.Missing, false)]
+    [InlineData(PenumbraState.Incompatible, false)]
+    public void Reachable_EveryStateButMissingOrIncompatible(PenumbraState state, bool reachable) =>
+        Assert.Equal(reachable, PenumbraIpc.IsReachable(state));
 }
