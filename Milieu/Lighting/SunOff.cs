@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 using Milieu.Backdrop;
+using Milieu.Interop;
 using Milieu.Sync;
 
 namespace Milieu.Lighting;

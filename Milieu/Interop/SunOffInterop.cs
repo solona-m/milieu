@@ -25,6 +25,7 @@ internal sealed unsafe class SunOffInterop : ISunSwitch, IDisposable
     private readonly ILogSink log;
     private readonly nint address;
     private readonly SunOffShared shared = new();
+    private readonly object gate = new();   // Install vs Dispose (both rare); the detour never takes it
     private Hook<UpdateEnvironmentDelegate>? hook;
     private bool? installResult;
 
@@ -66,9 +67,18 @@ internal sealed unsafe class SunOffInterop : ISunSwitch, IDisposable
             log.Error("[Milieu] Sun off: refused to hook off the framework thread.");
             return false;
         }
-        if (shared.Closed) return false;   // disposed: never hook again
-        if (installResult is { } done) return done;
-        if (!Available) { installResult = false; return false; }
+        lock (gate)
+        {
+            if (shared.Closed) return false;   // disposed: never hook again
+            if (installResult is { } done) return done;
+            if (!Available) { installResult = false; return false; }
+            return Hook();
+        }
+    }
+
+    /// <summary>Under <see cref="gate"/>: creates and enables the hook once.</summary>
+    private bool Hook()
+    {
         try
         {
             // The field is assigned before Enable(): the detour can only run once enabled, so it always finds the hook.
@@ -80,7 +90,7 @@ internal sealed unsafe class SunOffInterop : ISunSwitch, IDisposable
         catch (Exception e)
         {
             log.Warning("[Milieu] Sun off: the game's lighting update couldn't be hooked: " + LogText.Describe(e));
-            // Unpatch first, then clear the field: a detour already running keeps reaching Original until the hook is gone.
+            // Unpatch first, then clear the field: a detour already running still finds the hook (OriginalDisposeSafe).
             hook?.Dispose();
             hook = null;
             installResult = false;
@@ -91,8 +101,10 @@ internal sealed unsafe class SunOffInterop : ISunSwitch, IDisposable
     private nint Detour(void* a1, void* a2)
     {
         var h = hook;
-        if (h == null) return 0;   // unreachable (Install assigns before Enable); without the hook Original can't be called
-        var result = h.Original(a1, a2);
+        if (h == null) return 0;   // unreachable (Install assigns before Enable); without the hook the original can't be called
+        // OriginalDisposeSafe, not Original: a call still in flight while Dispose runs must reach the game, not throw
+        // ObjectDisposedException into native code (Dalamud: it "can be called even after Dispose").
+        var result = h.OriginalDisposeSafe(a1, a2);
         try { SunOffPostStep.Run((byte*)a1, ReadEnv(), shared); }
         catch { /* a managed bug must never escape into the game; access violations aren't caught (the address checks guard) */ }
         return result;
@@ -106,7 +118,10 @@ internal sealed unsafe class SunOffInterop : ISunSwitch, IDisposable
 
     public void Dispose()
     {
-        shared.Close();
-        hook?.Dispose();
+        lock (gate)
+        {
+            shared.Close();
+            hook?.Dispose();
+        }
     }
 }

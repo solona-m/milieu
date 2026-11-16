@@ -387,6 +387,33 @@ public sealed class SunOffTests : IDisposable
         Assert.Equal(SunOffProbe.Passed, sw.Shared.Probe);
         Assert.Equal(SunOffStatus.Waiting, s.Status);
         Assert.False(sw.Shared.Writing);
+        Assert.False(sentinel.IsSet);                 // approved outside an episode: no zeroing window opened
+        s.Teardown();
+        Assert.False(sentinel.IsSet);
+    }
+
+    [Fact] // [EDGE-sun-off-22]
+    public unsafe void Diagnostics_NegativeDeltaInHex()
+    {
+        s.Tick();
+        SunOffPostStep.Run(buf.Env - 0x10, buf.Env, sw.Shared);   // a state below the manager (never dereferenced)
+        for (var i = 2; i <= 600; i++) s.Tick();
+        Assert.Contains(log.Lines, l => l.Text.Contains("offsets [-0x10]"));
+    }
+
+    [Theory] // [EDGE-sun-off-10]
+    [InlineData("Release")]
+    [InlineData("Teardown")]
+    public void Unloading_ReleaseAndTeardown_Drop_NoBackOnLine(string how)
+    {
+        TurnOn();
+        unloading = true;
+        if (how == "Release") s.Release(); else s.Teardown();
+        Assert.False(sw.Shared.Writing);
+        Assert.False(sentinel.IsSet);
+        Assert.Equal(0, Lines("Information", "Sun back on."));
+        s.Teardown();
+        Assert.Equal(0, Lines("Information", "Sun back on."));
     }
 
     [Theory] // [EDGE-sun-off-28]
@@ -434,11 +461,12 @@ public sealed class SunOffTests : IDisposable
             if (i == 599) Assert.True(sentinel.IsSet);
             if (i == 600) Assert.False(sentinel.IsSet);
             if (i >= 600) Assert.Equal(SunOffStatus.StartingSlow, s.Status);
-            if (buf.Post(sw.Shared) == PostResult.Probed) captures++;
+            var result = buf.Post(sw.Shared);
+            Assert.NotEqual(PostResult.Written, result);   // never zeroed
+            if (result == PostResult.Probed) captures++;
         }
         Assert.InRange(captures, 2, (int)Math.Ceiling(700 / 60.0));
         Assert.Equal(1, Lines("Information", "all 0 here"));
-        Assert.All(buf.Snapshot().Skip(0x58 + 0x20).Take(24), b => Assert.Equal(0, b));   // zeros stay zeros
         Assert.NotEqual(SunOffProbe.Passed, sw.Shared.Probe);
 
         lit = null; s.Tick();

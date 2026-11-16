@@ -34,6 +34,7 @@ public sealed unsafe class SunOffSharedTests
     [InlineData("Other", 0, 0, 1, 0)]
     [InlineData("A1Null", 0, 0, 1, 0)]
     [InlineData("EnvNull", 0, 0, 0, 1)]
+    [InlineData("BothNull", 0, 0, 0, 1)]
     public void Classify(string how, long state, long gpose, long other, long noManager)
     {
         using var buf = new EnvBuffer();
@@ -44,6 +45,7 @@ public sealed unsafe class SunOffSharedTests
             case "GPose": SunOffPostStep.Run(buf.Env + 0x448, buf.Env, s); break;
             case "Other": SunOffPostStep.Run(buf.Env + 0x28, buf.Env, s); break;
             case "A1Null": SunOffPostStep.Run(null, buf.Env, s); break;
+            case "BothNull": SunOffPostStep.Run(null, null, s); break;
             default: SunOffPostStep.Run(buf.State, null, s); break;
         }
         Assert.Equal(new SunOffCounts(1, state, gpose, other, noManager), s.Counts);

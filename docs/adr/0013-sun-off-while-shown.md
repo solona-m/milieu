@@ -52,8 +52,9 @@ sun (pairs would see it anyway).
   the flag drops leaves the game's values. No snapshot, no write-back.
 - **Hook lifetime.** The constructor only scans (`ScanAllText`, exactly one match) and checks EnvManager's static pointer.
   The hook is created on the first activation (framework thread), assigned before `Enable()` so the detour always finds
-  it, and stays enabled as a pass-through until dispose (Brio keeps its own enabled for its whole life). A failed install
-  latches Unavailable for the session.
+  it, and stays enabled as a pass-through until dispose (Brio keeps its own enabled for its whole life). The detour calls
+  `OriginalDisposeSafe`, so a call in flight during dispose reaches the game instead of throwing. `Install` and `Dispose`
+  share one lock (the detour never takes it). A failed install latches Unavailable for the session.
 - **Crash sentinel** (`sun-off-attempt.flag`, the ADR 0009 mechanism): set before the install and the flag; cleared at
   episode tick 600 if still waiting for approval (the install has survived); set again just before the first approval and
   cleared 600 ticks after it; cleared on stop, off→on and a failed check. Found at startup: CrashGuard until off→on.
@@ -102,8 +103,9 @@ and 5 have passed in game. Otherwise flip the kill switch to false, or the defau
   match), a crash at install or in the first zeroing latches CrashGuard next session.
 - Outside GPose the scene is darker (ambient only); the note says so.
 - Brio cases B and C above.
-- Placement: `ISunSwitch`, `SunOffStatus` and `SunOff` in `SunOff.cs`; `SunOffLayout`, `SunOffScan`, `SunOffPlausibility`
-  and `SunOffPostStep` in `SunOffPatch.cs`; `SunOffShared` in its own file.
+- Placement: `ISunSwitch`, `SunOffStatus` and `SunOff` in `SunOff.cs`; `SunOffScan`, `SunOffPlausibility` and
+  `SunOffPostStep` in `SunOffPatch.cs`; `SunOffShared` in its own file; the mirrored native layout, `SunOffLayout`, in
+  `Milieu/Interop/SunOffLayout.cs`.
 
 UNVERIFIED in game:
 

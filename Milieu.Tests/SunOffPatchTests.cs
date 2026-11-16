@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using Milieu.Interop;
 using Milieu.Lighting;
 using Milieu.Tests.Support;
 using Xunit;
