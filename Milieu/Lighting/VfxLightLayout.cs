@@ -32,11 +32,11 @@ public static class VfxLightLayout
     public const float StandInKeyScale = 1f;
 
     /// <summary>Key range (DstS).</summary>
-    public const float KeyRange = 8f;
+    public const float KeyRange = 30f;
 
     /// <summary>Key shadow range (SCDN/SCDF); the game's recipe used 0.5/15 at short range, both near/far variants cast shadows.</summary>
-    public const float KeyShadowNear = 0.5f;
-    public const float KeyShadowFar = 15f;
+    public const float KeyShadowNear = 0.1f;
+    public const float KeyShadowFar = 40f;
 
     /// <summary>The strongest fill's Bri at strength 1; weaker fills scale by their share.</summary>
     public const float FillBrightness = 4f;
