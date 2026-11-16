@@ -37,6 +37,9 @@ Tuned in game with the owner after the merge (dev builds 32-41, 2026-11-16, Mad 
 - **Brightness:** at 30 units with Attn 1, Bri 4000 was far too bright and Bri 200 looked right (`KeyBrightness`).
   The shadowed key uses Attn 1, the falloff that brightness was judged with; fills keep Attn 2.
 - The game's own sun still lights and shadows the scene through the dome: a shadow seen at distance came from it.
+- **Room dome:** with the key 8.4 units out, Bri 200 was too bright; after trying strengths the owner asked for about 40%
+  (Bri 80). `DistanceCompensationExponent` 0.72 gives (8.4 / 30)^0.72 ≈ 0.40 (≈ 0.42 at the default radius's 9 units);
+  the sky dome (key at the nominal 30) is unchanged.
 
 ## Decision
 
@@ -51,7 +54,7 @@ Under a synced delivery with scene lighting on, the synced dome carries Milieu's
   - **Fills:** soft coloured point lights without shadows, the strongest at `FillBrightness × strength`, the others by
     their share of luminance × type power.
   - **Distance:** `clamp(min(nominal, 0.9 × radius), 1.5, nominal)` (nominal 30 for the key, 8 for fills), so room-mode
-    lights stay inside the dome. Brightness against distance is a constant (`DistanceCompensationExponent`, 0 = none).
+    lights stay inside the dome. Brightness against distance is a constant (`DistanceCompensationExponent`, 0 = none; 0.72 since the room-dome tuning).
   - Colour is the energy's hue with the largest channel at 1.
 - **Positions are emitter-relative** and independent of the player's world height: the emitters carry that
   (`DomeAvfxParams.EmitterBaseHeight`).
@@ -110,7 +113,8 @@ UNVERIFIED in game:
    its rotation, so the lights may swing with the carrier while the dome doesn't (follow-up if seen).
 5. The key indoors under a real ceiling (map shadows may block it).
 6. Poses survive a `RedrawAll` in GPose (non-light synced rebuilds still run there).
-7. Brightness against distance in room mode (`DistanceCompensationExponent`).
+7. Brightness against distance in room mode (`DistanceCompensationExponent` 0.72): set from one room radius (key at 8.4);
+   other radii (1-33, e.g. about 0.18× at radius 3, 0.93× at 30) and fill compensation are UNVERIFIED.
 8. A PSync pair without Milieu sees the key light and its shadow.
 9. A key 30 units away isn't culled by the game (effector or emitter culling at distance).
 10. A light emitter's lifetime: `LightEmitter` copies the dome emitter's Life (60) and creation curves, not those of the

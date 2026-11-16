@@ -315,4 +315,13 @@ public class VfxLightPlannerTests
         var keyHalf = VfxLightPlanner.Plan(Rig(), Default, Sky, 1f, 0, standInKeyScale: 0.5f).Lights[0];
         Assert.Equal(keyFull.Brightness, keyHalf.Brightness);
     }
+
+    [Fact] // [EDGE-synced-lighting-50]
+    public void DefaultExponent_RoomKeyAtAbout40Percent_SkyKeyUnchanged()
+    {
+        var room = VfxLightPlanner.Plan(Rig(), Default, 10f, 1f, 0).Lights[0];   // default room radius: key at 9 units
+        var sky = VfxLightPlanner.Plan(Rig(), Default, 20000f, 1f, 0).Lights[0];
+        Assert.Equal(VfxLightLayout.KeyBrightness, sky.Brightness, 3);
+        Assert.InRange(room.Brightness / sky.Brightness, 0.38f, 0.45f);   // owner: about 40% in a room dome (2026-11-16)
+    }
 }
