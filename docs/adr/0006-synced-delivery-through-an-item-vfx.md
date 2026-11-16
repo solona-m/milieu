@@ -90,7 +90,9 @@ Tested in game with the owner (cushion and ring). What changed, and why:
 - **A real mod, "Milieu Sync", replaces the `MilieuSync` temp mod** (owner's choice: it shows in Penumbra's list). The
   staging folder `<mod dir>\_milieu_sync` is no longer Hidden; Milieu writes `meta.json` + `default_mod.json` (v3,
   atomically; Penumbra migrates them to v4) and `SyncModRegistrar` calls `ReloadMod`/`AddMod`, `TrySetModPriority`
-  (1,000,000) **then** `TrySetMod(true)` in the player's collection, then removes an older build's temp mod. On a first
+  (1,000,000) **then** `TrySetMod(true)` in the player's collection, then removes an older build's temp mod. Every
+  call names the mod by its folder only (an empty mod name): with a name, Penumbra falls back to any mod of that name
+  when the folder isn't registered, which could be a user's own "Milieu Sync". On a first
   show a failed priority enables nothing and a failed enable is disabled again (fail closed); on a rebuild the mod is
   already enabled, so a refusal is handled by putting back or taking down (below).
   - **Mod-management calls are new:** until now Milieu only made temporary-mod and read calls (stated in `PenumbraIpc`'s

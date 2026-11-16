@@ -47,11 +47,15 @@ Under a synced delivery with scene lighting on, the synced dome carries Milieu's
   the output is byte-identical to before (golden matrix).
 - **Fills off by default.** A particle-less emitter carrying a *point* light hasn't been loaded in game, so
   `VfxLightLayout.FillsOnOwnEmitters = false`: only the key ships until that is checked.
+- **No sun in the image → a stand-in key** (owner's test, 2026-11-16: the bundled Sunset, whose estimate has no key,
+  shipped no light at all). When the rig has no key, the first drawn lamp or region (the strongest) is the key, with
+  shadows. A sun that exists but isn't drawn on the dome still gives no key (no light from a direction the image doesn't
+  show there).
 - **The rig travels with the synced texture.** The synced job loads it after staging (`PreparedTexture.Rig`); a failure
   logs and shows the dome without lights, never failing the backdrop.
 - **Native lights step aside only when the drawn synced dome carries VFX lights** (`LitBackdrop.Synced &&
   VfxLightCount > 0`, status `InSyncedBackdrop`): no doubled light. A local dome under a synced config, or a synced dome
-  with no VFX lights (no rig, no key with fills off), keeps native GPose lights.
+  with no VFX lights (no rig, or a key and every lamp/region off the drawn dome with fills off), keeps native GPose lights.
 - **Live changes.** The lighting toggle, strength and fill count go through `LightingViewModel.LightChange` (set, save,
   request). The controller replans 500 ms after the last change and rebuilds only if the lights differ. While in GPose
   the request is held and fires 500 ms after GPose ends, because a rebuild redraws everyone and can disturb posing;

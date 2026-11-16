@@ -41,7 +41,7 @@ Experiment result (testing builds 3-5, 2026-11-09..16; the `/milieu vfxlight` co
 effector lights were tested in game. **Point lights (EfVT 0) linked from the dome emitter light the character and cast
 shadows from a synced dome** with the game's own recipe (Attn 2, shadow flags 1/1/1/0, near 0.5 / far 15, brightness as
 Bri). Directional effectors (EfVT 1) never lit anything, and static (local) VFX never run effectors. Synced scene lighting
-uses them (ADR 0011): point-light effectors linked from the dome emitter and from particle-less emitters.
+uses them (ADR 0011): point-light effectors linked from the dome emitter (the key), and from particle-less emitters for fills, which ship off.
 
 ## Open questions (to record after in-game checks)
 

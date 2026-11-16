@@ -93,18 +93,19 @@ public class VfxLightPlannerTests
     }
 
     [Fact] // [EDGE-synced-lighting-2]
-    public void KeyNotDrawn_FillsOnly_NoShadows()
+    public void NoKeyInRig_FillsOn_OneStandInKeyWithShadows_RestSoft()
     {
         var plan = VfxLightPlanner.Plan(Rig(noKey: true), Default, Sky, 1f, 2, fillsOnOwnEmitters: true);
-        Assert.False(plan.HasKey);
-        Assert.Equal(2, plan.Lights.Count);
-        Assert.All(plan.Lights, l => Assert.False(l.Shadows));
+        Assert.True(plan.HasKey);
+        Assert.True(plan.Lights[0].Shadows);
+        Assert.All(plan.Lights.Skip(1), l => Assert.False(l.Shadows));
     }
 
     [Fact] // [EDGE-synced-lighting-2]
-    public void KeyNotDrawn_FillsOff_NoLights()
+    public void NoKeyInRig_FillsOff_StandInKeyOnly()
     {
-        Assert.Empty(VfxLightPlanner.Plan(Rig(noKey: true), Default, Sky, 1f, 2).Lights);
+        var plan = VfxLightPlanner.Plan(Rig(noKey: true), Default, Sky, 1f, 2);
+        Assert.True(Assert.Single(plan.Lights).Shadows);
     }
 
     [Theory] // [EDGE-synced-lighting-39]
@@ -185,5 +186,31 @@ public class VfxLightPlannerTests
         var plan = VfxLightPlanner.Plan(Rig(new RigLight(keyS, 0.25f, new Vector3(3, 2, 1))), view, Sky, 1f, 0);
         Assert.False(plan.HasKey);
         Assert.Empty(plan.Lights);
+    }
+
+    [Fact] // [AC-synced-lighting-1]
+    public void NoSunInTheImage_StrongestDrawnLightStandsInAsTheKey()
+    {
+        // The bundled Sunset rig has no key, only regions: it must still ship one shadowed light.
+        var plan = VfxLightPlanner.Plan(Rig(noKey: true), Default, Sky, 1f, 0);
+        Assert.True(plan.HasKey);
+        var key = Assert.Single(plan.Lights);
+        Assert.True(key.Shadows);
+        Assert.Equal(VfxLightLayout.KeyBrightness, key.Brightness);
+        var dir = DomeProjection.WorldDirection(0.3f, 0.3f, Default)!.Value;   // the first lamp
+        Assert.True(Vector3.Distance(Anchor + dir * VfxLightLayout.KeyDistance, key.Position) < 1e-3f);
+
+        var withFills = VfxLightPlanner.Plan(Rig(noKey: true), Default, Sky, 1f, 3, fillsOnOwnEmitters: true);
+        Assert.Single(withFills.Lights, l => l.Shadows);
+        Assert.Equal(withFills.Lights.Count, withFills.Lights.Select(l => l.Position).Distinct().Count());   // not used twice
+    }
+
+    [Fact] // [AC-synced-lighting-1]
+    public void BundledSunset_GetsAKeyLight()
+    {
+        var rig = Milieu.Assets.BundledLightRigs.Find("sunset");
+        Assert.NotNull(rig);
+        Assert.Null(rig!.Key);
+        Assert.True(VfxLightPlanner.Plan(rig, Default, Sky, 1f, 0).HasKey);
     }
 }

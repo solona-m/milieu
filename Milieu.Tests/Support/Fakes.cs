@@ -26,12 +26,16 @@ public sealed class FakeSyncModApi : Milieu.Sync.ISyncModApi
     public int ReloadResult = 0, AddResult = 0, PriorityResult = 0, EnableResult = 0, DisableResult = 0;
     public List<Guid> KnownCollections = [];
 
-    public int ReloadMod(string dir, string name) { Calls.Add($"Reload {dir} {name}"); return ReloadResult; }
+    public int ReloadMod(string dir, string name) { Calls.Add($"Reload {dir}"); Names.Add(name); return ReloadResult; }
     public int AddMod(string dir) { Calls.Add($"Add {dir}"); return AddResult; }
-    public int SetModPriority(Guid c, string dir, string name, int priority) { Calls.Add($"Priority {c} {priority}"); return PriorityResult; }
+    public int SetModPriority(Guid c, string dir, string name, int priority) { Calls.Add($"Priority {c} {priority}"); Names.Add(name); return PriorityResult; }
+
+    /// <summary>Every mod name passed to a lookup (must be empty: lookup by folder only).</summary>
+    public readonly List<string> Names = [];
     public int SetModEnabled(Guid c, string dir, string name, bool enabled)
     {
         Calls.Add($"Enabled {c} {enabled}");
+        Names.Add(name);
         return enabled ? EnableResult : DisableResult;
     }
     public void RemoveLegacyTempMod(Guid c) => Calls.Add($"Legacy {c}");

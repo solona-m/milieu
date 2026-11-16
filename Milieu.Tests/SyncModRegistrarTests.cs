@@ -41,7 +41,7 @@ public sealed class SyncModRegistrarTests : IDisposable
     public void Enable_Order_Reload_Priority_Enable_Legacy()
     {
         Assert.Equal(0, r.Enable(c, Paths(), Manips()));
-        Assert.Equal(["Reload _milieu_sync Milieu Sync", $"Priority {c} 1000000", $"Enabled {c} True", $"Legacy {c}"], api.Calls);
+        Assert.Equal(["Reload _milieu_sync", $"Priority {c} 1000000", $"Enabled {c} True", $"Legacy {c}"], api.Calls);
         Assert.Equal(1, FilesInMod());
     }
 
@@ -94,7 +94,7 @@ public sealed class SyncModRegistrarTests : IDisposable
         r.Enable(c, Paths(), Manips());
         api.Calls.Clear();
         Assert.True(r.Clear(c));
-        Assert.Equal([$"Enabled {c} False", $"Legacy {c}", "Reload _milieu_sync Milieu Sync"], api.Calls);
+        Assert.Equal([$"Enabled {c} False", $"Legacy {c}", "Reload _milieu_sync"], api.Calls);
         Assert.Equal(0, FilesInMod());
         api.DisableResult = 7;
         Assert.False(r.Clear(c));   // reported, so the caller keeps the collection to retry
@@ -145,5 +145,15 @@ public sealed class SyncModRegistrarTests : IDisposable
         Assert.False(r.Clear(c));   // not disabled yet: still to do
         Assert.Empty(api.Calls);
         Assert.Equal(0, FilesInMod());
+    }
+
+    [Fact] // a user's own mod named "Milieu Sync" can't be matched (Penumbra falls back to the name when the folder is unknown)
+    public void ModLookups_ByFolderOnly_NeverByName()
+    {
+        r.Enable(c, Paths(), Manips());
+        r.Disable(c);
+        r.Neutralize();
+        Assert.NotEmpty(api.Names);
+        Assert.All(api.Names, n => Assert.Equal("", n));
     }
 }

@@ -331,6 +331,7 @@ public sealed class BackdropController : Gui.IGridController
                 synced.RemoveAll(redraw: true);
                 CleanupStaging(keepShown: false);
             }
+            SyncedLights = null;
             message = StatusMessage.Of(MessageKey.SyncUploadNotice, ("file", Path.GetFileName(config.ImagePath)));
             config.SyncUploadNoticeShown = true;
             save();

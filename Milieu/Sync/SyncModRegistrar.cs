@@ -32,6 +32,12 @@ public sealed class SyncModRegistrar(ISyncModApi api, Func<string?> modDirectory
 {
     public const string Dir = SyncStaging.FolderName;
     public const string Name = SyncRealMod.ModName;
+
+    /// <summary>
+    /// The name passed to Penumbra's mod lookups: empty, so Penumbra finds the mod by its folder only. With a name, a missing
+    /// folder falls back to any mod of that name, which could be one of the user's own (ADR 0006 amendment).
+    /// </summary>
+    public const string LookupName = "";
     public const int Priority = 1_000_000;
 
     /// <summary>Writes, adds and enables the mod in <paramref name="collection"/>. 0 on success, else Penumbra's code or -1.</summary>
@@ -51,24 +57,24 @@ public sealed class SyncModRegistrar(ISyncModApi api, Func<string?> modDirectory
             log.Warning("[Milieu] Could not write the Milieu Sync mod files: " + e.GetType().Name);
             return -1;
         }
-        var ec = api.ReloadMod(Dir, Name);
+        var ec = api.ReloadMod(Dir, LookupName);
         if (ec != 0) ec = api.AddMod(Dir);
         if (ec != 0)
         {
             log.Warning($"[Milieu] Penumbra could not add the Milieu Sync mod (code {ec}).");
             return ec;
         }
-        var prio = api.SetModPriority(collection, Dir, Name, Priority);
+        var prio = api.SetModPriority(collection, Dir, LookupName, Priority);
         if (prio is not (0 or 1))
         {
             log.Warning($"[Milieu] Penumbra could not set the Milieu Sync priority (code {prio}); not enabled.");
             return prio;
         }
-        var on = api.SetModEnabled(collection, Dir, Name, true);
+        var on = api.SetModEnabled(collection, Dir, LookupName, true);
         if (on is not (0 or 1))
         {
             log.Warning($"[Milieu] Penumbra could not enable the Milieu Sync mod (code {on}); disabling it again.");
-            api.SetModEnabled(collection, Dir, Name, false);
+            api.SetModEnabled(collection, Dir, LookupName, false);
             return on;
         }
         api.RemoveLegacyTempMod(collection);
@@ -83,7 +89,7 @@ public sealed class SyncModRegistrar(ISyncModApi api, Func<string?> modDirectory
     public bool Disable(Guid collection)
     {
         if (!api.PenumbraPresent) return false;
-        var off = api.SetModEnabled(collection, Dir, Name, false);
+        var off = api.SetModEnabled(collection, Dir, LookupName, false);
         api.RemoveLegacyTempMod(collection);
         return off is 0 or 1;
     }
@@ -107,7 +113,7 @@ public sealed class SyncModRegistrar(ISyncModApi api, Func<string?> modDirectory
         var exists = MetaExists();
         foreach (var id in all)
         {
-            if (exists) api.SetModEnabled(id, Dir, Name, false);
+            if (exists) api.SetModEnabled(id, Dir, LookupName, false);
             api.RemoveLegacyTempMod(id);
         }
         Neutralize();
@@ -126,7 +132,7 @@ public sealed class SyncModRegistrar(ISyncModApi api, Func<string?> modDirectory
             log.Warning("[Milieu] Could not empty the Milieu Sync mod: " + e.GetType().Name);
             return;
         }
-        if (api.PenumbraPresent) api.ReloadMod(Dir, Name);
+        if (api.PenumbraPresent) api.ReloadMod(Dir, LookupName);
     }
 
     private bool MetaExists() => modDirectory() is { } dir && File.Exists(Path.Combine(dir, Dir, SyncRealMod.MetaFile));

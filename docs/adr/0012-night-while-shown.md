@@ -37,7 +37,7 @@ lighting) writes 01:00 ET (`NightTime.Seconds` = 3600) into `DayTimeSeconds` eve
   disposed, a lost synced dome), teardown. Forget (no write now): territory change and logout set a pending restore that
   the first ready tick performs before anything else (a territory change also clears "not in this zone"). On logout the
   night is forgotten *before* the controller hides the backdrop, so its Hidden event doesn't restore during the logout.
-  A restore whose reads come back empty (the object momentarily absent) is kept for the next ready tick, never dropped.
+  A restore whose reads come back empty (the object momentarily absent) is kept for the next ready tick (until teardown).
   While the game exits (`IsFrameworkUnloading`): no read or write at all.
 - **Writes.** `Ok`, `Skipped` (the EnvManager instance isn't there that tick: no write, no latch) or `Failed` (a refusal or
   a bad value: latched Unavailable). An off-thread refusal logs at Error, as LightInterop's does.

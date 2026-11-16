@@ -39,6 +39,18 @@ internal static class VfxLightPlanner
 
         // Fills need emitters of their own (unproven): with that off, only the key ships, on the dome emitter.
         var (key, fills) = LightRigPlanner.Select(rig, view, fillsOnOwnEmitters ? fillCount : 0);
+        if (rig.Key == null)
+        {
+            // No sun in the image at all (an overcast or sunset image whose estimate found no key): the first drawn lamp or
+            // region (the strongest) stands in as the key, so the scene still gets one directional light with shadows. A sun
+            // that exists but isn't drawn stays unlit (EDGE-synced-lighting-2).
+            var (_, best) = LightRigPlanner.Select(rig, view, 1);
+            if (best.Count > 0)
+            {
+                key = best[0];
+                fills = fills.Where(f => f.Light != best[0].Light).ToList();
+            }
+        }
         var anchor = new Vector3(0, LightRigLayout.AnchorHeight, 0);
         var lights = new List<DomeLight>();
 
