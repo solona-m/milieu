@@ -143,7 +143,7 @@ public sealed class BackdropControllerSyncTests : IDisposable
         var dome = Assert.Single(staged, f => f.StartsWith("dome_"));
         var set = Assert.Single(pen.SyncSets);
         Assert.Equal(pen.Player!.Value.Id, set.Collection);
-        Assert.Equal(Path.Combine(Staging, dome), set.Paths["chara/monster/m8058/obj/body/b0001/vfx/eff/vm0200.avfx"]);
+        Assert.Equal(Path.Combine(Staging, dome), set.Paths["chara/monster/m8058/obj/body/b0001/vfx/eff/vm0001.avfx"]);
         Assert.Equal(Path.Combine(Staging, "sky_00112233445566ff.atex"), set.Paths["vfx/milieu/00112233445566ff/sky.atex"]);
         Assert.Equal(1, pen.Redraws);
         Assert.Empty(spawner.Spawns);
@@ -157,7 +157,7 @@ public sealed class BackdropControllerSyncTests : IDisposable
     public void Ring_Show_RegistersA0028RightRing()
     {
         ShowSynced(DeliveryMode.MadBirdRing);
-        Assert.Contains("chara/accessory/a0028/vfx/eff/va0200.avfx", pen.SyncSets.Single().Paths.Keys);
+        Assert.Contains("chara/accessory/a0028/vfx/eff/va0001.avfx", pen.SyncSets.Single().Paths.Keys);
         Assert.Equal(MessageKey.SyncShownRing, c.Status.Message.Key);
     }
 
@@ -170,7 +170,7 @@ public sealed class BackdropControllerSyncTests : IDisposable
         c.Tick();
         Assert.Equal(2, pen.SyncSets.Count);
         Assert.Equal(2, pen.Redraws);
-        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0200.avfx"];
+        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"];
         Assert.Equal(MathF.PI / 2, Avfx(dome).Need("Ptcl").Need("Rot").Need("Y").CurveValue(), 4);
         Assert.Empty(spawner.Spawns);
     }
@@ -518,7 +518,7 @@ public sealed class BackdropControllerSyncTests : IDisposable
         c.Tick();
         Assert.Equal(2, pen.SyncSets.Count);
         Assert.Equal(2, pen.Redraws);
-        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0200.avfx"];
+        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"];
         Assert.Equal(3f, Avfx(dome).Need("Ptcl").Need("Pos").Need("Y").CurveValue());
         Assert.Empty(spawner.Spawns);
         c.Recenter();

@@ -21,7 +21,7 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
     public sealed record Registration(Guid Collection, bool IndividualSet, SyncTarget Target, SyncPlan Plan);
 
     private readonly Dictionary<(Guid, DeliveryMode), SyncBase> baseCache = [];
-    private readonly Dictionary<DeliveryMode, byte> lastVfxId = [];
+    private readonly Dictionary<DeliveryMode, IReadOnlyList<ImcEntry>> lastEntries = [];
     private readonly HashSet<Guid> sessionGuids = [];
 
     public Registration? Shown { get; private set; }
@@ -39,8 +39,8 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
         var key = (player.Id, target.Mode);
         if (!baseCache.TryGetValue(key, out var b))
         {
-            byte? ignore = lastVfxId.TryGetValue(target.Mode, out var last) ? last : null;
-            var (resolved, failure) = SyncPlanner.ResolveBase(target, gameData.ReadVanilla(target.ImcPath), sync.PlayerMeta(), ignore);
+            var own = lastEntries.TryGetValue(target.Mode, out var last) ? last : null;
+            var (resolved, failure) = SyncPlanner.ResolveBase(target, gameData.ReadVanilla(target.ImcPath), sync.PlayerMeta(), own);
             if (resolved == null) return (failure, StatusMessage.Of(failure, ("item", target.DisplayName)));
             b = resolved;
             baseCache[key] = b;
@@ -70,7 +70,7 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
             return (MessageKey.SyncRefused, StatusMessage.Of(MessageKey.SyncRefused, ("code", code)));
         }
         Pending = new Registration(player.Id, player.IndividualSet, target, plan);
-        lastVfxId[target.Mode] = plan.VfxId;
+        lastEntries[target.Mode] = plan.Entries;
         return (MessageKey.None, null);
     }
 

@@ -28,10 +28,21 @@ public class SyncTargetTests
     [Fact] // [EDGE-synced-delivery-9]
     public void ChooseVfxId_SkipsUsed_NullWhenFull()
     {
-        Assert.Equal((byte)200, SyncTarget.ChooseVfxId([0, 1, 2]));
-        Assert.Equal((byte)201, SyncTarget.ChooseVfxId([0, 200]));
-        Assert.Equal((byte)203, SyncTarget.ChooseVfxId([200, 201, 202]));
-        Assert.Null(SyncTarget.ChooseVfxId(Enumerable.Range(200, 55).Select(i => (byte)i)));
-        Assert.Equal((byte)254, SyncTarget.ChooseVfxId(Enumerable.Range(200, 54).Select(i => (byte)i)));
+        // [AC-synced-lighting-9] the lowest free id from 1 to 127 (ids of 128+ don't load an item's own VFX, seen in game).
+        Assert.Equal((byte)1, SyncTarget.ChooseVfxId([0]));
+        Assert.Equal((byte)3, SyncTarget.ChooseVfxId([0, 1, 2]));
+        Assert.Equal((byte)2, SyncTarget.ChooseVfxId([1, 200]));
+        Assert.Equal((byte)127, SyncTarget.ChooseVfxId(Enumerable.Range(0, 127).Select(i => (byte)i)));
+        Assert.Null(SyncTarget.ChooseVfxId(Enumerable.Range(0, 128).Select(i => (byte)i)));   // [EDGE-synced-lighting-16]
+    }
+
+    [Fact] // [AC-synced-lighting-9]
+    public void VfxIdBounds_StayBelow128()
+    {
+        Assert.Equal(1, SyncTarget.FirstVfxId);
+        Assert.Equal(127, SyncTarget.LastVfxId);
+        // Free ids above 127 are never chosen.
+        Assert.Null(SyncTarget.ChooseVfxId(Enumerable.Range(1, 127).Select(i => (byte)i)));
+        Assert.Equal("chara/monster/m8058/obj/body/b0001/vfx/eff/vm0127.avfx", SyncTarget.Cushion.VfxPath(127));
     }
 }

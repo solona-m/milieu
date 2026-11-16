@@ -73,12 +73,12 @@ public class SyncedDeliveryTests
     {
         Assert.Equal(MessageKey.None, Begin());
         d.Commit();
-        // The live meta now holds Milieu's own entry (VfxId 200) for variant 1.
-        pen.Meta = SyncFixtures.V1([(SyncTarget.MadBirdRing.KeyOf(1), SyncFixtures.Entry(3, 1, 200))]);
+        // The live meta now holds Milieu's own entry (VfxId 1) for variant 1.
+        pen.Meta = SyncFixtures.V1([(SyncTarget.MadBirdRing.KeyOf(1), SyncFixtures.Entry(3, 1, 1))]);
         Assert.Equal(MessageKey.None, Begin());
         Assert.Equal(1, pen.MetaReads);
         Assert.Equal(1, data.Reads);
-        Assert.Equal(200, d.Pending!.Plan.VfxId);
+        Assert.Equal(1, d.Pending!.Plan.VfxId);
     }
 
     [Fact] // [EDGE-synced-delivery-29]
@@ -118,18 +118,30 @@ public class SyncedDeliveryTests
         Assert.Equal(2, pen.MetaReads);
     }
 
-    [Fact] // [EDGE-synced-delivery-29]
-    public void ReRead_IgnoresOverrideWithLastSessionVfxId()
+    [Fact] // [EDGE-synced-delivery-29] [AC-synced-lighting-9]
+    public void ReRead_IgnoresMilieusOwnStaleEntry()
+    {
+        Begin(); d.Commit();
+        var own = d.Shown!.Plan.Entries[0];
+        d.RemoveAll(redraw: true);
+        // Penumbra hasn't applied the removal yet: the meta still holds exactly the entry Milieu registered for variant 1.
+        pen.Meta = SyncFixtures.V1([(SyncTarget.MadBirdRing.KeyOf(1), own)]);
+        Begin();
+        Assert.Equal(1, d.Pending!.Plan.VfxId);   // the stale id isn't taken for a user's
+        Assert.Equal(SyncFixtures.Entry(3, 1).WithVfx(1), d.Pending.Plan.Entries[0]);   // variant 1 is vanilla, not the stale entry
+    }
+
+    [Fact] // [EDGE-synced-lighting-15] [AC-synced-lighting-9]
+    public void ReRead_ForeignOverrideWithMilieusLastId_IsTheUsers()
     {
         Begin(); d.Commit();
         d.RemoveAll(redraw: true);
-        // Penumbra hasn't applied the removal yet: the meta still holds Milieu's stale entry with VfxId 200.
-        pen.Meta = SyncFixtures.V1([(SyncTarget.MadBirdRing.KeyOf(1), new ImcEntry(9, 9, 9, 200, 9))]);
+        // Another mod uses Milieu's last id (1) but differs in another field: it is the user's override, and 1 is avoided.
+        var foreign = new ImcEntry(9, 9, 9, 1, 9);
+        pen.Meta = SyncFixtures.V1([(SyncTarget.MadBirdRing.KeyOf(1), foreign)]);
         Begin();
-        Assert.Equal(200, d.Pending!.Plan.VfxId);
-        var json = PenumbraMeta.DecodeV0Json(d.Pending.Plan.Manips);
-        Assert.Contains("\"MaterialId\":31", json);    // variant 1 is vanilla (Entry(3,1) → material 31), not the stale 9
-        Assert.DoesNotContain("\"MaterialId\":9,", json);
+        Assert.Equal(2, d.Pending!.Plan.VfxId);
+        Assert.Equal(foreign.WithVfx(2), d.Pending.Plan.Entries[0]);
     }
 
     [Fact] // [EDGE-synced-delivery-31]
