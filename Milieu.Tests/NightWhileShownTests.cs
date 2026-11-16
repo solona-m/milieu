@@ -336,4 +336,18 @@ public class NightWhileShownTests
         public void Set() { order.Add("Set"); inner.Set(); }
         public void Clear() { order.Add("Clear"); inner.Clear(); }
     }
+
+    [Fact] // [EDGE-synced-lighting-25]
+    public void OffOn_ClearsAStaleSentinel_EvenWithNoEpisode()
+    {
+        var found = new FakeSentinel(setAtStartup: true);
+        n = Make(found);
+        drawn = false;                        // nothing drawn: no episode will follow
+        config.NightWhileShown = false; Tick();
+        var clears = found.Clears;
+        config.NightWhileShown = true; Tick();
+        Assert.Equal(clears + 1, found.Clears);   // the on tick alone
+        Assert.False(found.IsSet);
+        Assert.Equal(NightStatus.Waiting, n.Status);
+    }
 }

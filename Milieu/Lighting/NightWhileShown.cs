@@ -234,7 +234,7 @@ public sealed class NightWhileShown
 
     /// <summary>
     /// Writes the game clock's time back when the field still reads as Milieu's night. When the field or the clock can't be
-    /// read right now (the object momentarily absent), the decision is kept for the next ready tick, never dropped.
+    /// read right now (the object momentarily absent), the decision is kept for the next ready tick (until teardown).
     /// </summary>
     private void WriteBackIfOurs(string when)
     {
@@ -249,8 +249,8 @@ public sealed class NightWhileShown
             log.Information("[Milieu] Night: the time of day was changed by something else; leaving it.");
             return;
         }
-        env.WriteDayTimeSeconds(c);
-        log.Information($"[Milieu] Night off ({when}).");
+        if (env.WriteDayTimeSeconds(c) == EnvWrite.Ok) log.Information($"[Milieu] Night off ({when}).");
+        else log.Warning($"[Milieu] Night: the time of day couldn't be written back ({when}).");
     }
 
     private void Latch(string reason)

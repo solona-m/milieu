@@ -105,6 +105,9 @@ public sealed class PluginWiringTests : IDisposable
         var order = new List<string>();
         Plugin.TickAll(() => order.Add("controller"), () => order.Add("lighting"), () => order.Add("night"));
         Assert.Equal(["controller", "lighting", "night"], order);
+        order.Clear();
+        Plugin.TickAll(() => order.Add("controller"), null, null);
+        Assert.Equal(["controller"], order);
     }
 
     [Fact] // [EDGE-synced-lighting-27]
