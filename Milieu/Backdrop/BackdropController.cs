@@ -662,13 +662,16 @@ public sealed class BackdropController : Gui.IGridController
         var floorY = config.Current.FloorY();
         var bakedYaw = YawRadians();
         var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, bakedYaw);
+        // Item VFX are anchored at world height 0, not at the item (seen in game, 2026-11-16): raise the dome to the player.
+        var anchorY = game.PlayerPosition?.Y ?? 0f;
         byte[] avfx;
         try
         {
             avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, build.VerticalScale,
                 build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY,
                 BakedHeight: config.Current.HeightOffset, BakedYawRadians: bakedYaw, AttachToOwner: true,
-                TestLight: DomeAvfxBuilder.TestLightMode));
+                TestLight: DomeAvfxBuilder.TestLightMode, AnchorHeight: anchorY));
+            log.Information($"[Milieu] Synced dome anchor height {anchorY:0.00} (player world Y).");
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
         {

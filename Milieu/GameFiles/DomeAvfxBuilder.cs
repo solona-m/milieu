@@ -22,7 +22,8 @@ internal sealed record DomeAvfxParams(
     float BakedHeight = 0f,
     float BakedYawRadians = 0f,
     bool AttachToOwner = false,
-    int TestLight = 0);
+    int TestLight = 0,
+    float AnchorHeight = 0f);
 
 /// <summary>
 /// Authors the dome <c>.avfx</c> in code: one scheduler item → one timeline → one emitter → one model particle →
@@ -71,7 +72,7 @@ internal static class DomeAvfxBuilder
         Scheduler(w);
         Timeline(w, ownEmitter);
         Emitter(w, p, light && !ownEmitter);
-        if (ownEmitter) LightEmitter(w);
+        if (ownEmitter) LightEmitter(w, p.AnchorHeight);
         Particle(w, p);
         if (light) Effector(w, p.TestLight);
         w.CString("Tex", p.TextureGamePath);
@@ -92,7 +93,7 @@ internal static class DomeAvfxBuilder
 
     private static void Validate(DomeAvfxParams p)
     {
-        if (!float.IsFinite(p.BakedHeight) || !float.IsFinite(p.BakedYawRadians))
+        if (!float.IsFinite(p.BakedHeight) || !float.IsFinite(p.BakedYawRadians) || !float.IsFinite(p.AnchorHeight))
             throw new ArgumentOutOfRangeException(nameof(p), "Baked height and yaw must be finite.");
         if (string.IsNullOrEmpty(p.TextureGamePath) || p.TextureGamePath.Any(c => c is < (char)0x20 or > (char)0x7E))
             throw new ArgumentException("Texture game path must be non-empty printable ASCII.", nameof(p));
@@ -172,7 +173,7 @@ internal static class DomeAvfxBuilder
     /// a plain emitter with no particles (PrCn 0) and no child emitters, linked to effector 0. It has no ItPr (nothing to emit),
     /// so it follows the VFX root, rotation included.
     /// </summary>
-    private static void LightEmitter(AvfxChunkWriter w)
+    private static void LightEmitter(AvfxChunkWriter w, float anchorHeight)
     {
         w.Begin("Emit").Int("SdNo", -1).Int("LpSt", 0).Int("LpEd", 0).Int("ClCn", 30).Int("EfNo", 0).Byte("bAD", 0)
          .Int("EVT", 0).Int("RBDT", 2).Int("CCOT", 0).Int("ROT", 2).Int("PrCn", 0).Int("EmCn", 0);
@@ -183,7 +184,7 @@ internal static class DomeAvfxBuilder
         w.Begin("Col");
         CurveRgb(w, "RGB", 1, 1, 1);
         w.End();
-        Axes(w, "Pos", 0);
+        AxesY(w, "Pos", anchorHeight);   // synced: item VFX are anchored at world height 0 (seen in game)
         Axes(w, "Rot", 0);
         Axes(w, "Scl", 0);
         w.End();
@@ -259,7 +260,7 @@ internal static class DomeAvfxBuilder
         w.Begin("Col");
         CurveRgb(w, "RGB", 1, 1, 1);
         w.End();
-        Axes(w, "Pos", 0);
+        AxesY(w, "Pos", p.AnchorHeight);   // synced: item VFX are anchored at world height 0 (seen in game); local: 0
         Axes(w, "Rot", 0);
         Axes(w, "Scl", 1);
         w.Begin("ItPr").Int("bEnb", 1).Int("TgtB", 0).Int("LoDr", 0).Int("CrTm", 1).Int("CrCn", 1).Int("CrPr", 100)
