@@ -55,8 +55,9 @@ public static class VfxLightLayout
     public const bool FillsOnOwnEmitters = false;
 
     /// <summary>
-    /// Brightness against distance (UNVERIFIED, ADR 0011 item 7): Bri ×= (d / nominal)^exponent, which only matters when the
-    /// room clamp shortens d. 0 = no compensation.
+    /// Brightness against distance (ADR 0011 item 7): Bri ×= (d / nominal)^exponent, which only matters when the room clamp
+    /// shortens d. Tuned in game (2026-11-16): a room-dome key 8.4 units out looked right at 40% of the sky dome's brightness,
+    /// and (8.4 / 30)^0.72 ≈ 0.40 (≈ 0.42 at the default room radius's 9 units). 0 = no compensation.
     /// </summary>
-    public const float DistanceCompensationExponent = 0f;
+    public const float DistanceCompensationExponent = 0.72f;
 }
