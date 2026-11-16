@@ -83,7 +83,14 @@ internal static class DomeAvfxBuilder
         return bytes;
     }
 
-    private static bool IsLight(int mode) => mode is >= 1 and <= 5;
+    private static bool IsLight(int mode) => mode is >= 1 and <= 7;
+
+    /// <summary>
+    /// Modes 6, 7: a shadow-casting point light set up like the game's own (131 world-lighting point lights with shadows:
+    /// mostly shadow flags 1/1/1/0, cubic falloff, near 0.5 / far 15, range ~5, brightness as Bri). Mode 7 widens the
+    /// shadow range (near 0.1 / far 30).
+    /// </summary>
+    private static bool IsGameShadowLight(int mode) => mode is 6 or 7;
 
     /// <summary>Modes 3-5: a directional light.</summary>
     private static bool IsDirectional(int mode) => mode is 3 or 4 or 5;
@@ -205,10 +212,26 @@ internal static class DomeAvfxBuilder
     private static void Effector(AvfxChunkWriter w, int mode)
     {
         var point = !IsDirectional(mode);
-        w.Begin("Efct").Int("EfVT", point ? 0 : 1).Int("RoOT", 2).Int("CCOT", 0).Int("bAOV", point ? 1 : 0).Int("bAGm", 1)
+        w.Begin("Efct").Int("EfVT", point ? 0 : 1).Int("RoOT", 2).Int("CCOT", 0).Int("bAOV", point && !IsGameShadowLight(mode) ? 1 : 0).Int("bAGm", 1)
          .Int("LpSt", 0).Int("LpEd", 0);
         w.Begin("Data");
-        if (point)
+        if (IsGameShadowLight(mode))
+        {
+            w.Begin("Col");
+            CurveRgb(w, "RGB", 1f, 0.15f, 0.15f);
+            Curve(w, "Bri", 5f);
+            w.End();
+            Curve(w, "DstS", 5f);
+            Axes(w, "Rot", 0);
+            w.Begin("Pos").Int("ACT", 0).Int("ACTR", 0);
+            Curve(w, "X", 0f);
+            Curve(w, "Y", 1.5f);
+            Curve(w, "Z", 2.5f);
+            w.End();
+            w.Int("Attn", 2).Int("bSdw", 1).Int("bChS", 1).Int("bMpS", 1).Int("bMvS", 0)
+             .Float("SCDN", mode == 6 ? 0.5f : 0.1f).Float("SCDF", mode == 6 ? 15f : 30f);
+        }
+        else if (point)
         {
             w.Begin("Col");
             CurveRgb(w, "RGB", 1f, 0.15f, 0.15f);

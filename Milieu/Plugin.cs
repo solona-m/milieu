@@ -37,7 +37,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 27;
+    public const int BuildNumber = 28;
 
     private const string CommandName = "/milieu";
 
@@ -122,7 +122,7 @@ public sealed class Plugin : IDalamudPlugin
         var parts = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return parts.Length == 2 && parts[0].Equals("vfxlight", StringComparison.OrdinalIgnoreCase)
                && int.TryParse(parts[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var mode)
-               && mode is >= 0 and <= 5 ? mode : null;
+               && mode is >= 0 and <= 7 ? mode : null;
     }
 
     /// <summary>The args start with "vfxlight" (so a bad mode gets a usage line instead of toggling the window).</summary>
@@ -136,10 +136,10 @@ public sealed class Plugin : IDalamudPlugin
         {
             case int mode:
                 GameFiles.DomeAvfxBuilder.TestLightMode = mode;
-                ChatGui.Print($"[Milieu] Test VFX light {mode} ({mode switch { 1 => "point, set up like the venue", 2 => "point, long range + bright", 3 => "directional, as the game's", 4 => "directional, red + tilted", 5 => "directional, red + tilted, on the dome emitter", _ => "off" }}). Pick None, then your scene again.");
+                ChatGui.Print($"[Milieu] Test VFX light {mode} ({mode switch { 1 => "point, set up like the venue", 2 => "point, long range + bright", 3 => "directional, as the game's", 4 => "directional, red + tilted", 5 => "directional, red + tilted, on the dome emitter", 6 => "shadow point light, game recipe", 7 => "shadow point light, wide shadow range", _ => "off" }}). Pick None, then your scene again.");
                 return;
             case null when IsVfxLightCommand(args):
-                ChatGui.Print("[Milieu] Usage: /milieu vfxlight 0-5 (0 off, 1 point like the venue, 2 point long range + bright, 3 directional as the game's, 4 directional red + tilted, 5 the same on the dome emitter).");
+                ChatGui.Print("[Milieu] Usage: /milieu vfxlight 0-7 (0 off, 1 point like the venue, 2 point long range + bright, 3 directional as the game's, 4 directional red + tilted, 5 the same on the dome emitter, 6 shadow point light (game recipe), 7 shadow point light (wide range)).");
                 return;
         }
         if (ParseCommand(args) == CommandAction.Hide) grid.SelectNone();
