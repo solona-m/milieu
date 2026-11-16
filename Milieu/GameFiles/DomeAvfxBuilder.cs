@@ -328,7 +328,7 @@ internal static class DomeAvfxBuilder
         Curve(w, "Z", l.Position.Z);
         w.End();
         var shadow = l.Shadows ? 1 : 0;
-        w.Int("Attn", 2).Int("bSdw", shadow).Int("bChS", shadow).Int("bMpS", shadow).Int("bMvS", 0)
+        w.Int("Attn", 2).Int("bSdw", shadow).Int("bChS", shadow).Int("bMpS", shadow).Int("bMvS", shadow)
          .Float("SCDN", l.ShadowNear).Float("SCDF", l.ShadowFar);
         w.End();
         w.End();
