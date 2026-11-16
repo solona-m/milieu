@@ -18,6 +18,26 @@ public sealed class FakeLog : ILogSink
     public void Error(string message) { lock (Lines) Lines.Add(("Error", message)); }
 }
 
+/// <summary>Records every mod-management call the registrar makes, in order; each call's result is configurable.</summary>
+public sealed class FakeSyncModApi : Milieu.Sync.ISyncModApi
+{
+    public readonly List<string> Calls = [];
+    public bool PenumbraPresent { get; set; } = true;
+    public int ReloadResult = 0, AddResult = 0, PriorityResult = 0, EnableResult = 0, DisableResult = 0;
+    public List<Guid> KnownCollections = [];
+
+    public int ReloadMod(string dir, string name) { Calls.Add($"Reload {dir} {name}"); return ReloadResult; }
+    public int AddMod(string dir) { Calls.Add($"Add {dir}"); return AddResult; }
+    public int SetModPriority(Guid c, string dir, string name, int priority) { Calls.Add($"Priority {c} {priority}"); return PriorityResult; }
+    public int SetModEnabled(Guid c, string dir, string name, bool enabled)
+    {
+        Calls.Add($"Enabled {c} {enabled}");
+        return enabled ? EnableResult : DisableResult;
+    }
+    public void RemoveLegacyTempMod(Guid c) => Calls.Add($"Legacy {c}");
+    public IReadOnlyCollection<Guid> Collections() => KnownCollections;
+}
+
 public sealed class FakeSpawner : IVfxSpawner
 {
     public bool Available { get; set; } = true;

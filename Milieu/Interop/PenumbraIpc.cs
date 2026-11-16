@@ -12,7 +12,7 @@ namespace Milieu.Interop;
 /// mod, tag "MilieuSync", priority 1,000,000, in the local player's collection only. Milieu reads Penumbra's enabled
 /// state, collections, mod directory and the player's meta; it never calls a mod-settings or mod-management API.
 /// </summary>
-public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
+public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, Sync.ISyncModApi, IDisposable
 {
     public const string LabelApiVersion = "Penumbra.ApiVersion.V5";
     public const string LabelGetEnabledState = "Penumbra.GetEnabledState";
@@ -176,41 +176,15 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
         catch (Exception) { return null; }
     }
 
-    /// <summary>
-    /// Synced delivery as a real mod (owner's choice, 2026-11-16): writes "Milieu Sync" into the staging folder, adds or
-    /// reloads it in Penumbra, enables it in <paramref name="collection"/> at <see cref="SyncPriority"/>. 0 on success.
-    /// </summary>
+    private Sync.SyncModRegistrar? registrar;
+
+    /// <summary>The real-mod sequence (docs/adr/0006 amendment); created lazily so the registrar sees this instance.</summary>
+    private Sync.SyncModRegistrar Registrar => registrar ??= new Sync.SyncModRegistrar(this, () => ModDirectory, log);
+
+    /// <summary>Synced delivery as the real "Milieu Sync" mod: write, add/reload, priority 1,000,000, enable. 0 on success.</summary>
     public int SetSynced(Guid collection, IReadOnlyDictionary<string, string> paths, string manips)
     {
-        try
-        {
-            if (ModDirectory is not { } dir) return -1;
-            var folder = System.IO.Path.Combine(dir, Sync.SyncStaging.FolderName);
-            if (!Sync.SyncRealMod.Write(folder, paths, manips))
-            {
-                log.Warning("[Milieu] Could not write the Milieu Sync mod files.");
-                return -1;
-            }
-            var info = new System.IO.DirectoryInfo(folder);
-            if ((info.Attributes & System.IO.FileAttributes.Hidden) != 0) info.Attributes &= ~System.IO.FileAttributes.Hidden;
-            var ec = realReloadMod.InvokeFunc(Sync.SyncStaging.FolderName, Sync.SyncRealMod.ModName);
-            if (ec != 0) ec = realAddMod.InvokeFunc(Sync.SyncStaging.FolderName);
-            if (ec != 0)
-            {
-                log.Warning($"[Milieu] Penumbra could not add the Milieu Sync mod (code {ec}).");
-                return ec;
-            }
-            var set = realSetMod.InvokeFunc(collection, Sync.SyncStaging.FolderName, Sync.SyncRealMod.ModName, true);
-            var prio = realSetPriority.InvokeFunc(collection, Sync.SyncStaging.FolderName, Sync.SyncRealMod.ModName, SyncPriority);
-            if (set > 1 || prio > 1)   // 0 Success, 1 NothingChanged
-            {
-                log.Warning($"[Milieu] Penumbra could not enable the Milieu Sync mod (codes {set}, {prio}).");
-                return set > 1 ? set : prio;
-            }
-            try { removeMod.InvokeFunc(SyncTag, collection, SyncPriority); } catch (Exception) { /* an older build's temp mod */ }
-            log.Information("[Milieu] Milieu Sync mod enabled.");
-            return 0;
-        }
+        try { return Registrar.Enable(collection, paths, manips); }
         catch (Exception e)
         {
             log.Warning("[Milieu] Setting up the Milieu Sync mod failed: " + LogText.Describe(e, Sensitive));
@@ -218,21 +192,58 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
         }
     }
 
-    /// <summary>Disables the "Milieu Sync" mod in <paramref name="collection"/> (and removes an older build's temp mod).</summary>
+    /// <summary>Disables "Milieu Sync" in <paramref name="collection"/>, removes an older build's temp mod, and empties the mod.</summary>
     public void ClearSynced(Guid collection)
     {
-        try { realSetMod.InvokeFunc(collection, Sync.SyncStaging.FolderName, Sync.SyncRealMod.ModName, false); }
-        catch (Exception e) { log.Debug("[Milieu] TrySetMod (off) failed: " + LogText.Describe(e, Sensitive)); }
+        try { Registrar.Clear(collection); }
+        catch (Exception e) { log.Debug("[Milieu] Clearing the Milieu Sync mod failed: " + LogText.Describe(e, Sensitive)); }
+    }
+
+    /// <summary>Startup / re-init cleanup: "Milieu Sync" off in every collection, legacy temp mods removed, the mod emptied.</summary>
+    public void ClearSyncedEverywhere(IEnumerable<Guid> alsoClear)
+    {
+        try { Registrar.DisableEverywhere(alsoClear); }
+        catch (Exception e) { log.Debug("[Milieu] Clearing the Milieu Sync mod everywhere failed: " + LogText.Describe(e, Sensitive)); }
+    }
+
+    // ---------------------------------------------------------------- ISyncModApi: thin wrappers, -1 when the IPC throws
+
+    bool Sync.ISyncModApi.PenumbraPresent => State == PenumbraState.Available;
+
+    int Sync.ISyncModApi.ReloadMod(string dir, string name) => Call(() => realReloadMod.InvokeFunc(dir, name), "ReloadMod");
+
+    int Sync.ISyncModApi.AddMod(string dir) => Call(() => realAddMod.InvokeFunc(dir), "AddMod");
+
+    int Sync.ISyncModApi.SetModPriority(Guid collection, string dir, string name, int priority) =>
+        Call(() => realSetPriority.InvokeFunc(collection, dir, name, priority), "TrySetModPriority");
+
+    int Sync.ISyncModApi.SetModEnabled(Guid collection, string dir, string name, bool enabled) =>
+        Call(() => realSetMod.InvokeFunc(collection, dir, name, enabled), "TrySetMod");
+
+    void Sync.ISyncModApi.RemoveLegacyTempMod(Guid collection)
+    {
         try { removeMod.InvokeFunc(SyncTag, collection, SyncPriority); }
         catch (Exception e) { log.Debug("[Milieu] RemoveTemporaryMod failed: " + LogText.Describe(e, Sensitive)); }
     }
 
-    public void ClearSyncedEverywhere(IEnumerable<Guid> alsoClear)
+    IReadOnlyCollection<Guid> Sync.ISyncModApi.Collections()
     {
-        var all = new HashSet<Guid>(alsoClear);
-        try { foreach (var id in getCollections.InvokeFunc().Keys) all.Add(id); }
-        catch (Exception e) { log.Debug("[Milieu] GetCollections failed: " + LogText.Describe(e, Sensitive)); }
-        foreach (var id in all) ClearSynced(id);
+        try { return getCollections.InvokeFunc().Keys; }
+        catch (Exception e)
+        {
+            log.Debug("[Milieu] GetCollections failed: " + LogText.Describe(e, Sensitive));
+            return [];
+        }
+    }
+
+    private int Call(Func<int> f, string what)
+    {
+        try { return f(); }
+        catch (Exception e)
+        {
+            log.Debug($"[Milieu] {what} failed: " + LogText.Describe(e, Sensitive));
+            return -1;
+        }
     }
 
     public string ResolvePlayer(string gamePath)
@@ -255,14 +266,18 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
     /// Redraws everything, not just the player: the cushion is its own object and a player redraw doesn't reload its VFX
     /// (seen in game, 2026-11-16), so synced rebuilds never showed on it.
     /// </summary>
-    public void RedrawPlayer()
+    public void RedrawPlayer() =>
+        RedrawWithFallback(() => redrawAll.InvokeAction(0), () => redrawObject.InvokeAction(0, 0), log, Sensitive);
+
+    /// <summary>RedrawAll, else a player redraw; both failing only logs at Debug. Never throws.</summary>
+    internal static void RedrawWithFallback(Action all, Action player, ILogSink log, params string?[] sensitive)
     {
-        try { redrawAll.InvokeAction(0); }
+        try { all(); }
         catch (Exception e)
         {
-            log.Debug("[Milieu] RedrawAll failed: " + LogText.Describe(e, Sensitive));
-            try { redrawObject.InvokeAction(0, 0); }
-            catch (Exception e2) { log.Debug("[Milieu] RedrawObject failed: " + LogText.Describe(e2, Sensitive)); }
+            log.Debug("[Milieu] RedrawAll failed: " + LogText.Describe(e, sensitive));
+            try { player(); }
+            catch (Exception e2) { log.Debug("[Milieu] RedrawObject failed: " + LogText.Describe(e2, sensitive)); }
         }
     }
 
