@@ -17,8 +17,12 @@ public interface IEnvTime
     /// <summary>The game clock's seconds into the Eorzean day (the override when one is set), in [0, 86400).</summary>
     float? ReadEorzeaDaySeconds();
 
-    bool WriteDayTimeSeconds(float seconds);
+    /// <summary>Ok; Skipped when the game object isn't there (no latch); Failed for a refusal or a bad value.</summary>
+    EnvWrite WriteDayTimeSeconds(float seconds);
 }
+
+/// <summary>The outcome of a time-of-day write.</summary>
+public enum EnvWrite { Ok, Skipped, Failed }
 
 /// <summary>Night's numbers and wrap-aware helpers.</summary>
 public static class NightTime
@@ -159,11 +163,15 @@ public sealed class NightWhileShown
             stable = 0;
             log.Information("[Milieu] Night on.");
         }
-        if (!env.WriteDayTimeSeconds(NightTime.Seconds))
+        switch (env.WriteDayTimeSeconds(NightTime.Seconds))
         {
-            EndEpisode();
-            Latch("writing the time of day failed");
-            return;
+            case EnvWrite.Skipped:   // the object isn't there this tick: no write, no latch
+                Status = NightStatus.Waiting;
+                return;
+            case EnvWrite.Failed:
+                EndEpisode();
+                Latch("writing the time of day failed");
+                return;
         }
         lastWrite = utcNow();
         if (stable < StableTicks && ++stable == StableTicks) sentinel.Clear();
@@ -220,15 +228,20 @@ public sealed class NightWhileShown
     {
         episode = false;
         restorePending = false;
+        lastWrite = null;
         sentinel.Clear();
     }
 
-    /// <summary>Writes the game clock's time back when the field still reads as Milieu's night.</summary>
+    /// <summary>
+    /// Writes the game clock's time back when the field still reads as Milieu's night. When the field or the clock can't be
+    /// read right now (the object momentarily absent), the decision is kept for the next ready tick, never dropped.
+    /// </summary>
     private void WriteBackIfOurs(string when)
     {
         if (lastWrite is not { } at) return;
         var read = env.ReadDayTimeSeconds();
         var clock = env.ReadEorzeaDaySeconds();
+        if (read == null || clock == null) { restorePending = true; return; }
         lastWrite = null;
         if (read is not { } r || !NightTime.Plausible(r) || clock is not { } c || !NightTime.Plausible(c)) return;
         if (NightTime.Distance(r, NightTime.Seconds) > NightTime.OwnershipTolerance(utcNow() - at))

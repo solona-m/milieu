@@ -34,7 +34,9 @@ also local: PSync pairs never see them.
   texture-height units (so U×2 is one wrap and V×1 the full height, matching the shipped repeat defaults); and
   `LightRigLayout.SpotForward` = +Z, from the FFXIVClientStructs docs. A texel with no drawn copy (repeat < 1, or a
   vertical copy outside t ∈ [0,1]) gives no light. **After the in-game check, update ADR 0003's open UV question.**
-- **Native calls: FFXIVClientStructs through the scanned pointer only.** `LightInterop` scans
+- **Native calls: FFXIVClientStructs through the scanned pointer only.** (ADR 0012, night while shown, makes a scoped
+  exception: it reads two ClientStructs static-address pointers, data only and null-checked; no generated `Instance()`,
+  no game function.) `LightInterop` scans
   `Scene.Light.Addresses.Create` and calls only that pointer (never the generated static), with a null pool name;
   virtual functions go through the instance's own vtable (the generated members). Layouts are ClientStructs' as bundled
   with Dalamud (no local mirrors, so no frozen offsets). No hooks: each light's vtable is recorded at create and compared
@@ -72,8 +74,6 @@ also local: PSync pairs never see them.
   committed synced registration counts as drawn even if the item isn't (the lights then stay).
   **Amended by ADR 0011 (2026-11-16):** under synced delivery the dome carries the rig as VFX lights that pairs see; native
   lights step aside only when the drawn synced dome carries at least one VFX light.
-  **ADR 0012** (night while shown) makes a scoped exception to this ADR's interop rule: it reads two ClientStructs
-  static-address pointers (data only, null-checked; no generated `Instance()`, no game function).
 - **Brio coexistence.** Brio lists Milieu's lights as world lights and its DestroyAll doesn't free them; edits made in
   Brio last until Milieu's next planned change.
 - **Deferred:** an ambient WorldLight (untested `Create(WorldLight)`, exterior only) and the environment-lighting

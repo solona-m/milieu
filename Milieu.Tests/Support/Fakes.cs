@@ -357,3 +357,28 @@ public sealed class FakeSentinel : Milieu.Lighting.ILightingSentinel
     public void Set() { Sets++; IsSet = true; Calls.Add("Set"); }
     public void Clear() { Clears++; IsSet = false; Calls.Add("Clear"); }
 }
+
+/// <summary>A game clock and time-of-day field to drive NightWhileShown.</summary>
+public sealed class FakeEnvTime : Milieu.Lighting.IEnvTime
+{
+    public bool Available { get; set; } = true;
+    public float? Day = 50000f;     // ~13:53 ET
+    public float? Clock = 50000f;
+    public Milieu.Lighting.EnvWrite WriteResult = Milieu.Lighting.EnvWrite.Ok;
+    public int Reads;
+    public readonly List<float> Writes = [];
+    /// <summary>Optional log shared with a FakeSentinel, to assert the order of calls across both.</summary>
+    public List<string>? Order;
+
+    public float? ReadDayTimeSeconds() { Reads++; return Day; }
+    public float? ReadEorzeaDaySeconds() { Reads++; return Clock; }
+
+    public Milieu.Lighting.EnvWrite WriteDayTimeSeconds(float seconds)
+    {
+        if (WriteResult != Milieu.Lighting.EnvWrite.Ok) return WriteResult;
+        Writes.Add(seconds);
+        Order?.Add("Write");
+        Day = seconds;
+        return Milieu.Lighting.EnvWrite.Ok;
+    }
+}

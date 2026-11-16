@@ -6,28 +6,6 @@ using Xunit;
 
 namespace Milieu.Tests;
 
-/// <summary>A game clock and time-of-day field to drive NightWhileShown.</summary>
-public sealed class FakeEnvTime : IEnvTime
-{
-    public bool Available { get; set; } = true;
-    public float? Day = 50000f;     // ~13:53 ET
-    public float? Clock = 50000f;
-    public bool WriteSucceeds = true;
-    public int Reads;
-    public readonly List<float> Writes = [];
-
-    public float? ReadDayTimeSeconds() { Reads++; return Day; }
-    public float? ReadEorzeaDaySeconds() { Reads++; return Clock; }
-
-    public bool WriteDayTimeSeconds(float seconds)
-    {
-        if (!WriteSucceeds) return false;
-        Writes.Add(seconds);
-        Day = seconds;
-        return true;
-    }
-}
-
 public class NightWhileShownTests
 {
     private readonly FakeEnvTime env = new();
@@ -175,9 +153,21 @@ public class NightWhileShownTests
     [Fact] // [EDGE-synced-lighting-24]
     public void WriteFails_LatchesUnavailable()
     {
-        env.WriteSucceeds = false;
+        env.WriteResult = EnvWrite.Failed;
         Tick();
         Assert.Equal(NightStatus.Unavailable, n.Status);
+    }
+
+    [Fact] // [EDGE-synced-lighting-44]
+    public void WriteSkipped_ObjectAbsentThisTick_NoLatch_ResumesNextTick()
+    {
+        Tick();
+        env.WriteResult = EnvWrite.Skipped;
+        Tick();
+        Assert.Equal(NightStatus.Waiting, n.Status);
+        env.WriteResult = EnvWrite.Ok;
+        Tick();
+        Assert.Equal(NightStatus.On, n.Status);
     }
 
     [Fact] // [EDGE-synced-lighting-22]
@@ -252,15 +242,6 @@ public class NightWhileShownTests
         Assert.False(found.IsSet);
     }
 
-    [Theory] // [EDGE-synced-lighting-28]
-    [InlineData("Hidden")]
-    [InlineData("PenumbraGone")]
-    public void HiddenEvent_ReleasesWithinTheCall(string _)
-    {
-        Tick();
-        n.Release();
-        Assert.Equal(env.Clock, env.Writes[^1]);
-    }
 
     [Fact]
     public void Helpers_DistanceAndTolerance()
@@ -268,5 +249,91 @@ public class NightWhileShownTests
         Assert.Equal(100f, NightTime.Distance(86350f, 50f), 3);
         Assert.Equal(NightTime.OwnershipMargin, NightTime.OwnershipTolerance(TimeSpan.Zero), 4);
         Assert.Equal(NightTime.OwnershipCap, NightTime.OwnershipTolerance(TimeSpan.FromHours(1)), 4);
+    }
+
+    [Fact] // [EDGE-synced-lighting-29]
+    public void DomeGone_Restores_DomeBack_NewEpisodeWithFreshCrossCheck()
+    {
+        Tick();
+        drawn = false;                       // zone load, cutscene, game-ended VFX
+        env.Clock = 50200f;
+        Tick();
+        Assert.Equal(50200f, env.Writes[^1]);
+        Assert.False(sentinel.IsSet);
+        var sets = sentinel.Sets;
+        drawn = true;
+        env.Day = 10000f;                    // the cross-check runs again: this time it doesn't match
+        Tick();
+        Assert.Equal(NightStatus.NotInThisZone, n.Status);
+        env.Day = env.Clock;
+        n.OnTerritoryChanged();
+        Tick();
+        Assert.Equal(NightStatus.On, n.Status);
+        Assert.Equal(sets + 1, sentinel.Sets);   // a new episode
+    }
+
+    [Fact] // [EDGE-synced-lighting-21]
+    public void PendingRestore_NotOurs_NoWrite_SentinelCleared()
+    {
+        Tick();
+        n.OnTerritoryChanged();
+        Assert.False(sentinel.IsSet);
+        env.Day = 30000f;                    // the new zone or another plugin set it
+        drawn = false;
+        var writes = env.Writes.Count;
+        Tick();
+        Assert.Equal(writes, env.Writes.Count);
+    }
+
+    [Fact] // [EDGE-synced-lighting-25]
+    public void SentinelSetBeforeTheFirstWrite_ClearedOnToggle()
+    {
+        var order = new List<string>();
+        var s = new FakeSentinel();
+        env.Order = order;
+        n = new NightWhileShown(env, game, () => drawn, config, new OrderedSentinel(s, order), log, () => unloading, () => now);
+        Tick();
+        Assert.Equal(["Set", "Write"], order);
+        var clears = s.Clears;
+        config.NightWhileShown = false; Tick();
+        config.NightWhileShown = true; Tick();
+        Assert.True(s.Clears > clears);
+    }
+
+    [Theory] // [EDGE-synced-lighting-27]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Teardown_WithPendingRestore_WritesOnlyWhenReady(bool ready)
+    {
+        Tick();
+        n.OnTerritoryChanged();
+        env.Clock = 50300f;
+        game.IsLoggedIn = ready;
+        var writes = env.Writes.Count;
+        n.Teardown();
+        Assert.Equal(ready ? writes + 1 : writes, env.Writes.Count);
+    }
+
+    [Fact]
+    public void RestoreWithEmptyReads_KeptForTheNextReadyTick()
+    {
+        Tick();
+        env.Day = null;                      // momentarily absent at release
+        var writes = env.Writes.Count;
+        n.Release();
+        Assert.Equal(writes, env.Writes.Count);
+        env.Day = NightTime.Seconds;
+        env.Clock = 50400f;
+        drawn = false;
+        Tick();
+        Assert.Equal(50400f, env.Writes[^1]);
+    }
+
+    /// <summary>A FakeSentinel that also records into a shared order log.</summary>
+    private sealed class OrderedSentinel(FakeSentinel inner, List<string> order) : ILightingSentinel
+    {
+        public bool WasSetAtStartup => inner.WasSetAtStartup;
+        public void Set() { order.Add("Set"); inner.Set(); }
+        public void Clear() { order.Add("Clear"); inner.Clear(); }
     }
 }

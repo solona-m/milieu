@@ -259,4 +259,15 @@ public class ConfigurationTests
         var back = JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(on))!;
         Assert.Equal((true, 1.5f, 3), (back.SceneLighting, back.LightStrength, back.FillLightCount));
     }
+
+    [Fact] // [EDGE-synced-lighting-32]
+    public void PreFeatureJson_NightOff_VersionUnchanged_RoundTrips()
+    {
+        var old = JsonConvert.DeserializeObject<Configuration>("{\"Version\":4,\"SceneLighting\":true,\"LightStrength\":1.0}")!;
+        Assert.False(old.NightWhileShown);
+        Assert.Equal(4, old.Version);
+        Assert.Equal(4, Configuration.CurrentVersion);
+        var on = new Configuration { NightWhileShown = true };
+        Assert.True(JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(on))!.NightWhileShown);
+    }
 }

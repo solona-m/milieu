@@ -80,7 +80,7 @@ public sealed class Plugin : IDalamudPlugin
                                   () => Framework.IsFrameworkUnloading, () => controller.EffectiveDelivery,
                                   () => LightingAvailable() && SyncedLightsAvailable());
         night = CreateNight(NightAvailable(), () => new EnvTimeInterop(Framework, log), gameState, () => controller.IsDrawn, config,
-                            () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.NightFileName), log), log,
+                            () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.NightFileName), log, "Night sentinel"), log,
                             () => Framework.IsFrameworkUnloading);
         Wire(controller, lighting, night);   // the None tile and /milieu off remove the lights and restore the time within the call
         var userImages = config.UserImages.ToArray();
@@ -191,17 +191,9 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnUpdate(IFramework _) => TickAll(controller.Tick, lighting == null ? null : lighting.Tick, night == null ? null : night.Tick);
 
-    private void OnTerritoryChanged(uint _)
-    {
-        controller.OnTerritoryChanged();
-        OnZoneOrLogout(lighting, night, zone: true);
-    }
+    private void OnTerritoryChanged(uint _) => OnZoneOrLogout(controller.OnTerritoryChanged, lighting, night, zone: true);
 
-    private void OnLogout(int type, int code)
-    {
-        controller.OnLogout();
-        OnZoneOrLogout(lighting, night, zone: false);
-    }
+    private void OnLogout(int type, int code) => OnZoneOrLogout(controller.OnLogout, lighting, night, zone: false);
 
     /// <summary>
     /// Test seam, the tick order: controller, then lighting, then night, so a dome that went away this tick takes its lights
@@ -214,12 +206,17 @@ public sealed class Plugin : IDalamudPlugin
         nightTick?.Invoke();
     }
 
-    /// <summary>Test seam: a zone change or logout removes the lights and forgets the night (no write; restored when ready).</summary>
-    internal static void OnZoneOrLogout(SceneLighting? lighting, NightWhileShown? night, bool zone)
+    /// <summary>
+    /// Test seam: a zone change or logout. The night is forgotten <em>first</em> (nothing written now; restored on the first
+    /// ready tick), because the controller's logout hides the backdrop and its Hidden event would otherwise restore the time
+    /// during the logout. Then the controller's own handling, then the lights.
+    /// </summary>
+    internal static void OnZoneOrLogout(Action controllerEvent, SceneLighting? lighting, NightWhileShown? night, bool zone)
     {
-        lighting?.RemoveAll();
         if (zone) night?.OnTerritoryChanged();
         else night?.Forget();
+        controllerEvent();
+        lighting?.RemoveAll();
     }
 
     /// <summary>Test seam: the Hidden subscriptions (lights removed and the time restored within the Hide call).</summary>
@@ -256,12 +253,14 @@ public sealed class Plugin : IDalamudPlugin
             log: log);
     }
 
-    /// <summary>The lights, then the night, go before the dome (no native call is made while the game is exiting).</summary>
-    private void TeardownAll()
+    private void TeardownAll() => TeardownOrder(lighting == null ? null : lighting.Teardown, night == null ? null : night.Teardown, controller.Teardown);
+
+    /// <summary>Test seam: the lights, then the night, go before the dome (no native call is made while the game is exiting).</summary>
+    internal static void TeardownOrder(Action? lightingTeardown, Action? nightTeardown, Action controllerTeardown)
     {
-        lighting?.Teardown();
-        night?.Teardown();
-        controller.Teardown();
+        lightingTeardown?.Invoke();
+        nightTeardown?.Invoke();
+        controllerTeardown();
     }
 
     private void Unhook()

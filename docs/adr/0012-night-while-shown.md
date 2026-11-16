@@ -35,8 +35,12 @@ lighting) writes 01:00 ET (`NightTime.Seconds` = 3600) into `DayTimeSeconds` eve
   is what this zone uses. Rejected: stop-writing only; a captured snapshot.
 - **Release paths.** Restore within the call: option off, no dome drawn, `Hidden` (Hide, None, `/milieu off`, Penumbra
   disposed, a lost synced dome), teardown. Forget (no write now): territory change and logout set a pending restore that
-  the first ready tick performs before anything else (a territory change also clears "not in this zone"). While the game
-  exits (`IsFrameworkUnloading`): no read or write at all.
+  the first ready tick performs before anything else (a territory change also clears "not in this zone"). On logout the
+  night is forgotten *before* the controller hides the backdrop, so its Hidden event doesn't restore during the logout.
+  A restore whose reads come back empty (the object momentarily absent) is kept for the next ready tick, never dropped.
+  While the game exits (`IsFrameworkUnloading`): no read or write at all.
+- **Writes.** `Ok`, `Skipped` (the EnvManager instance isn't there that tick: no write, no latch) or `Failed` (a refusal or
+  a bad value: latched Unavailable). An off-thread refusal logs at Error, as LightInterop's does.
 - **Crash guard.** A sentinel (`<config>/night-attempt.flag`, the ADR 0009 mechanism) is set before an episode's first
   write and cleared after 600 stable ticks, on release or forget, and on off→on; found at startup, night stays off until
   the option is ticked again.
@@ -55,7 +59,10 @@ lighting) writes 01:00 ET (`NightTime.Seconds` = 3600) into `DayTimeSeconds` eve
 - The sun stops competing with the backdrop on the user's screen; pairs keep their own sun.
 - It writes game memory: a wrong field after a patch is caught by the plausibility and clock cross-check, which also stops
   it in zones with fixed time.
-- Another plugin that changes the time of day while night is on wins; Milieu then leaves the field alone.
+- While night is on, Milieu writes 01:00 every tick, so it overrides another plugin's (or Brio's) time control for as long
+  as the backdrop is shown; only at release does it leave a field that something else changed alone.
+- Placement: `NightTime`, `IEnvTime` and `EnvWrite` live in `NightWhileShown.cs`; the night sentinel reuses
+  `FileLightingSentinel` with its own file and log label.
 
 UNVERIFIED in game: that writing `DayTimeSeconds` in the framework update takes visible effect (else the override above);
 whether the game recomputes or latches the field; zones where the cross-check reports "not in this zone".

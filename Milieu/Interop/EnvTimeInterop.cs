@@ -37,14 +37,14 @@ internal sealed unsafe class EnvTimeInterop(IFramework framework, ILogSink log) 
         return (float)(((t % 86400) + 86400) % 86400);
     }
 
-    public bool WriteDayTimeSeconds(float seconds)
+    public EnvWrite WriteDayTimeSeconds(float seconds)
     {
-        if (!float.IsFinite(seconds) || seconds < 0 || seconds >= NightTime.DayLength) return false;
-        if (!OnFrameworkThread("write")) return false;
+        if (!float.IsFinite(seconds) || seconds < 0 || seconds >= NightTime.DayLength) return EnvWrite.Failed;
+        if (!OnFrameworkThread("write")) return EnvWrite.Failed;
         var env = Env();
-        if (env == null) return false;
+        if (env == null) return EnvWrite.Skipped;   // not created yet: skip this tick, no latch
         env->DayTimeSeconds = seconds;
-        return true;
+        return EnvWrite.Ok;
     }
 
     private static EnvManager* Env()
@@ -56,7 +56,7 @@ internal sealed unsafe class EnvTimeInterop(IFramework framework, ILogSink log) 
     private bool OnFrameworkThread(string what)
     {
         if (framework.IsInFrameworkUpdateThread) return true;
-        log.Debug($"[Milieu] Time of day: refused to {what} off the framework thread.");
+        log.Error($"[Milieu] Time of day: refused to {what} off the framework thread.");
         return false;
     }
 }
