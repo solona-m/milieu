@@ -80,7 +80,7 @@ Milieu.Tests/      xunit tests (Support/: fakes, synthetic images, reference-fil
 tools/PrepareBackdrops/  offline tool that produces Milieu/DefaultBackdrops
 tools/check-package.ps1  the release workflows' package guards (size, root manifest, version, changelog)
 .github/workflows/ test.yml (quick suite, read-only), testing-release.yml (testing-<n>), release.yml (v<version>)
-docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery, 0007 releases and listing, 0008 OpenEXR decoder, 0009 scene lighting, 0010 estimated lighting, 0011 synced VFX lights), agent guidance
+docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery, 0007 releases and listing, 0008 OpenEXR decoder, 0009 scene lighting, 0010 estimated lighting, 0011 synced VFX lights, 0012 night while shown), agent guidance
 ```
 
 ## Testing
@@ -99,6 +99,7 @@ tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 - The OpenEXR decoder (`Milieu/Imaging/Exr/`, ADR 0008) — parses untrusted binary files in the game process; every size and offset is checked against `ExrLimits` before use, and the offset table before the output is allocated
 - Scene lighting: native light create/update/destroy (`Milieu/Interop/LightInterop.cs`), GPose-only, crash sentinel; `Plugin.LightingAvailable` is the kill switch (ADR 0009)
 - Synced VFX lights (`Milieu/Lighting/VfxLightPlanner.cs`, the light chain in `DomeAvfxBuilder`): effectors written into the synced dome that PSync pairs load; `Plugin.SyncedLightsAvailable` is the kill switch (ADR 0011)
+- Night while shown (`Milieu/Lighting/NightWhileShown.cs`, `Milieu/Interop/EnvTimeInterop.cs`): writes the game's local time of day (game memory) through ClientStructs static pointers; plausibility + clock cross-check before the first write, restore only if still ours, crash sentinel; `Plugin.NightAvailable` is the kill switch (ADR 0012)
 - `Milieu/Configuration.cs` migrations — a mistake loses user settings
 - Downloads (`Milieu/Assets/`) and `tools/publish-backdrops.ps1` — outbound GETs that write into the config directory, downloaded textures handed to the game; pinned size + header + SHA-256 before use; the publish script's guards keep pins and release assets identical
 - `.github/workflows/` and `tools/check-package.ps1` — publish to every user and hold the plugins-repo dispatch secret; SHA-pinned actions, no disabled guards (ADR 0007, `WorkflowTests`)

@@ -72,6 +72,8 @@ also local: PSync pairs never see them.
   committed synced registration counts as drawn even if the item isn't (the lights then stay).
   **Amended by ADR 0011 (2026-11-16):** under synced delivery the dome carries the rig as VFX lights that pairs see; native
   lights step aside only when the drawn synced dome carries at least one VFX light.
+  **ADR 0012** (night while shown) makes a scoped exception to this ADR's interop rule: it reads two ClientStructs
+  static-address pointers (data only, null-checked; no generated `Instance()`, no game function).
 - **Brio coexistence.** Brio lists Milieu's lights as world lights and its DestroyAll doesn't free them; edits made in
   Brio last until Milieu's next planned change.
 - **Deferred:** an ambient WorldLight (untested `Create(WorldLight)`, exterior only) and the environment-lighting

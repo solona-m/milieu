@@ -36,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 30;
+    public const int BuildNumber = 31;
 
     private const string CommandName = "/milieu";
 
@@ -49,6 +49,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly PenumbraIpc penumbra;
     private readonly BackdropController controller;
     private readonly SceneLighting? lighting;
+    private readonly NightWhileShown? night;
     private readonly DefaultBackdropsDownloadService downloads;
     private readonly SceneGridViewModel grid;
 
@@ -78,7 +79,10 @@ public sealed class Plugin : IDalamudPlugin
                                   () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.FileName), log), log,
                                   () => Framework.IsFrameworkUnloading, () => controller.EffectiveDelivery,
                                   () => LightingAvailable() && SyncedLightsAvailable());
-        if (lighting != null) controller.Hidden += lighting.RemoveAll;   // the None tile and /milieu off remove the lights within the call
+        night = CreateNight(NightAvailable(), () => new EnvTimeInterop(Framework, log), gameState, () => controller.IsDrawn, config,
+                            () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.NightFileName), log), log,
+                            () => Framework.IsFrameworkUnloading);
+        Wire(controller, lighting, night);   // the None tile and /milieu off remove the lights and restore the time within the call
         var userImages = config.UserImages.ToArray();
         Task.Run(() =>
         {
@@ -102,7 +106,8 @@ public sealed class Plugin : IDalamudPlugin
 
         grid = new SceneGridViewModel(config, Save, controller.Post, controller, downloads, File.Exists);
         mainWindow = new MainWindow(controller, config, Save, grid, new ThumbnailCache(TextureProvider, thumbStore), SyncedAvailable,
-                                    () => lighting?.Status ?? LightingStatusSnapshot.Initial, lighting != null);
+                                    () => lighting?.Status ?? LightingStatusSnapshot.Initial, lighting != null,
+                                    () => night?.Status ?? NightStatus.Off, night != null);
         windows.AddWindow(mainWindow);
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -145,6 +150,21 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private static bool SyncedLightsAvailable() => true;
 
+    /// <summary>
+    /// Night while shown's kill switch (docs/adr/0012): return false and nothing night-related is constructed, resolved or
+    /// drawn (no time-of-day read or write, no "Time of day" block).
+    /// </summary>
+    private static bool NightAvailable() => true;
+
+    /// <summary>Test seam: builds night while shown, or nothing at all (the factories are never called) when the kill switch is off.</summary>
+    internal static NightWhileShown? CreateNight(bool available, Func<IEnvTime> envFactory, Backdrop.IGameState game, Func<bool> drawn,
+                                                 Configuration config, Func<ILightingSentinel> sentinelFactory, ILogSink log,
+                                                 Func<bool> isUnloading)
+    {
+        if (!available) return null;
+        return new NightWhileShown(envFactory(), game, drawn, config, sentinelFactory(), log, isUnloading);
+    }
+
     /// <summary>Test seam: the controller's rig loader for synced VFX lights, or null when either kill switch is off.</summary>
     internal static Func<string, CancellationToken, Task<LightRig?>>? SyncedRigLoader(bool lightingAvailable, bool syncedLightsAvailable,
                                                                                        Func<string, CancellationToken, Task<LightRig?>> load) =>
@@ -169,23 +189,50 @@ public sealed class Plugin : IDalamudPlugin
         return running.Length == 0 ? null : Task.WhenAll(running);
     }
 
-    // Lighting ticks after the controller, so a dome that went away this tick takes its lights with it in the same tick.
-    private void OnUpdate(IFramework _)
-    {
-        controller.Tick();
-        lighting?.Tick();
-    }
+    private void OnUpdate(IFramework _) => TickAll(controller.Tick, lighting == null ? null : lighting.Tick, night == null ? null : night.Tick);
 
     private void OnTerritoryChanged(uint _)
     {
         controller.OnTerritoryChanged();
-        lighting?.RemoveAll();
+        OnZoneOrLogout(lighting, night, zone: true);
     }
 
     private void OnLogout(int type, int code)
     {
         controller.OnLogout();
+        OnZoneOrLogout(lighting, night, zone: false);
+    }
+
+    /// <summary>
+    /// Test seam, the tick order: controller, then lighting, then night, so a dome that went away this tick takes its lights
+    /// and the night with it in the same tick.
+    /// </summary>
+    internal static void TickAll(Action controllerTick, Action? lightingTick, Action? nightTick)
+    {
+        controllerTick();
+        lightingTick?.Invoke();
+        nightTick?.Invoke();
+    }
+
+    /// <summary>Test seam: a zone change or logout removes the lights and forgets the night (no write; restored when ready).</summary>
+    internal static void OnZoneOrLogout(SceneLighting? lighting, NightWhileShown? night, bool zone)
+    {
         lighting?.RemoveAll();
+        if (zone) night?.OnTerritoryChanged();
+        else night?.Forget();
+    }
+
+    /// <summary>Test seam: the Hidden subscriptions (lights removed and the time restored within the Hide call).</summary>
+    internal static void Wire(BackdropController controller, SceneLighting? lighting, NightWhileShown? night)
+    {
+        if (lighting != null) controller.Hidden += lighting.RemoveAll;
+        if (night != null) controller.Hidden += night.Release;
+    }
+
+    internal static void Unwire(BackdropController controller, SceneLighting? lighting, NightWhileShown? night)
+    {
+        if (lighting != null) controller.Hidden -= lighting.RemoveAll;
+        if (night != null) controller.Hidden -= night.Release;
     }
 
     // Penumbra events fire on Penumbra's thread: hop to the framework thread before touching the VFX or the IPC.
@@ -209,16 +256,17 @@ public sealed class Plugin : IDalamudPlugin
             log: log);
     }
 
-    /// <summary>The lights go before the dome (and no native light call is made while the game is exiting).</summary>
+    /// <summary>The lights, then the night, go before the dome (no native call is made while the game is exiting).</summary>
     private void TeardownAll()
     {
         lighting?.Teardown();
+        night?.Teardown();
         controller.Teardown();
     }
 
     private void Unhook()
     {
-        if (lighting != null) controller.Hidden -= lighting.RemoveAll;
+        Unwire(controller, lighting, night);
         vfx.GameRemoved -= controller.OnGameRemoved;
         vfx.Dispose();
         penumbra.Initialized -= OnPenumbraInitialized;

@@ -13,6 +13,9 @@ public sealed class FileLightingSentinel : ILightingSentinel
 {
     public const string FileName = "lighting-attempt.flag";
 
+    /// <summary>Night while shown's own sentinel (docs/adr/0012), the same mechanism with another file.</summary>
+    public const string NightFileName = "night-attempt.flag";
+
     private readonly string path;
     private readonly ILogSink log;
 

@@ -338,8 +338,6 @@ public sealed class BackdropControllerSyncLightTests : IDisposable
     [Fact] // [EDGE-synced-lighting-1]
     public void RigLoadCancelled_PropagatesAsCancellation_NotShownWithoutLights()
     {
-        var cts = new CancellationTokenSource();
-        var gate = new TaskCompletionSource<LightRig?>();
         c = new BackdropController(spawner, pen, game, preparer, cache, config, log, run: f => f(), utcNow: () => now,
                                    syncedAvailable: () => true, sync: pen, gameData: data,
                                    loadRig: (_, ct) => { ct.ThrowIfCancellationRequested(); throw new OperationCanceledException(ct); });

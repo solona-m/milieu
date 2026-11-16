@@ -1,9 +1,10 @@
+using Milieu.Backdrop;
 using Milieu.Lighting;
 
 namespace Milieu.Gui;
 
 /// <summary>The "Time of day" block (docs/adr/0012): the checkbox, a status line and the "only you" note. Pure.</summary>
-public sealed class NightViewModel(NightStatus status, Configuration config, bool available)
+public sealed class NightViewModel(NightStatus status, bool available)
 {
     public const string Header = "Time of day";
     public const string ToggleLabel = "Night while the backdrop is shown";
