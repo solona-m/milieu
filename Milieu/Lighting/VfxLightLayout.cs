@@ -46,13 +46,13 @@ public static class VfxLightLayout
     public const float FillShadowFar = 15f;
 
     /// <summary>
-    /// Fills ride on particle-less emitters of their own, a structure not yet loaded in game (UNVERIFIED item 1). Off: only
+    /// Fills ride on particle-less emitters of their own, a structure not yet loaded in game (UNVERIFIED, ADR 0011 item 1). Off: only
     /// the key ships, on the dome emitter (the link proven in game).
     /// </summary>
     public const bool FillsOnOwnEmitters = false;
 
     /// <summary>
-    /// Brightness against distance (UNVERIFIED tuning item 11): Bri ×= (d / nominal)^exponent, which only matters when the
+    /// Brightness against distance (UNVERIFIED, ADR 0011 item 7): Bri ×= (d / nominal)^exponent, which only matters when the
     /// room clamp shortens d. 0 = no compensation.
     /// </summary>
     public const float DistanceCompensationExponent = 0f;

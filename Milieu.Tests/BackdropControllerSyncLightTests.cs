@@ -371,4 +371,15 @@ public sealed class BackdropControllerSyncLightTests : IDisposable
         Assert.Empty(Dome().All("Efct"));
         Assert.Equal(0, c.Lit!.VfxLightCount);
     }
+
+    [Fact] // [EDGE-synced-lighting-47]
+    public void KeyNotDrawn_FillsOff_LitVfxLightCountZero()
+    {
+        config.HorizontalRepeat = 1f;   // draws only s in [0.25, 0.75]
+        rig = new LightRig(LightExtractor.Version, new RigLight(0.95f, 0.25f, new Vector3(3, 2, 1)),
+            [new(0.5f, 0.3f, new Vector3(0.5f, 0.6f, 1f))], new Vector3(10, 10, 10));
+        ShowSynced();
+        Assert.Empty(Dome().All("Efct"));   // the rig has a key, so no stand-in either
+        Assert.Equal(0, c.Lit!.VfxLightCount);
+    }
 }
