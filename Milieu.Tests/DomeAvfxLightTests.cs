@@ -137,4 +137,13 @@ public class DomeAvfxLightTests
     {
         Assert.ThrowsAny<ArgumentException>(() => DomeAvfxBuilder.Build(Synced(InvalidCase(c))));
     }
+
+    [Fact] // [EDGE-synced-lighting-33]
+    public void LightPositionBound_AtLimitAccepted_JustOverRejected()
+    {
+        Assert.NotEmpty(DomeAvfxBuilder.Build(Synced([Key with { Position = new Vector3(0, 1000f, 0) }])));
+        Assert.ThrowsAny<ArgumentException>(() => DomeAvfxBuilder.Build(Synced([Key with { Position = new Vector3(0, 1000.1f, 0) }])));
+        Assert.ThrowsAny<ArgumentException>(() => DomeAvfxBuilder.Build(Synced([Key with { Range = 1000.5f }])));
+        Assert.ThrowsAny<ArgumentException>(() => DomeAvfxBuilder.Build(Synced([Key, null!])));
+    }
 }

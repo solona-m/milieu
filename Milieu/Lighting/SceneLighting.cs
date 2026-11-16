@@ -96,10 +96,10 @@ public sealed class SceneLighting
 
     public SceneLighting(ILightSpawner spawner, IGameState game, Func<LitBackdrop?> lit, Configuration config,
                          Func<string, CancellationToken, Task<LightRig?>> loadRig, ILightingSentinel sentinel, ILogSink log,
-                         Func<bool> isUnloading, Func<DeliveryMode> delivery, Func<Func<Task<LightRig?>>, Task<LightRig?>>? run = null,
-                         Func<bool>? syncedLightsAvailable = null)
+                         Func<bool> isUnloading, Func<DeliveryMode> delivery, Func<bool> syncedLightsAvailable,
+                         Func<Func<Task<LightRig?>>, Task<LightRig?>>? run = null)
     {
-        this.syncedLightsAvailable = syncedLightsAvailable ?? (() => false);
+        this.syncedLightsAvailable = syncedLightsAvailable;
         this.spawner = spawner;
         this.game = game;
         this.lit = lit;

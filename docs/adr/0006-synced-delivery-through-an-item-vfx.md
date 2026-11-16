@@ -77,7 +77,8 @@ the behaviour above. The "(experimental)" label and the PSync notice are unchang
 - Wiring: the controller takes the synced dependencies as optional constructor parameters, and without them (or with
   synced delivery unavailable) it behaves exactly as local delivery: a fail-safe default.
 - Tech debt: `BackdropController` now holds both deliveries' lifecycles; splitting the synced branch into its own
-  coordinator is a follow-up.
+  coordinator is a follow-up. Synced VFX lights (ADR 0011: rig loading, the light-rebuild debounce and GPose hold,
+  `SyncedLights`) add another reason.
 
 ## Amendment (2026-11-16): verified in game; a real mod, low VFX ids, height anchoring
 

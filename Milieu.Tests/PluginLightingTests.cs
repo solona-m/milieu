@@ -18,7 +18,7 @@ public class PluginLightingTests
         SceneLighting? Make(bool available) => Plugin.CreateLighting(available,
             () => { spawners++; return new FakeLightSpawner(); }, new FakeGame(), () => null, new Configuration { SceneLighting = true },
             (_, _) => { loads++; return Task.FromResult<LightRig?>(null); },
-            () => { sentinels++; return new FakeSentinel(); }, new FakeLog(), () => false, () => DeliveryMode.Local);
+            () => { sentinels++; return new FakeSentinel(); }, new FakeLog(), () => false, () => DeliveryMode.Local, () => true);
 
         Assert.Null(Make(false));
         Assert.Equal((0, 0, 0), (spawners, sentinels, loads));   // nothing resolved, nothing read

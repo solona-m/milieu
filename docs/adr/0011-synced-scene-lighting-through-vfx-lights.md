@@ -64,8 +64,11 @@ native light colour magnitudes (effector Bri/DstS semantics differ); a camera bi
 
 ## Consequences
 
-- **Pairs see the light**, in and out of GPose, without Milieu. The user sees the same lights; under synced delivery
-  there are no native GPose lights on top.
+- **Pairs should see the light**, in and out of GPose, without Milieu (they load the same file; checked so far only on
+  the user's own screen, UNVERIFIED item 8). The user sees the same lights; under synced delivery there are no native
+  GPose lights on top.
+- **Turning lighting off in GPose** shows "Off" at once, while the VFX lights stay in the synced file until GPose ends
+  (the rebuild is held); accepted.
 - Every light change rebuilds the synced dome, redraws everyone and makes pairs re-download it after their next sync.
 - Up to 4 extra lights per synced user; two synced Milieu users near each other add up (ADR 0006's open question).
 - The tuning constants live in `VfxLightLayout`; tuning them needs a build (the test command is gone, issue #1).
@@ -76,8 +79,13 @@ UNVERIFIED in game:
 1. A particle-less emitter carries a point light (then turn `FillsOnOwnEmitters` on).
 2. Key brightness matches the sun at strength 1; key and fill range (`KeyRange`, `FillRange`) reach the player.
 3. Key shadows at distance 30 (and 9 in room mode) with near 0.5 / far 45.
-4. The light direction: the item's rotation isn't inherited (ICbR 0), so a baked direction stays put when the character
-   turns.
+4. The light direction when the character turns: ICbR 0 sits in the dome emitter's ItPr and only stops the *particle*
+   inheriting the emitter's rotation. The effectors hang off the emitters themselves, which follow the VFX root including
+   its rotation, so the lights may swing with the carrier while the dome doesn't (follow-up if seen).
 5. The key indoors under a real ceiling (map shadows may block it).
 6. Poses survive a `RedrawAll` in GPose (non-light synced rebuilds still run there).
 7. Brightness against distance in room mode (`DistanceCompensationExponent`).
+8. A PSync pair without Milieu sees the key light and its shadow.
+9. A key 30 units away isn't culled by the game (effector or emitter culling at distance).
+10. A light emitter's lifetime: `LightEmitter` copies the dome emitter's Life (60) and creation curves, not those of the
+    game's particle-less emitter it was modelled on; compare in VFXEditor before turning fills on (item 1).

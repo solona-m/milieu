@@ -83,7 +83,7 @@ public class VfxLightPlannerTests
         Assert.True(plan.HasKey);
     }
 
-    [Fact] // [EDGE-synced-lighting-10] [EDGE-synced-lighting-40]
+    [Fact] // [EDGE-synced-lighting-10]
     public void FillsOnOwnEmittersDefaultOff_KeyOnly()
     {
         Assert.False(VfxLightLayout.FillsOnOwnEmitters);
@@ -150,5 +150,40 @@ public class VfxLightPlannerTests
         var plan = VfxLightPlanner.Plan(Rig(), Default, Sky, 2f, 3, fillsOnOwnEmitters: true);
         var p = new DomeAvfxParams("vfx/milieu/0011223344556677/sky.atex", Sky, 1, 2, 1, false, 1, AttachToOwner: true, Lights: plan.Lights);
         Assert.NotEmpty(DomeAvfxBuilder.Build(p));
+    }
+
+    [Fact] // [AC-synced-lighting-1]
+    public void FillWeights_LuminanceTimesTypePower_OverTheStrongest()
+    {
+        // One estimated lamp (LampPower) before the regions (FillPower): an HDR rig with lamps set directly.
+        var lamp = new RigLight(0.6f, 0.4f, new Vector3(0.2f, 0.2f, 0.2f));
+        var rig = Rig() with { Lamps = [lamp] };
+        var plan = VfxLightPlanner.Plan(rig, Default, Sky, 1f, 2, fillsOnOwnEmitters: true);
+        var resolved = LightRigPlanner.Resolve(rig);
+        var w0 = LightRig.Luminance(resolved.Lamps[0].Energy) * LightRigLayout.LampPower;
+        var w1 = LightRig.Luminance(resolved.Regions[0].Energy) * LightRigLayout.FillPower;
+        var strongest = MathF.Max(w0, w1);
+        Assert.Equal(VfxLightLayout.FillBrightness * w0 / strongest, plan.Lights[1].Brightness, 4);
+        Assert.Equal(VfxLightLayout.FillBrightness * w1 / strongest, plan.Lights[2].Brightness, 4);
+    }
+
+    [Fact] // [EDGE-synced-lighting-2]
+    public void KeyWithNoPositiveChannel_Dropped_FirstFillLeads()
+    {
+        var plan = VfxLightPlanner.Plan(Rig(new RigLight(0.5f, 0.25f, Vector3.Zero)), Default, Sky, 1f, 2, fillsOnOwnEmitters: true);
+        Assert.False(plan.HasKey);
+        Assert.All(plan.Lights, l => Assert.False(l.Shadows));
+    }
+
+    [Fact] // [EDGE-synced-lighting-2]
+    public void KeyExistsButNotDrawn_NoKeyLight()
+    {
+        // A small horizontal repeat draws only the middle of the image: a key near its edge isn't on the dome.
+        var view = Default with { URepeat = 0.5f };
+        const float keyS = 0.95f;
+        Assert.Null(DomeProjection.WorldDirection(keyS, 0.25f, view));
+        var plan = VfxLightPlanner.Plan(Rig(new RigLight(keyS, 0.25f, new Vector3(3, 2, 1))), view, Sky, 1f, 0);
+        Assert.False(plan.HasKey);
+        Assert.Empty(plan.Lights);
     }
 }

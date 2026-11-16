@@ -207,8 +207,9 @@ public sealed class BackdropController : Gui.IGridController
 
     /// <summary>
     /// Scene lighting, light strength or fill count changed: replan the shown synced dome's VFX lights 500 ms after the
-    /// last change and rebuild if they differ. Held while in GPose (a rebuild redraws everyone, which can disturb posing)
-    /// and fired 500 ms after GPose ends. Hidden or local: nothing (the setting is just saved).
+    /// last change and rebuild if they differ. While a synced registration is pending, the request waits for it and then
+    /// compares against what it committed. Held while in GPose (a rebuild redraws everyone, which can disturb posing) and
+    /// fired 500 ms after GPose ends. Hidden or local: nothing (the setting is just saved).
     /// </summary>
     public void RequestLightRebuild()
     {
@@ -227,6 +228,8 @@ public sealed class BackdropController : Gui.IGridController
         }
         if (lightRebuildAt is not { } at || utcNow() < at) return;
         lightRebuildAt = null;
+        // A synced registration is pending (planned before this change): wait for it, then compare against what it committed.
+        if (synced?.Pending != null && state == BackdropState.AwaitingRedirect) { lightRebuildAt = utcNow() + ReconvertDelay; return; }
         if (synced?.Shown == null || texture == null || state != BackdropState.Shown) return;   // nothing synced shown: dropped
         if (game.IsGPosing) { lightRebuildHeld = true; return; }
         var planned = PlanLights(texture, shownBuild);

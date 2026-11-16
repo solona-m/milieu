@@ -155,11 +155,11 @@ public sealed class Plugin : IDalamudPlugin
                                                   Func<LitBackdrop?> lit, Configuration config,
                                                   Func<string, CancellationToken, Task<LightRig?>> loadRig,
                                                   Func<ILightingSentinel> sentinelFactory, ILogSink log, Func<bool> isUnloading,
-                                                  Func<DeliveryMode> delivery, Func<bool>? syncedLightsAvailable = null)
+                                                  Func<DeliveryMode> delivery, Func<bool> syncedLightsAvailable)
     {
         if (!available) return null;
         return new SceneLighting(spawnerFactory(), game, lit, config, loadRig, sentinelFactory(), log, isUnloading, delivery,
-                                 syncedLightsAvailable: syncedLightsAvailable);
+                                 syncedLightsAvailable);
     }
 
     /// <summary>Every running job (conversion, light rig) as one task to wait on, or null when none runs.</summary>

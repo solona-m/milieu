@@ -42,7 +42,7 @@ public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configura
     public const string OnlyYouNote = "Only you see these lights.";
     public const string PairsNote = "PSync pairs see the backdrop but not these lights.";
     public const string InSyncedBackdropText = "Lit by the backdrop's own lights, which travel with it: PSync pairs see them too, without Milieu.";
-    public const string SyncedLightsNote = "Shown in and out of GPose. Strength and fill changes rebuild the backdrop, which redraws everyone.";
+    public const string SyncedLightsNote = "Shown in and out of GPose. A light change rebuilds the backdrop, which redraws everyone.";
     public const string GPoseDeferralNote = "Light changes apply when you leave GPose; applying redraws everyone.";
 
     /// <summary>The section is drawn at all (the kill switch).</summary>

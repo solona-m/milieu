@@ -241,18 +241,22 @@ public sealed class BackdropControllerSyncLightTests : IDisposable
     }
 
     [Fact] // [EDGE-synced-lighting-6]
-    public void LightRequest_WhilePending_Supersedes()
+    public void LightRequest_WhilePending_WaitsThenRebuildsWithTheNewLights()
     {
-        ShowSynced();
-        pen.ResolvePlayerWorks = false;
-        config.Current.Radius = 9000;
-        c.ApplyRebuild();
+        c.Show();
+        pen.ResolvePlayerWorks = false;            // the first registration stays pending
         c.Tick();
         Assert.Equal(BackdropState.AwaitingRedirect, c.State);
         config.LightStrength = 2;
         c.RequestLightRebuild();
-        Advance(600);
-        Assert.Equal(BackdropState.AwaitingRedirect, c.State);   // not Shown: the request is dropped, the pending one stands
+        Advance(600);                              // the debounce expires while pending: it waits
+        Assert.Equal(BackdropState.AwaitingRedirect, c.State);
+        pen.ResolvePlayerWorks = true;
+        c.Tick();                                  // the pending one (planned at strength 1) commits
+        Assert.Equal(BackdropState.Shown, c.State);
+        Advance(600);                              // the waiting request replans: strength 2 differs → rebuild
+        c.Tick();
+        Assert.Equal(VfxLightLayout.KeyBrightness * 2, Dome().Need("Efct").Need("Data").Need("Col").Need("Bri").CurveValue(), 3);
     }
 
     [Fact] // [EDGE-synced-lighting-1]
@@ -329,5 +333,19 @@ public sealed class BackdropControllerSyncLightTests : IDisposable
         Advance(600);
         Assert.True(c.IsDrawn);
         Assert.Same(lights, c.SyncedLights);
+    }
+
+    [Fact] // [EDGE-synced-lighting-1]
+    public void RigLoadCancelled_PropagatesAsCancellation_NotShownWithoutLights()
+    {
+        var cts = new CancellationTokenSource();
+        var gate = new TaskCompletionSource<LightRig?>();
+        c = new BackdropController(spawner, pen, game, preparer, cache, config, log, run: f => f(), utcNow: () => now,
+                                   syncedAvailable: () => true, sync: pen, gameData: data,
+                                   loadRig: (_, ct) => { ct.ThrowIfCancellationRequested(); throw new OperationCanceledException(ct); });
+        c.Show();
+        c.Tick();
+        Assert.DoesNotContain(log.Lines, l => l.Text.Contains("Could not load the light rig"));   // cancellation isn't a rig failure
+        Assert.Empty(pen.SyncSets);
     }
 }

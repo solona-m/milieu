@@ -56,8 +56,11 @@ internal static class DomeAvfxBuilder
     /// <summary>The most VFX lights one dome carries (a key and up to three fills, as the native rig).</summary>
     public const int MaxLights = 4;
 
-    /// <summary>The largest light position component and range accepted (world units).</summary>
-    public const float MaxLightExtent = 100000f;
+    /// <summary>The largest light position component accepted (world units; the planner's lights sit within ~31).</summary>
+    public const float MaxLightPosition = 1000f;
+
+    /// <summary>The largest light range (DstS) accepted.</summary>
+    public const float MaxLightRange = 1000f;
 
     /// <summary>
     /// Synced delivery's emitter parent influence: InitialPosition_WithOptions (PICd 1) with position on and rotation and
@@ -111,13 +114,13 @@ internal static class DomeAvfxBuilder
         foreach (var l in lights)
         {
             static bool Finite(Vector3 v) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
-            if (l == null || !Finite(l.Position) || MathF.Max(MathF.Abs(l.Position.X), MathF.Max(MathF.Abs(l.Position.Y), MathF.Abs(l.Position.Z))) > MaxLightExtent)
+            if (l == null || !Finite(l.Position) || MathF.Max(MathF.Abs(l.Position.X), MathF.Max(MathF.Abs(l.Position.Y), MathF.Abs(l.Position.Z))) > MaxLightPosition)
                 throw new ArgumentOutOfRangeException(nameof(p), "A light position must be finite and within range.");
             if (!Finite(l.Rgb) || l.Rgb.X is < 0 or > 1 || l.Rgb.Y is < 0 or > 1 || l.Rgb.Z is < 0 or > 1)
                 throw new ArgumentOutOfRangeException(nameof(p), "A light colour must have each channel in [0, 1].");
             if (!float.IsFinite(l.Brightness) || l.Brightness < 0)
                 throw new ArgumentOutOfRangeException(nameof(p), "A light brightness must be finite and non-negative.");
-            if (!float.IsFinite(l.Range) || l.Range <= 0 || l.Range > MaxLightExtent)
+            if (!float.IsFinite(l.Range) || l.Range <= 0 || l.Range > MaxLightRange)
                 throw new ArgumentOutOfRangeException(nameof(p), "A light range must be finite and positive.");
             if (!float.IsFinite(l.ShadowNear) || !float.IsFinite(l.ShadowFar) || l.ShadowNear < 0 || l.ShadowNear >= l.ShadowFar)
                 throw new ArgumentOutOfRangeException(nameof(p), "A light's shadow range must be finite with 0 <= near < far.");
