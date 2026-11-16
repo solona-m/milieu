@@ -35,9 +35,13 @@ public sealed record SyncTarget(
     public const byte EquipSlotRFinger = 12;
     public const byte BodySlotBody = 4;
 
-    /// <summary>First VFX id Milieu tries; ids below are left to the game and to mods.</summary>
-    public const byte FirstVfxId = 200;
-    public const byte LastVfxId = 254;
+    /// <summary>
+    /// The VFX ids Milieu may use: the lowest one no variant of the item uses. Ids of 128 and up don't work for an item's own
+    /// VFX: seen in game, the cushion with id 200 made the game ask for vfx/monster/eff/vm0200.avfx (a shared folder) instead
+    /// of the cushion's folder, and the ring with id 200 never asked for its VFX at all. The Pickles Venue uses id 1.
+    /// </summary>
+    public const byte FirstVfxId = 1;
+    public const byte LastVfxId = 127;
 
     /// <summary>The Plush Cushion ornament (monster m8058, body b0001): its body VFX via the monster IMC.</summary>
     public static readonly SyncTarget Cushion = new(
@@ -68,7 +72,7 @@ public sealed record SyncTarget(
     /// <summary>The Penumbra identifier of one variant of this target's part.</summary>
     public ImcKey KeyOf(byte variant) => new(PrimaryId, variant, ObjectTypeId, SecondaryId, EquipSlotId, BodySlotId);
 
-    /// <summary>The first id from 200 to 254 that nothing uses, or null when all are taken.</summary>
+    /// <summary>The first id from 1 to 127 that nothing uses, or null when all are taken.</summary>
     public static byte? ChooseVfxId(IEnumerable<byte> used)
     {
         var taken = new HashSet<byte>(used);
