@@ -34,11 +34,11 @@ public sealed class SyncStaging
 
     public bool Exists => Directory.Exists(Root);
 
-    /// <summary>Creates the folder (if needed) and marks it Hidden, also when it exists without the attribute.</summary>
+    /// <summary>Creates the folder if needed. It is a real Penumbra mod ("Milieu Sync"), so it is not hidden.</summary>
     public void EnsureFolder()
     {
         var info = Directory.CreateDirectory(Root);
-        if ((info.Attributes & FileAttributes.Hidden) == 0) info.Attributes |= FileAttributes.Hidden;
+        if ((info.Attributes & FileAttributes.Hidden) != 0) info.Attributes &= ~FileAttributes.Hidden;
     }
 
     /// <summary>The staged texture path for a texture key.</summary>

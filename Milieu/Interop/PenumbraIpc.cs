@@ -30,6 +30,10 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
     public const string LabelResolvePlayerPath = "Penumbra.ResolvePlayerPath";
     public const string LabelGetPlayerMetaManipulations = "Penumbra.GetPlayerMetaManipulations";
     public const string LabelRedrawObject = "Penumbra.RedrawObject.V5";
+    public const string LabelAddMod = "Penumbra.AddMod.V5";
+    public const string LabelReloadMod = "Penumbra.ReloadMod.V5";
+    public const string LabelTrySetMod = "Penumbra.TrySetMod.V5";
+    public const string LabelTrySetModPriority = "Penumbra.TrySetModPriority.V5";
 
     public const string Tag = "Milieu";
     public const int Priority = 0;
@@ -56,6 +60,10 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
     private readonly ICallGateSubscriber<string, string> resolvePlayer;
     private readonly ICallGateSubscriber<string> playerMeta;
     private readonly ICallGateSubscriber<int, int, object> redrawObject;
+    private readonly ICallGateSubscriber<string, int> realAddMod;
+    private readonly ICallGateSubscriber<string, string, int> realReloadMod;
+    private readonly ICallGateSubscriber<Guid, string, string, bool, int> realSetMod;
+    private readonly ICallGateSubscriber<Guid, string, string, int, int> realSetPriority;
     private readonly Action onInitialized;
     private readonly Action onDisposed;
 
@@ -84,6 +92,10 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
         resolvePlayer = pi.GetIpcSubscriber<string, string>(LabelResolvePlayerPath);
         playerMeta = pi.GetIpcSubscriber<string>(LabelGetPlayerMetaManipulations);
         redrawObject = pi.GetIpcSubscriber<int, int, object>(LabelRedrawObject);
+        realAddMod = pi.GetIpcSubscriber<string, int>(LabelAddMod);
+        realReloadMod = pi.GetIpcSubscriber<string, string, int>(LabelReloadMod);
+        realSetMod = pi.GetIpcSubscriber<Guid, string, string, bool, int>(LabelTrySetMod);
+        realSetPriority = pi.GetIpcSubscriber<Guid, string, string, int, int>(LabelTrySetModPriority);
         onInitialized = () => Initialized?.Invoke();
         onDisposed = () => Disposed?.Invoke();
         initialized.Subscribe(onInitialized);
@@ -161,18 +173,53 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
         catch (Exception) { return null; }
     }
 
+    /// <summary>
+    /// Synced delivery as a real mod (owner's choice, 2026-11-16): writes "Milieu Sync" into the staging folder, adds or
+    /// reloads it in Penumbra, enables it in <paramref name="collection"/> at <see cref="SyncPriority"/>. 0 on success.
+    /// </summary>
     public int SetSynced(Guid collection, IReadOnlyDictionary<string, string> paths, string manips)
     {
-        try { return addMod.InvokeFunc(SyncTag, collection, new Dictionary<string, string>(paths), manips, SyncPriority); }
+        try
+        {
+            if (ModDirectory is not { } dir) return -1;
+            var folder = System.IO.Path.Combine(dir, Sync.SyncStaging.FolderName);
+            if (!Sync.SyncRealMod.Write(folder, paths, manips))
+            {
+                log.Warning("[Milieu] Could not write the Milieu Sync mod files.");
+                return -1;
+            }
+            var info = new System.IO.DirectoryInfo(folder);
+            if ((info.Attributes & System.IO.FileAttributes.Hidden) != 0) info.Attributes &= ~System.IO.FileAttributes.Hidden;
+            var ec = realReloadMod.InvokeFunc(Sync.SyncStaging.FolderName, Sync.SyncRealMod.ModName);
+            if (ec != 0) ec = realAddMod.InvokeFunc(Sync.SyncStaging.FolderName);
+            if (ec != 0)
+            {
+                log.Warning($"[Milieu] Penumbra could not add the Milieu Sync mod (code {ec}).");
+                return ec;
+            }
+            var set = realSetMod.InvokeFunc(collection, Sync.SyncStaging.FolderName, Sync.SyncRealMod.ModName, true);
+            var prio = realSetPriority.InvokeFunc(collection, Sync.SyncStaging.FolderName, Sync.SyncRealMod.ModName, SyncPriority);
+            if (set > 1 || prio > 1)   // 0 Success, 1 NothingChanged
+            {
+                log.Warning($"[Milieu] Penumbra could not enable the Milieu Sync mod (codes {set}, {prio}).");
+                return set > 1 ? set : prio;
+            }
+            try { removeMod.InvokeFunc(SyncTag, collection, SyncPriority); } catch (Exception) { /* an older build's temp mod */ }
+            log.Information("[Milieu] Milieu Sync mod enabled.");
+            return 0;
+        }
         catch (Exception e)
         {
-            log.Warning("[Milieu] AddTemporaryMod failed: " + LogText.Describe(e, Sensitive));
+            log.Warning("[Milieu] Setting up the Milieu Sync mod failed: " + LogText.Describe(e, Sensitive));
             return -1;
         }
     }
 
+    /// <summary>Disables the "Milieu Sync" mod in <paramref name="collection"/> (and removes an older build's temp mod).</summary>
     public void ClearSynced(Guid collection)
     {
+        try { realSetMod.InvokeFunc(collection, Sync.SyncStaging.FolderName, Sync.SyncRealMod.ModName, false); }
+        catch (Exception e) { log.Debug("[Milieu] TrySetMod (off) failed: " + LogText.Describe(e, Sensitive)); }
         try { removeMod.InvokeFunc(SyncTag, collection, SyncPriority); }
         catch (Exception e) { log.Debug("[Milieu] RemoveTemporaryMod failed: " + LogText.Describe(e, Sensitive)); }
     }
