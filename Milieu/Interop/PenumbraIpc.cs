@@ -31,6 +31,7 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
     public const string LabelGetPlayerMetaManipulations = "Penumbra.GetPlayerMetaManipulations";
     public const string LabelRedrawObject = "Penumbra.RedrawObject.V5";
     public const string LabelAddMod = "Penumbra.AddMod.V5";
+    public const string LabelRedrawAll = "Penumbra.RedrawAll.V5";
     public const string LabelReloadMod = "Penumbra.ReloadMod.V5";
     public const string LabelTrySetMod = "Penumbra.TrySetMod.V5";
     public const string LabelTrySetModPriority = "Penumbra.TrySetModPriority.V5";
@@ -61,6 +62,7 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
     private readonly ICallGateSubscriber<string> playerMeta;
     private readonly ICallGateSubscriber<int, int, object> redrawObject;
     private readonly ICallGateSubscriber<string, int> realAddMod;
+    private readonly ICallGateSubscriber<int, object> redrawAll;
     private readonly ICallGateSubscriber<string, string, int> realReloadMod;
     private readonly ICallGateSubscriber<Guid, string, string, bool, int> realSetMod;
     private readonly ICallGateSubscriber<Guid, string, string, int, int> realSetPriority;
@@ -93,6 +95,7 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
         playerMeta = pi.GetIpcSubscriber<string>(LabelGetPlayerMetaManipulations);
         redrawObject = pi.GetIpcSubscriber<int, int, object>(LabelRedrawObject);
         realAddMod = pi.GetIpcSubscriber<string, int>(LabelAddMod);
+        redrawAll = pi.GetIpcSubscriber<int, object>(LabelRedrawAll);
         realReloadMod = pi.GetIpcSubscriber<string, string, int>(LabelReloadMod);
         realSetMod = pi.GetIpcSubscriber<Guid, string, string, bool, int>(LabelTrySetMod);
         realSetPriority = pi.GetIpcSubscriber<Guid, string, string, int, int>(LabelTrySetModPriority);
@@ -248,10 +251,19 @@ public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, IDisposable
         }
     }
 
+    /// <summary>
+    /// Redraws everything, not just the player: the cushion is its own object and a player redraw doesn't reload its VFX
+    /// (seen in game, 2026-11-16), so synced rebuilds never showed on it.
+    /// </summary>
     public void RedrawPlayer()
     {
-        try { redrawObject.InvokeAction(0, 0); }
-        catch (Exception e) { log.Debug("[Milieu] RedrawObject failed: " + LogText.Describe(e, Sensitive)); }
+        try { redrawAll.InvokeAction(0); }
+        catch (Exception e)
+        {
+            log.Debug("[Milieu] RedrawAll failed: " + LogText.Describe(e, Sensitive));
+            try { redrawObject.InvokeAction(0, 0); }
+            catch (Exception e2) { log.Debug("[Milieu] RedrawObject failed: " + LogText.Describe(e2, Sensitive)); }
+        }
     }
 
     public bool Set(IReadOnlyDictionary<string, string> redirects)
