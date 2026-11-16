@@ -10,11 +10,6 @@ public static class VfxLightLayout
     /// <summary>Key distance from the anchor (sky); in room mode it is clamped inside the dome.</summary>
     public const float KeyDistance = 30f;
 
-    /// <summary>
-    /// WIP test: the distance at which KeyBrightness was tuned (Bri 40 at 3 units shadowed the character only near the light).
-    /// A farther key gets Bri × (d / this)², so it still outshines the ambient light across the room, as the sun does.
-    /// </summary>
-    public const float KeyBrightnessReferenceDistance = 3f;
 
     /// <summary>WIP test: the key's highest elevation, so its shadow falls long beside the character, not under it.</summary>
     public const float MaxKeyElevationDegrees = 15f;
@@ -29,7 +24,7 @@ public static class VfxLightLayout
     public const float RoomDistanceFraction = 0.9f;
 
     /// <summary>Key Bri at strength 1, meant to roughly match the sun (Bri 5 cast a faint shadow next to it in game).</summary>
-    public const float KeyBrightness = 40f;
+    public const float KeyBrightness = 200f;   // WIP: in game, Bri 200 at 30 units looked right (strength 0.05 of Bri 4000)
 
     /// <summary>
     /// The stand-in key's share of <see cref="KeyBrightness"/>, for an image with no sun (ADR 0011). 1: full key brightness,
