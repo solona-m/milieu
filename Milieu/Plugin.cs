@@ -71,11 +71,13 @@ public sealed class Plugin : IDalamudPlugin
         var preparer = new BackdropPreparer(cache, new Bc7(), downloads, thumbStore, log, storeRigs: LightingAvailable());
         controller = new BackdropController(vfx, penumbra, gameState, preparer, cache, config, log,
                                             bundled: downloads, save: Save, syncedAvailable: SyncedAvailable,
-                                            sync: penumbra, gameData: new GameData(DataManager));
+                                            sync: penumbra, gameData: new GameData(DataManager),
+                                            loadRig: SyncedRigLoader(LightingAvailable(), SyncedLightsAvailable(), preparer.PrepareLightsAsync));
         lighting = CreateLighting(LightingAvailable(), () => new LightInterop(SigScanner, Framework, log), gameState, () => controller.Lit,
                                   config, preparer.PrepareLightsAsync,
                                   () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.FileName), log), log,
-                                  () => Framework.IsFrameworkUnloading, () => controller.EffectiveDelivery);
+                                  () => Framework.IsFrameworkUnloading, () => controller.EffectiveDelivery,
+                                  () => LightingAvailable() && SyncedLightsAvailable());
         if (lighting != null) controller.Hidden += lighting.RemoveAll;   // the None tile and /milieu off remove the lights within the call
         var userImages = config.UserImages.ToArray();
         Task.Run(() =>
@@ -136,15 +138,28 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private static bool LightingAvailable() => true;
 
+    /// <summary>
+    /// Synced VFX lights' kill switch (docs/adr/0011): return false and synced domes carry no lights (no rig is loaded for
+    /// them, no effector is written), and native GPose lights run under synced delivery as before. Off as well whenever
+    /// scene lighting itself is off.
+    /// </summary>
+    private static bool SyncedLightsAvailable() => true;
+
+    /// <summary>Test seam: the controller's rig loader for synced VFX lights, or null when either kill switch is off.</summary>
+    internal static Func<string, CancellationToken, Task<LightRig?>>? SyncedRigLoader(bool lightingAvailable, bool syncedLightsAvailable,
+                                                                                       Func<string, CancellationToken, Task<LightRig?>> load) =>
+        lightingAvailable && syncedLightsAvailable ? load : null;
+
     /// <summary>Test seam: builds scene lighting, or nothing at all (the factories are never called) when the kill switch is off.</summary>
     internal static SceneLighting? CreateLighting(bool available, Func<ILightSpawner> spawnerFactory, Backdrop.IGameState game,
                                                   Func<LitBackdrop?> lit, Configuration config,
                                                   Func<string, CancellationToken, Task<LightRig?>> loadRig,
                                                   Func<ILightingSentinel> sentinelFactory, ILogSink log, Func<bool> isUnloading,
-                                                  Func<DeliveryMode> delivery)
+                                                  Func<DeliveryMode> delivery, Func<bool>? syncedLightsAvailable = null)
     {
         if (!available) return null;
-        return new SceneLighting(spawnerFactory(), game, lit, config, loadRig, sentinelFactory(), log, isUnloading, delivery);
+        return new SceneLighting(spawnerFactory(), game, lit, config, loadRig, sentinelFactory(), log, isUnloading, delivery,
+                                 syncedLightsAvailable: syncedLightsAvailable);
     }
 
     /// <summary>Every running job (conversion, light rig) as one task to wait on, or null when none runs.</summary>
