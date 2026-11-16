@@ -10,6 +10,9 @@ public static class VfxLightLayout
     /// <summary>Key distance from the anchor (sky); in room mode it is clamped inside the dome.</summary>
     public const float KeyDistance = 3f;
 
+    /// <summary>WIP test: the key's highest elevation, so its shadow falls long beside the character, not under it.</summary>
+    public const float MaxKeyElevationDegrees = 15f;
+
     /// <summary>Fill distance from the anchor.</summary>
     public const float FillDistance = 8f;
 

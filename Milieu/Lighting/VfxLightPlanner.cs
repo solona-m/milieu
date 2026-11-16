@@ -27,6 +27,17 @@ internal sealed record VfxLightPlan(IReadOnlyList<DomeLight> Lights, bool HasKey
 /// </summary>
 internal static class VfxLightPlanner
 {
+    /// <summary>WIP test: the key no higher than MaxKeyElevationDegrees, same azimuth (a long, visible shadow).</summary>
+    private static Vector3 LowerKey(Vector3 dir)
+    {
+        var max = VfxLightLayout.MaxKeyElevationDegrees * MathF.PI / 180f;
+        var horizontal = new Vector2(dir.X, dir.Z);
+        var len = horizontal.Length();
+        if (MathF.Asin(Math.Clamp(dir.Y, -1f, 1f)) <= max) return dir;
+        if (len < 1e-4f) horizontal = new Vector2(0, 1); else horizontal /= len;
+        return new Vector3(horizontal.X * MathF.Cos(max), MathF.Sin(max), horizontal.Y * MathF.Cos(max));
+    }
+
     public static VfxLightPlan Plan(LightRig rig, DomeView view, float radius, float strength, int fillCount,
                                     bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters,
                                     float distanceExponent = VfxLightLayout.DistanceCompensationExponent,
@@ -63,7 +74,7 @@ internal static class VfxLightPlanner
             var d = Distance(VfxLightLayout.KeyDistance, radius);
             var bri = VfxLightLayout.KeyBrightness * (standIn ? standInKeyScale : 1f) * strength
                       * Compensation(d, VfxLightLayout.KeyDistance, distanceExponent);
-            lights.Add(new DomeLight(anchor + k.Dir * d, keyHue, bri, VfxLightLayout.KeyRange, true,
+            lights.Add(new DomeLight(anchor + LowerKey(k.Dir) * d, keyHue, bri, VfxLightLayout.KeyRange, true,
                                      VfxLightLayout.KeyShadowNear, VfxLightLayout.KeyShadowFar));
         }
         var hasKey = lights.Count == 1;
