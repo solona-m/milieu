@@ -66,6 +66,7 @@ internal sealed unsafe class SunOffInterop : ISunSwitch, IDisposable
             log.Error("[Milieu] Sun off: refused to hook off the framework thread.");
             return false;
         }
+        if (shared.Closed) return false;   // disposed: never hook again
         if (installResult is { } done) return done;
         if (!Available) { installResult = false; return false; }
         try
@@ -79,9 +80,9 @@ internal sealed unsafe class SunOffInterop : ISunSwitch, IDisposable
         catch (Exception e)
         {
             log.Warning("[Milieu] Sun off: the game's lighting update couldn't be hooked: " + LogText.Describe(e));
-            var failed = hook;
+            // Unpatch first, then clear the field: a detour already running keeps reaching Original until the hook is gone.
+            hook?.Dispose();
             hook = null;
-            failed?.Dispose();
             installResult = false;
         }
         return installResult.Value;

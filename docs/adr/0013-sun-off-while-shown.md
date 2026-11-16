@@ -59,7 +59,8 @@ sun (pairs would see it anyway).
   cleared 600 ticks after it; cleared on stop, off→on and a failed check. Found at startup: CrashGuard until off→on.
 - **Kill switch** `Plugin.SunOffAvailable()`: off means no scan, no hook, no `SunOff`, no block.
 - **Dispose.** Teardown order lighting, night, sun off, controller; then `SunOffInterop.Dispose` closes the flag (no later
-  `SetWriting(true)` can raise it) before disposing the hook.
+  `SetWriting(true)` can raise it: raising and closing each store with a full fence, `Interlocked.Exchange`, before
+  reading the other side, a Dekker pair) before disposing the hook; `Install` refuses once closed.
 - **Night (ADR 0012) unchanged.** The two don't interact. Recommendation: once sun off is verified in game, turn
   `NightAvailable()` off and retire night.
 

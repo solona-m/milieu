@@ -41,6 +41,14 @@ public sealed class SunOffTests : IDisposable
 
     private int Lines(string level, string text) => log.Lines.Count(l => l.Level == level && l.Text.Contains(text));
 
+    /// <summary>The probe and the flag at each sentinel Set, in order.</summary>
+    private System.Collections.Generic.List<(SunOffProbe Probe, bool Writing)> RecordSets()
+    {
+        var at = new System.Collections.Generic.List<(SunOffProbe, bool)>();
+        sentinel.OnSet = () => at.Add((sw.Shared.Probe, sw.Shared.Writing));
+        return at;
+    }
+
     [Fact] // [AC-sun-off-1]
     public void OnLocalShownReady_InstallsOnce_StartingThenOnAfterApproval()
     {
@@ -203,8 +211,10 @@ public sealed class SunOffTests : IDisposable
     public void SentinelOrder_SetBeforeInstallAndWriting_ClearedAfter600AndOnStop()
     {
         sw.Order = sentinel.Calls;
+        var sets = RecordSets();
         s.Tick();
         Assert.Equal(["Set", "Install"], sentinel.Calls);
+        Assert.False(sets[0].Writing);                // set before the flag was raised
         Assert.True(sw.Shared.Writing);
         buf.SetColours(Colours);
         buf.Post(sw.Shared);
@@ -219,6 +229,7 @@ public sealed class SunOffTests : IDisposable
         lit = new("pano.jpg", new DomeView(0, false, 1, 1, 1));
         s.Tick();                                     // a new episode sets it again
         Assert.True(sentinel.IsSet);
+        Assert.False(sets[^1].Writing);               // again before the flag
         s.Release();
         Assert.False(sentinel.IsSet);
     }
@@ -227,7 +238,9 @@ public sealed class SunOffTests : IDisposable
     public void SentinelWindowStartsAtFirstPassed()
     {
         sw.Order = sentinel.Calls;
+        var sets = RecordSets();
         for (var i = 1; i < 600; i++) s.Tick();
+        Assert.False(sets[0].Writing);                // tick 1: set before the flag
         Assert.True(sentinel.IsSet);
         s.Tick();                                     // tick 600, still Starting: the install window ends
         Assert.False(sentinel.IsSet);
@@ -238,6 +251,7 @@ public sealed class SunOffTests : IDisposable
         Assert.True(sentinel.IsSet);
         Assert.Equal(SunOffProbe.Passed, sw.Shared.Probe);
         Assert.Equal(["Set", "Install", "Clear", "Set"], sentinel.Calls);
+        Assert.NotEqual(SunOffProbe.Passed, sets[1].Probe);   // tick 700: set before Approve
         for (var i = 701; i < 1300; i++) s.Tick();
         Assert.True(sentinel.IsSet);                  // tick 1299
         s.Tick();                                     // tick 1300
@@ -376,16 +390,17 @@ public sealed class SunOffTests : IDisposable
     }
 
     [Theory] // [EDGE-sun-off-28]
-    [InlineData(5, true)]
-    [InlineData(1, false)]
-    public void LowCallRate_Warns(int every, bool warns)
+    [InlineData(120, true)]
+    [InlineData(299, true)]
+    [InlineData(300, false)]
+    [InlineData(600, false)]
+    public void LowCallRate_Warns(int ownStateCalls, bool warns)
     {
         buf.SetColours(Colours);
-        for (var i = 1; i <= 600; i++)
-        {
-            s.Tick();
-            if (i % every == 0) buf.Post(sw.Shared);
-        }
+        s.Tick();                                     // the episode's baseline is taken here
+        for (var i = 0; i < ownStateCalls; i++) buf.Post(sw.Shared);
+        for (var i = 2; i <= 600; i++) s.Tick();
+        Assert.Contains(log.Lines, l => l.Text.Contains($"({ownStateCalls} on the game's own state"));
         Assert.Equal(warns ? 1 : 0, Lines("Warning", "updated its lighting only"));
     }
 

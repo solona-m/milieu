@@ -54,19 +54,24 @@ public sealed unsafe class SunOffShared
 
     public SunOffProbe Probe => (SunOffProbe)Volatile.Read(ref probe);
 
-    /// <summary>Framework thread. Ignored once <see cref="Close"/> has run.</summary>
+    /// <summary>
+    /// Framework thread. Ignored once <see cref="Close"/> has run. Raising the flag and closing are a Dekker pair: each side
+    /// stores its own field with a full fence (<see cref="Interlocked.Exchange(ref int, int)"/>) before reading the other's,
+    /// so a Close racing this call always wins (either this call sees Closed and lowers the flag, or Close's later store
+    /// lowers it).
+    /// </summary>
     public void SetWriting(bool on)
     {
         if (!on) { Volatile.Write(ref writing, 0); return; }
         if (Closed) return;
-        Volatile.Write(ref writing, 1);
+        Interlocked.Exchange(ref writing, 1);
         if (Closed) Volatile.Write(ref writing, 0);   // a Close racing this call wins
     }
 
     /// <summary>Dispose: the flag drops and no later <see cref="SetWriting"/> can raise it.</summary>
     public void Close()
     {
-        Volatile.Write(ref closed, 1);
+        Interlocked.Exchange(ref closed, 1);
         Volatile.Write(ref writing, 0);
     }
 

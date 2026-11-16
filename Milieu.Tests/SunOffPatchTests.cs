@@ -102,6 +102,14 @@ public sealed unsafe class SunOffPatchTests : IDisposable
         Assert.True(SunOffLayout.OwnStateOnly);
     }
 
+    [Fact] // [EDGE-sun-off-13]
+    public void StateOffset_MatchesClientStructs()
+    {
+        var env = new FFXIVClientStructs.FFXIV.Client.Graphics.Environment.EnvManager();
+        var offset = (byte*)&env.EnvState - (byte*)&env;
+        Assert.Equal(SunOffLayout.EnvManagerStateOffset, (int)offset);
+    }
+
     [Fact] // [EDGE-sun-off-14]
     public void PostStep_TouchesOnlyTheTargetBytes_WhateverWasThere()
     {
@@ -119,10 +127,13 @@ public sealed unsafe class SunOffPatchTests : IDisposable
     {
         var s = new SunOffShared();
         var waiting = new SunOffShared();   // stays Captured: AwaitingCheck on every call
+        var rearming = new SunOffShared();  // re-armed every iteration: Probed on every call
         using var other = new EnvBuffer();
         void AllPaths()
         {
             buf.Post(waiting);
+            rearming.Rearm();
+            if (buf.Post(rearming) != PostResult.Probed) throw new InvalidOperationException("expected Probed");
             s.SetWriting(false); buf.Post(s);                          // NotWriting
             s.SetWriting(true);
             SunOffPostStep.Run(null, buf.Env, s);                       // NoState
@@ -141,6 +152,8 @@ public sealed unsafe class SunOffPatchTests : IDisposable
         buf.SetColours(0.8f, 0.7f, 0.6f, 0f, 0f, 0f);
         Assert.Equal(PostResult.Probed, buf.Post(waiting));
         Assert.Equal(PostResult.AwaitingCheck, buf.Post(waiting));
+        rearming.SetWriting(true);
+        Assert.Equal(PostResult.Probed, buf.Post(rearming));
         AllPaths();
         var baseline = GC.GetAllocatedBytesForCurrentThread();
         for (var i = 0; i < 1000; i++) AllPaths();

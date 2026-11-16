@@ -357,8 +357,10 @@ public sealed class FakeSentinel : Milieu.Lighting.ILightingSentinel
     public bool IsSet;
     public int Sets, Clears;
     public readonly List<string> Calls = [];
+    /// <summary>Optional: runs at each Set, to capture other state at that moment.</summary>
+    public Action? OnSet;
     public FakeSentinel(bool setAtStartup = false) { WasSetAtStartup = setAtStartup; IsSet = setAtStartup; }
-    public void Set() { Sets++; IsSet = true; Calls.Add("Set"); }
+    public void Set() { OnSet?.Invoke(); Sets++; IsSet = true; Calls.Add("Set"); }
     public void Clear() { Clears++; IsSet = false; Calls.Add("Clear"); }
 }
 
