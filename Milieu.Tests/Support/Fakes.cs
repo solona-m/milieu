@@ -127,6 +127,8 @@ public sealed class FakePenumbra : IPenumbraRedirects, IPenumbraSync
     public Guid? Base = Guid.Parse("00000000-0000-0000-0000-0000000000ba");
     public Guid[] Listed = [];
     public int SetSyncedResult;
+    /// <summary>When non-empty, each SetSynced call takes its result from here first (then SetSyncedResult).</summary>
+    public readonly Queue<int> SetSyncedResults = [];
     public bool SetSyncedThrows;
     public bool ResolvePlayerWorks = true;
     public string Meta = "";
@@ -148,7 +150,8 @@ public sealed class FakePenumbra : IPenumbraRedirects, IPenumbraSync
         SyncCalls.Add("SetSynced");
         Order?.Add("SetSynced");
         if (SetSyncedThrows) return -1;   // the real wrapper maps a throw to -1
-        if (SetSyncedResult != 0) return SetSyncedResult;
+        var result = SetSyncedResults.Count > 0 ? SetSyncedResults.Dequeue() : SetSyncedResult;
+        if (result != 0) return result;
         SyncSets.Add((collection, paths, manips));
         Synced[collection] = new Dictionary<string, string>(paths);
         return 0;

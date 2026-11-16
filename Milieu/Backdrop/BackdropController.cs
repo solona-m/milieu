@@ -266,7 +266,7 @@ public sealed class BackdropController : Gui.IGridController
         {
             CancelJob();
             // Another image shown through the item comes down too, so the state is Hidden and the next click shows.
-            if (synced is { HasRegistration: true })
+            if (synced is { NeedsCleanup: true })
             {
                 synced.RemoveAll(redraw: true);
                 CleanupStaging(keepShown: false);
@@ -358,7 +358,7 @@ public sealed class BackdropController : Gui.IGridController
         if (shownSet != null || pendingSet != null) penumbra.Clear();
         shownSet = null; shownAvfxGamePath = null;
         pendingSet = null; pendingAvfxGamePath = null;
-        if (synced is { HasRegistration: true }) synced.RemoveAll(redraw: true);
+        if (synced is { NeedsCleanup: true }) synced.RemoveAll(redraw: true);
         CleanupStaging(keepShown: false);   // whenever the folder exists (e.g. a failed registration's atex); never creates it
         state = BackdropState.Hidden;
         message = StatusMessage.None;
@@ -425,7 +425,7 @@ public sealed class BackdropController : Gui.IGridController
 
     public void OnLogout()
     {
-        if (state == BackdropState.Hidden && handle == null && !SyncedLive) return;
+        if (state == BackdropState.Hidden && handle == null && synced is not { NeedsCleanup: true }) return;
         Hide();
         log.Information("[Milieu] Logged out; backdrop hidden.");
     }
@@ -700,11 +700,18 @@ public sealed class BackdropController : Gui.IGridController
             state = FallbackState();
             return;
         }
-        var (failure, failureMessage) = synced!.Begin(tex, avfxDisk, target);
+        var (failure, failureMessage, shownLost) = synced!.Begin(tex, avfxDisk, target);
         if (failure != MessageKey.None)
         {
             message = failureMessage ?? StatusMessage.Of(failure);
+            if (shownLost && handle is not { IsDead: false })
+            {
+                // The shown synced dome couldn't be put back after the failed rebuild: it is no longer drawn.
+                shownImagePath = null;
+                shownBuild = null;
+            }
             state = FallbackState();
+            if (shownLost && state == BackdropState.Hidden) Hidden?.Invoke();
             return;
         }
         pendingFloorY = floorY;
@@ -889,7 +896,7 @@ public sealed class BackdropController : Gui.IGridController
         RemoveDome();
         penumbra.Clear();
         shownSet = null; pendingSet = null;
-        if (synced is { HasRegistration: true }) synced.RemoveAll(redraw: true);
+        if (synced is { NeedsCleanup: true }) synced.RemoveAll(redraw: true);
         CleanupStaging(keepShown: false);   // whenever the folder exists (e.g. a failed registration's atex); never creates it
         state = BackdropState.Hidden;
         Hidden?.Invoke();

@@ -778,20 +778,63 @@ public sealed class BackdropControllerSyncTests : IDisposable
         Assert.Equal(BackdropState.Hidden, c.State);
     }
 
-    [Fact] // [EDGE-synced-delivery-4] [EDGE-synced-delivery-5]
-    public void FailedRebuildWithPendingOnly_StaysAwaiting_ThenTimesOutClean()
+    [Fact] // [EDGE-synced-delivery-4] [EDGE-synced-delivery-5] [EDGE-synced-lighting-46]
+    public void FailedRebuildWithPendingOnly_PendingPutBack_StaysAwaiting_ThenTimesOutClean()
     {
         pen.ResolvePlayerWorks = false;
         config.Delivery = DeliveryMode.MadBirdRing;
         c.Show();
         c.Tick();
-        pen.SetSyncedResult = 11;
+        pen.SetSyncedResults.Enqueue(11);                       // only the rebuild is refused; putting the pending one back works
         config.Current.Radius = 9000;
-        c.ApplyRebuild();                                      // refused: the earlier pending one is still registered
+        c.ApplyRebuild();
         Assert.Equal(BackdropState.AwaitingRedirect, c.State);
         Ticks(BackdropController.RedirectTimeoutTicks + 1);
         Assert.Empty(pen.Synced);
         Assert.Equal(BackdropState.Hidden, c.State);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46] [EDGE-synced-lighting-37]
+    public void FailedRebuildWithPendingOnly_PutBackRefusedToo_Hidden_CleanedOnHide()
+    {
+        pen.ResolvePlayerWorks = false;
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        c.Tick();
+        pen.SetSyncedResult = 11;                               // Penumbra refuses everything: the shared mod's pending plan is gone
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();
+        Assert.Equal(BackdropState.Hidden, c.State);
+        var clears = pen.SyncClears.Count;
+        c.Hide();                                               // the unsettled collection is still cleaned up
+        Assert.True(pen.SyncClears.Count > clears);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void FailedRebuildOfShownDome_PutBackRefused_GoesHidden_RaisesHidden_LitNull()
+    {
+        ShowSynced();
+        var hidden = 0;
+        c.Hidden += () => hidden++;
+        pen.SetSyncedResult = 9;
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();
+        Assert.Equal(BackdropState.Hidden, c.State);
+        Assert.Equal(1, hidden);
+        Assert.Null(c.Lit);
+        Assert.Equal(MessageKey.SyncShownLost, c.Status.Message.Key);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void FailedRebuildOfShownDome_PutBack_StaysShown()
+    {
+        ShowSynced();
+        pen.SetSyncedResults.Enqueue(9);
+        config.Current.Radius = 9000;
+        c.ApplyRebuild();
+        Assert.Equal(BackdropState.Shown, c.State);
+        Assert.NotNull(c.Lit);
+        Assert.Equal(MessageKey.SyncRefused, c.Status.Message.Key);
     }
 
     [Fact] // [EDGE-synced-delivery-2] [EDGE-synced-delivery-16]

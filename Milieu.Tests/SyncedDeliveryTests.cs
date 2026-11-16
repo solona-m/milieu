@@ -32,7 +32,7 @@ public class SyncedDeliveryTests
     public void SetThrows_TreatedAsRefused()
     {
         pen.SetSyncedThrows = true;
-        var (failure, message) = d.Begin(Tex(), "x", SyncTarget.MadBirdRing);
+        var (failure, message, _) = d.Begin(Tex(), "x", SyncTarget.MadBirdRing);
         Assert.Equal(MessageKey.SyncRefused, failure);
         Assert.Equal("Penumbra refused the synced backdrop (code -1).", message!.Text);
         Assert.Null(d.Pending);
@@ -202,5 +202,55 @@ public class SyncedDeliveryTests
         Assert.Equal(redraws + 1, pen.Redraws);
         Assert.Null(d.Shown);
         Assert.Null(d.Pending);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void FailedRebuild_InShownCollection_ReRegistersTheShownPlan()
+    {
+        Begin(); d.Commit();
+        var shown = d.Shown!;
+        pen.SetSyncedResults.Enqueue(9);   // the rebuild fails; putting the shown plan back succeeds
+        var (failure, message, lost) = d.Begin(Tex("99887766554433aa"), @"D:\mods\_milieu_sync\dome_y.avfx", SyncTarget.MadBirdRing);
+        Assert.Equal(MessageKey.SyncRefused, failure);
+        Assert.Equal(MessageKey.SyncRefused, message!.Key);
+        Assert.False(lost);
+        Assert.Same(shown, d.Shown);
+        Assert.Equal(shown.Plan.Paths, pen.SyncSets[^1].Paths);   // the shown plan was registered again
+        Assert.Contains(A, d.Unsettled);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void FailedRebuild_RestoreFailsToo_DropsShown_Redraws_ReportsLost()
+    {
+        Begin(); d.Commit();
+        var redraws = pen.Redraws;
+        pen.SetSyncedResult = 9;   // every call fails
+        var (_, message, lost) = d.Begin(Tex("99887766554433aa"), @"D:\mods\_milieu_sync\dome_y.avfx", SyncTarget.MadBirdRing);
+        Assert.True(lost);
+        Assert.Equal(MessageKey.SyncShownLost, message!.Key);
+        Assert.Null(d.Shown);
+        Assert.Null(d.Pending);
+        Assert.Equal(redraws + 1, pen.Redraws);
+        Assert.True(d.NeedsCleanup);   // the collection is unsettled
+    }
+
+    [Fact] // [EDGE-synced-lighting-37] [EDGE-synced-lighting-51]
+    public void Unsettled_ClearedByRemoveAll_KeptByForget_EmptiedByClearEverywhere()
+    {
+        pen.SetSyncedResult = 9;
+        Begin();
+        Assert.False(d.HasRegistration);
+        Assert.True(d.NeedsCleanup);
+        d.Forget();
+        Assert.True(d.NeedsCleanup);   // Penumbra gone: kept for the re-init cleanup
+        d.RemoveAll(redraw: false);
+        Assert.Contains(A, pen.SyncClears);
+        Assert.False(d.NeedsCleanup);
+
+        Begin();
+        Assert.True(d.NeedsCleanup);
+        d.ClearEverywhere();
+        Assert.Contains(A, pen.ClearEverywhereCalls[^1]);
+        Assert.False(d.NeedsCleanup);
     }
 }

@@ -5,14 +5,16 @@ using Milieu.Backdrop;
 namespace Milieu.Sync;
 
 /// <summary>
-/// The synced registration lifecycle over <see cref="IPenumbraSync"/>: one "MilieuSync" temp mod in the local player's
-/// collection holding the target's IMC VFX id and the dome redirects. Framework thread only.
+/// The synced registration lifecycle over <see cref="IPenumbraSync"/>: the real "Milieu Sync" mod, enabled in the local
+/// player's collection, holding the target's IMC VFX id and the dome redirects (docs/adr/0006). Framework thread only.
 /// <list type="bullet">
 /// <item>The user's IMC base entries are read once per (collection, target) and cached only while a shown or pending
 /// registration holds that key, so Milieu never reads its own entry back as a user override; every path that leaves
 /// nothing registered drops the entry.</item>
-/// <item>The last VFX id chosen per target this session is remembered, so a stale Milieu entry seen on a re-read (a
-/// removal Penumbra applied late) is ignored rather than taken for the user's.</item>
+/// <item>The entries Milieu registered per target this session are remembered, so exactly that stale entry seen on a
+/// re-read (a removal Penumbra applied late) is ignored rather than taken for the user's; any other override is the user's.</item>
+/// <item>A collection whose registration failed is kept as unsettled until a cleanup reaches it, because a failed enable
+/// may have left the mod enabled there.</item>
 /// <item>Every collection registered this session is remembered, so cleanup reaches temporary or deleted ones too.</item>
 /// </list>
 /// </summary>
@@ -23,6 +25,7 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
     private readonly Dictionary<(Guid, DeliveryMode), SyncBase> baseCache = [];
     private readonly Dictionary<DeliveryMode, IReadOnlyList<ImcEntry>> lastEntries = [];
     private readonly HashSet<Guid> sessionGuids = [];
+    private readonly HashSet<Guid> unsettled = [];
 
     public Registration? Shown { get; private set; }
 
@@ -30,18 +33,29 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
 
     public bool HasRegistration => Shown != null || Pending != null;
 
+    /// <summary>Something to take down on hide, logout or unload: a registration, or a collection a failed registration touched.</summary>
+    public bool NeedsCleanup => HasRegistration || unsettled.Count > 0;
+
+    /// <summary>Collections a failed registration left possibly enabled (cleared by RemoveAll and ClearEverywhere).</summary>
+    public IReadOnlyCollection<Guid> Unsettled => unsettled;
+
     public IReadOnlyCollection<Guid> SessionGuids => sessionGuids;
 
-    /// <summary>Plans and registers the synced temp mod for the staged files. Returns the failure, or None (then Pending is set).</summary>
-    public (MessageKey Failure, StatusMessage? Message) Begin(PreparedTexture staged, string avfxDisk, SyncTarget target)
+    /// <summary>
+    /// Plans and registers the synced mod for the staged files. Returns the failure, or None (then Pending is set).
+    /// ShownLost: a failed rebuild in the shown registration's collection had already rewritten the shared mod, and putting
+    /// the shown dome back failed too, so Shown was dropped (the caller must stop treating it as drawn).
+    /// </summary>
+    public (MessageKey Failure, StatusMessage? Message, bool ShownLost) Begin(PreparedTexture staged, string avfxDisk, SyncTarget target)
     {
-        if (sync.PlayerCollection() is not { } player) return (MessageKey.SyncNoPlayerCollection, StatusMessage.Of(MessageKey.SyncNoPlayerCollection));
+        if (sync.PlayerCollection() is not { } player)
+            return (MessageKey.SyncNoPlayerCollection, StatusMessage.Of(MessageKey.SyncNoPlayerCollection), false);
         var key = (player.Id, target.Mode);
         if (!baseCache.TryGetValue(key, out var b))
         {
             var own = lastEntries.TryGetValue(target.Mode, out var last) ? last : null;
             var (resolved, failure) = SyncPlanner.ResolveBase(target, gameData.ReadVanilla(target.ImcPath), sync.PlayerMeta(), own);
-            if (resolved == null) return (failure, StatusMessage.Of(failure, ("item", target.DisplayName)));
+            if (resolved == null) return (failure, StatusMessage.Of(failure, ("item", target.DisplayName)), false);
             b = resolved;
             baseCache[key] = b;
             if (b.MetaUnreadable) log.Debug("[Milieu] Couldn't read the player's meta manipulations; using the game's IMC entries.");
@@ -50,7 +64,7 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
         if (plan == null)
         {
             DropUnlessHeld(key);
-            return (buildFailure, StatusMessage.Of(buildFailure, ("item", target.DisplayName)));
+            return (buildFailure, StatusMessage.Of(buildFailure, ("item", target.DisplayName)), false);
         }
 
         // A live registration in another collection (the player's collection changed) comes out of that collection first.
@@ -65,13 +79,33 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
         if (code != 0)
         {
             log.Warning($"[Milieu] Penumbra refused the synced backdrop (code {code}).");
+            unsettled.Add(player.Id);   // a failed enable may have left the mod enabled: clean it up later
+            // The one shared mod was already rewritten with the failed plan. Put back what it held before (as AbortPending
+            // does): the pending registration if there is one in this collection, else the shown one. A registration that
+            // can't be put back is dropped; losing the shown one is reported to the caller.
+            var shownLost = false;
+            if (Pending != null && Pending.Collection == player.Id && !Restore(Pending))
+            {
+                log.Warning("[Milieu] Penumbra refused restoring the pending synced backdrop; dropping it.");
+                Pending = null;
+            }
+            if (Pending == null && Shown != null && Shown.Collection == player.Id && !Restore(Shown))
+            {
+                log.Warning("[Milieu] Penumbra refused restoring the shown synced backdrop; taking it down.");
+                baseCache.Remove((Shown.Collection, Shown.Target.Mode));
+                Shown = null;
+                shownLost = true;
+            }
             DropUnlessHeld(key);
-            if (clearedOld) sync.RedrawPlayer();   // the item still carried the old dome: reload it without
-            return (MessageKey.SyncRefused, StatusMessage.Of(MessageKey.SyncRefused, ("code", code)));
+            if (clearedOld || shownLost) sync.RedrawPlayer();   // the item still carried the old dome: reload it without
+            var message = shownLost
+                ? StatusMessage.Of(MessageKey.SyncShownLost, ("code", code))
+                : StatusMessage.Of(MessageKey.SyncRefused, ("code", code));
+            return (MessageKey.SyncRefused, message, shownLost);
         }
         Pending = new Registration(player.Id, player.IndividualSet, target, plan);
         lastEntries[target.Mode] = plan.Entries;
-        return (MessageKey.None, null);
+        return (MessageKey.None, null, false);
     }
 
     /// <summary>Penumbra resolves both pending game paths, for the player, to the staged files.</summary>
@@ -115,6 +149,9 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
         var cleared = new HashSet<Guid>();
         foreach (var r in new[] { Shown, Pending })
             if (r != null && cleared.Add(r.Collection)) sync.ClearSynced(r.Collection);
+        foreach (var id in unsettled)
+            if (cleared.Add(id)) sync.ClearSynced(id);
+        unsettled.Clear();
         Shown = null;
         Pending = null;
         baseCache.Clear();
@@ -124,16 +161,28 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
     /// <summary>The player's collection is no longer the one the shown registration lives in.</summary>
     public bool CollectionMoved() => Shown != null && sync.PlayerCollection() is { } p && p.Id != Shown.Collection;
 
-    /// <summary>Startup or Penumbra re-init: removes the synced temp mod from every collection, including this session's.</summary>
-    public void ClearEverywhere() => sync.ClearSyncedEverywhere(sessionGuids);
+    /// <summary>
+    /// Startup or Penumbra re-init: disables the synced mod in every collection, including this session's and any
+    /// unsettled one, and empties it. That settles the unsettled set.
+    /// </summary>
+    public void ClearEverywhere()
+    {
+        sync.ClearSyncedEverywhere([.. sessionGuids, .. unsettled]);
+        unsettled.Clear();
+    }
 
-    /// <summary>Penumbra went away (or restarted): forget registrations and cached bases without any IPC.</summary>
+    /// <summary>
+    /// Penumbra went away (or restarted): forget registrations and cached bases without any IPC. Unsettled collections are
+    /// kept, so the re-init cleanup or the next hide still reaches them.
+    /// </summary>
     public void Forget()
     {
         Shown = null;
         Pending = null;
         baseCache.Clear();
     }
+
+    private bool Restore(Registration r) => sync.SetSynced(r.Collection, r.Plan.Paths, r.Plan.Manips) == 0;
 
     private IReadOnlyList<StatusMessage> SharedWarnings(Registration r)
     {
