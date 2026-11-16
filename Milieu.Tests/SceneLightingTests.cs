@@ -29,6 +29,7 @@ public sealed class SceneLightingTests : IDisposable
     private LitBackdrop? lit = new(ImageA, View0);
     private bool unloading;
     private DeliveryMode delivery = DeliveryMode.Local;
+    private bool syncedLightsOn = true;
     private readonly List<string> loads = [];
     private Func<string, CancellationToken, Task<LightRig?>>? loader;
     private int runs;
@@ -56,7 +57,7 @@ public sealed class SceneLightingTests : IDisposable
 
     private SceneLighting Make(Func<Func<Task<LightRig?>>, Task<LightRig?>>? run = null) =>
         new(spawner, game, () => lit, config, Load, sentinel, log, () => unloading, () => delivery,
-            run ?? (f => { runs++; return f(); }));
+            run ?? (f => { runs++; return f(); }), () => syncedLightsOn);
 
     private Task<LightRig?> Load(string path, CancellationToken ct)
     {
@@ -303,10 +304,10 @@ public sealed class SceneLightingTests : IDisposable
         Assert.Equal(3, spawner.Creates.Count);
     }
 
-    [Fact] // [AC-scene-lighting-6] [EDGE-scene-lighting-22]
-    public void SyncedLit_CreatesLocally()
+    [Fact] // [AC-scene-lighting-6] [EDGE-scene-lighting-22] [EDGE-synced-lighting-35]
+    public void SyncedConfig_LocalDomeDrawn_NativeLightsCreated()
     {
-        delivery = DeliveryMode.MadBirdRing;
+        delivery = DeliveryMode.MadBirdRing;   // a synced config, but the drawn dome is local (e.g. a synced blocker)
         lit = new LitBackdrop(ImageA, View0 with { YawRadians = 1.2f });
         LightUp();
         Assert.Equal(LightRigPlanner.Plan(RigA, lit.View, Anchor, 1f, 2).Lights.Select(l => l.P), spawner.Creates.Select(c => c.P));
@@ -974,5 +975,53 @@ public sealed class SceneLightingTests : IDisposable
         s.Teardown();
         Assert.Equal(calls, spawner.NativeCalls);
         Assert.Single(loads);
+    }
+
+    [Fact] // [AC-synced-lighting-4]
+    public void SyncedDrawn_CreatesNoNativeLights_StatusInSyncedBackdrop()
+    {
+        delivery = DeliveryMode.MadBirdRing;
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 1);
+        Ticks(Settle + 5);
+        Assert.Empty(spawner.Creates);
+        Assert.Equal(LightingStatus.InSyncedBackdrop, s.Status.Status);
+        Assert.True(s.Status.GPose);
+        Assert.Equal(0, runs);   // no rig job either
+    }
+
+    [Fact] // [AC-synced-lighting-4]
+    public void SyncedDomeAppears_NativeLightsGo()
+    {
+        LightUp();
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 1);
+        s.Tick();
+        Assert.Empty(spawner.Live);
+    }
+
+    [Fact] // [EDGE-synced-lighting-47]
+    public void SyncedDome_NoVfxLights_NativeLightsRun()
+    {
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 0);   // no key with fills off, or a null rig
+        LightUp();
+    }
+
+    [Fact] // [EDGE-synced-lighting-40]
+    public void SyncedLightsKillSwitchOff_NativeLightsUnderSynced()
+    {
+        syncedLightsOn = false;
+        s = Make();
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 1);
+        LightUp();
+    }
+
+    [Fact] // [EDGE-synced-lighting-30]
+    public void SyncedToLocalInGPose_NativeLightsResumeAfterSettle()
+    {
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 1);
+        Ticks(Settle + 5);
+        Assert.Empty(spawner.Creates);
+        lit = new LitBackdrop(ImageA, View0);   // switched to Only me in GPose
+        Ticks(Settle + 1);
+        Assert.Equal(3, spawner.Live.Count());
     }
 }
