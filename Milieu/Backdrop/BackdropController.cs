@@ -111,8 +111,12 @@ public sealed class BackdropController : Gui.IGridController
                               CacheStore cache, Configuration config, ILogSink log,
                               Func<Func<Task<PreparedTexture>>, Task<PreparedTexture>>? run = null, Func<DateTime>? utcNow = null,
                               IBundledBackdrops? bundled = null, Action? save = null, Func<bool>? syncedAvailable = null,
-                              IPenumbraSync? sync = null, IGameData? gameData = null, Func<string, SyncStaging>? stagingFor = null)
+                              IPenumbraSync? sync = null, IGameData? gameData = null, Func<string, SyncStaging>? stagingFor = null,
+                              Func<string, CancellationToken, Task<LightRig?>>? loadRig = null,
+                              bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters)
     {
+        this.loadRig = loadRig;
+        this.fillsOnOwnEmitters = fillsOnOwnEmitters;
         this.bundled = bundled;
         this.save = save ?? (() => { });
         this.syncedAvailable = syncedAvailable ?? (() => false);
@@ -146,12 +150,19 @@ public sealed class BackdropController : Gui.IGridController
         {
             if (shownImagePath == null || shownBuild is not { } b) return null;
             if (synced?.Shown != null && b.BakedYawRadians is { } baked)
-                return new LitBackdrop(shownImagePath, new DomeView(baked, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat));
+                return new LitBackdrop(shownImagePath, new DomeView(baked, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat),
+                                       Synced: true, VfxLightCount: SyncedLights?.Lights.Count ?? 0);
             if (handle is { IsDead: false } && b.BakedYawRadians == null)
                 return new LitBackdrop(shownImagePath, new DomeView(spawnedYaw, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat));
             return null;
         }
     }
+
+    /// <summary>A dome is drawn (a live local VFX or a committed synced registration). Framework thread only.</summary>
+    public bool IsDrawn => Lit != null;
+
+    /// <summary>The VFX lights the shown synced dome carries (docs/adr/0011); null when no synced dome is shown.</summary>
+    internal VfxLightPlan? SyncedLights { get; private set; }
 
     /// <summary>The delivery in force: the configured one when synced delivery is available, otherwise always Local.</summary>
     public DeliveryMode EffectiveDelivery => synced != null && syncedAvailable() ? config.Delivery : DeliveryMode.Local;
@@ -187,6 +198,52 @@ public sealed class BackdropController : Gui.IGridController
 
     public static readonly TimeSpan ReconvertDelay = TimeSpan.FromMilliseconds(500);
     private DateTime? reconvertAt;
+
+    private readonly Func<string, CancellationToken, Task<LightRig?>>? loadRig;
+    private readonly bool fillsOnOwnEmitters;
+    private VfxLightPlan? pendingLights;
+    private DateTime? lightRebuildAt;
+    private bool lightRebuildHeld;
+
+    /// <summary>
+    /// Scene lighting, light strength or fill count changed: replan the shown synced dome's VFX lights 500 ms after the
+    /// last change and rebuild if they differ. Held while in GPose (a rebuild redraws everyone, which can disturb posing)
+    /// and fired 500 ms after GPose ends. Hidden or local: nothing (the setting is just saved).
+    /// </summary>
+    public void RequestLightRebuild()
+    {
+        lightRebuildAt = utcNow() + ReconvertDelay;
+        lightRebuildHeld = false;
+    }
+
+    private void TickLightRebuild()
+    {
+        if (lightRebuildHeld)
+        {
+            if (game.IsGPosing) return;
+            lightRebuildHeld = false;
+            lightRebuildAt = utcNow() + ReconvertDelay;
+            return;
+        }
+        if (lightRebuildAt is not { } at || utcNow() < at) return;
+        lightRebuildAt = null;
+        if (synced?.Shown == null || texture == null || state != BackdropState.Shown) return;   // nothing synced shown: dropped
+        if (game.IsGPosing) { lightRebuildHeld = true; return; }
+        var planned = PlanLights(texture, shownBuild);
+        if (VfxLightPlan.SameLights(planned.Lights, SyncedLights?.Lights)) return;   // unchanged: no rebuild, no redraw
+        ApplyRebuild();
+    }
+
+    /// <summary>
+    /// The VFX lights for a synced dome of <paramref name="tex"/> built as <paramref name="build"/>: empty unless scene
+    /// lighting is on, the synced-lights switch gave a rig loader, and the job loaded a rig.
+    /// </summary>
+    private VfxLightPlan PlanLights(PreparedTexture tex, DomeBuild? build)
+    {
+        if (!config.SceneLighting || loadRig == null || tex.Rig is not { } rig || build is not { } b) return VfxLightPlan.Empty;
+        var view = new DomeView(b.BakedYawRadians ?? 0f, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat);
+        return VfxLightPlanner.Plan(rig, view, config.Current.Radius, config.LightStrength, config.FillLightCount, fillsOnOwnEmitters);
+    }
 
     /// <summary>
     /// Exposure, tone map or texture size changed: re-run the conversion 500 ms after the last change, for a selected
@@ -299,11 +356,20 @@ public sealed class BackdropController : Gui.IGridController
             {
                 var prepared = await preparer.PrepareTextureAsync(request, reporter, token).ConfigureAwait(false);
                 holder.Output = staging.TexturePath(prepared.Key);
-                try { return staging.StageAtex(prepared, token); }
+                PreparedTexture staged;
+                try { staged = staging.StageAtex(prepared, token); }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {
                     log.Warning("[Milieu] Could not stage the synced backdrop: " + LogText.Describe(e, cache.Root, modDir));
                     throw new MilieuException(StatusMessage.Of(MessageKey.WriteFailed));
+                }
+                // The light rig for the dome's VFX lights: never fails the backdrop (no lights instead).
+                if (loadRig == null) return staged;
+                try { return staged with { Rig = await loadRig(request.ImagePath, token).ConfigureAwait(false) }; }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    log.Warning("[Milieu] Could not load the light rig for the synced backdrop; showing it without lights: " + e.GetType().Name);
+                    return staged;
                 }
             });
             jobImagePath = request.ImagePath;
@@ -345,6 +411,7 @@ public sealed class BackdropController : Gui.IGridController
         else if (synced != null)
         {
             synced.RemoveAll(redraw: true);
+            SyncedLights = null;
             CleanupStaging(keepShown: false);
         }
         state = FallbackState();
@@ -359,6 +426,7 @@ public sealed class BackdropController : Gui.IGridController
         shownSet = null; shownAvfxGamePath = null;
         pendingSet = null; pendingAvfxGamePath = null;
         if (synced is { NeedsCleanup: true }) synced.RemoveAll(redraw: true);
+        SyncedLights = null;
         CleanupStaging(keepShown: false);   // whenever the folder exists (e.g. a failed registration's atex); never creates it
         state = BackdropState.Hidden;
         message = StatusMessage.None;
@@ -438,6 +506,7 @@ public sealed class BackdropController : Gui.IGridController
         RemoveDome();
         shownSet = null; shownAvfxGamePath = null; pendingSet = null; pendingAvfxGamePath = null;
         synced?.Forget();   // no IPC now; the synced mod outlives Penumbra, so its collections stay unsettled for cleanup
+        SyncedLights = null;
         state = BackdropState.Hidden;
         if (wasShowing) message = StatusMessage.Of(MessageKey.PenumbraGone);
         Hidden?.Invoke();
@@ -477,6 +546,7 @@ public sealed class BackdropController : Gui.IGridController
         if (++ticks % PenumbraRefreshTicks == 0) penumbra.Refresh();
         while (posted.TryDequeue(out var action)) action();
         TickReconvert();
+        TickLightRebuild();
 
         CheckGameRemoval();
         var ready = game.IsReady;
@@ -555,6 +625,7 @@ public sealed class BackdropController : Gui.IGridController
     /// <summary>The shown synced dome was taken down after a refusal: stop treating it as drawn (Lit, the shown build).</summary>
     private void ForgetShownSynced()
     {
+        SyncedLights = null;
         if (handle is { IsDead: false }) return;   // a local dome is what's drawn
         shownImagePath = null;
         shownBuild = null;
@@ -672,14 +743,16 @@ public sealed class BackdropController : Gui.IGridController
         var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, bakedYaw);
         // Item VFX are anchored at world height 0, not at the item (seen in game, 2026-11-16): raise the dome to the player.
         var anchorY = game.PlayerPosition?.Y ?? 0f;
+        var lights = PlanLights(tex, build);
         byte[] avfx;
         try
         {
             avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, build.VerticalScale,
                 build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY,
                 BakedHeight: config.Current.HeightOffset, BakedYawRadians: bakedYaw, AttachToOwner: true,
-                EmitterBaseHeight: anchorY));
+                EmitterBaseHeight: anchorY, Lights: lights.Lights));
             log.Information($"[Milieu] Synced dome anchor height {anchorY:0.00} (player world Y).");
+            LogLights(lights);
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
         {
@@ -720,8 +793,22 @@ public sealed class BackdropController : Gui.IGridController
         pendingFloorY = floorY;
         pendingImagePath = textureImagePath;
         pendingBuild = build;
+        pendingLights = lights;
         waitTicks = 0;
         state = BackdropState.AwaitingRedirect;
+    }
+
+    /// <summary>One log line per synced VFX light: azimuth, elevation, Bri and distance (for in-game tuning).</summary>
+    private void LogLights(VfxLightPlan plan)
+    {
+        foreach (var l in plan.Lights)
+        {
+            var rel = l.Position - new System.Numerics.Vector3(0, LightRigLayout.AnchorHeight, 0);
+            var d = rel.Length();
+            var az = MathF.Atan2(rel.X, rel.Z) * 180f / MathF.PI;
+            var el = d > 0 ? MathF.Asin(Math.Clamp(rel.Y / d, -1f, 1f)) * 180f / MathF.PI : 0f;
+            log.Information($"[Milieu] Synced {(l.Shadows ? "key" : "fill")} light: azimuth {az:0}°, elevation {el:0}°, Bri {l.Brightness:0.0}, distance {d:0.0}.");
+        }
     }
 
     private void TickAwaitingSynced()
@@ -738,6 +825,7 @@ public sealed class BackdropController : Gui.IGridController
             shownFloorY = pendingFloorY;
             shownImagePath = pendingImagePath;
             shownBuild = pendingBuild;
+            SyncedLights = pendingLights;
             state = BackdropState.Shown;
             message = StatusMessage.Of(target.ShownMessage);
             CleanupStaging(keepShown: true);
@@ -902,6 +990,7 @@ public sealed class BackdropController : Gui.IGridController
         penumbra.Clear();
         shownSet = null; pendingSet = null;
         if (synced is { NeedsCleanup: true }) synced.RemoveAll(redraw: true);
+        SyncedLights = null;
         CleanupStaging(keepShown: false);   // whenever the folder exists (e.g. a failed registration's atex); never creates it
         state = BackdropState.Hidden;
         Hidden?.Invoke();
