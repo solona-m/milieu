@@ -37,7 +37,10 @@ public static class VfxLightLayout
 
     /// <summary>Key shadow range (SCDN/SCDF); the game's recipe used 0.5/15 at short range, both near/far variants cast shadows.</summary>
     public const float KeyShadowNear = 0.1f;
-    public const float KeyShadowFar = 40f;   // beyond the key's distance, like KeyRange
+    public const float KeyShadowFar = 20f;   // beyond the key's distance, like KeyRange
+
+    /// <summary>WIP: the shadow's near plane as a fraction of the key's distance (a tighter depth span, sharper shadows).</summary>
+    public const float KeyShadowNearFraction = 0.5f;
 
     /// <summary>The strongest fill's Bri at strength 1; weaker fills scale by their share.</summary>
     public const float FillBrightness = 4f;
