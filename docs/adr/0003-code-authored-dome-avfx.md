@@ -40,8 +40,8 @@ BC7 encoding uses BCnEncoder.Net per mip; its `EncodeToRawBytesAsync` observes t
 Experiment result (testing builds 3-5, 2026-11-09..16; the `/milieu vfxlight` command is removed, issue #1): VFX
 effector lights were tested in game. **Point lights (EfVT 0) linked from the dome emitter light the character and cast
 shadows from a synced dome** with the game's own recipe (Attn 2, shadow flags 1/1/1/0, near 0.5 / far 15, brightness as
-Bri). Directional effectors (EfVT 1) never lit anything, and static (local) VFX never run effectors. The synced light
-chain itself is recorded in ADR 0011.
+Bri). Directional effectors (EfVT 1) never lit anything, and static (local) VFX never run effectors. Using them for synced
+scene lighting is a separate decision.
 
 ## Open questions (to record after in-game checks)
 

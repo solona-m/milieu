@@ -7,10 +7,11 @@ using Milieu.Backdrop;
 namespace Milieu.Sync;
 
 /// <summary>
-/// Milieu's hidden folder inside Penumbra's mod directory, <c>&lt;mod dir&gt;\_milieu_sync</c>. PSync uploads only files
-/// under the mod directory (or its own cache), so synced dome files must live here as real files. The folder is marked
-/// Hidden, which Penumbra's mod scan skips; its name is ASCII and has no bg/bgcommon/ui segment (PSync's scan skips those).
-/// Writes and cleanup go through a <see cref="CacheStore"/> rooted here (same names, same atomic writes, same patterns).
+/// Milieu's folder inside Penumbra's mod directory, <c>&lt;mod dir&gt;\_milieu_sync</c>: also the real "Milieu Sync" mod
+/// (<see cref="SyncRealMod"/>), so it is visible (an older build's Hidden attribute is cleared). PSync uploads only files
+/// under the mod directory (or its own cache), so synced dome files must live here as real files; the name is ASCII and has
+/// no bg/bgcommon/ui segment (PSync's scan skips those). Staged files go through a <see cref="CacheStore"/> rooted here
+/// (same names, same atomic writes, same cleanup patterns); cleanup never touches meta.json or default_mod.json.
 /// </summary>
 public sealed class SyncStaging
 {

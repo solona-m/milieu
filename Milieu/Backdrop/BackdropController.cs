@@ -259,7 +259,7 @@ public sealed class BackdropController : Gui.IGridController
         if (LiveDelivery is { } live && live != EffectiveDelivery) TearDownLive();
 
         // A pending synced registration is superseded by this Show: take it out (the shown one, if any, is put back).
-        if (synced?.Pending != null) synced.AbortPending();
+        if (synced?.Pending != null && synced.AbortPending()) ForgetShownSynced();
 
         // 2. First-upload gate: nothing personal leaves the machine before the user has been told, whatever the trigger.
         if (IsSynced && !BackdropPins.IsBundledId(config.ImagePath) && !config.SyncUploadNoticeShown)
@@ -350,7 +350,7 @@ public sealed class BackdropController : Gui.IGridController
         state = FallbackState();
     }
 
-    /// <summary>Hide, /milieu off: removes the dome and the temp mod, cancels a conversion.</summary>
+    /// <summary>Hide, /milieu off: removes the dome, its temp mod or the synced mod (disabled and emptied), cancels a conversion.</summary>
     public void Hide()
     {
         CancelJob();
@@ -437,7 +437,7 @@ public sealed class BackdropController : Gui.IGridController
         CancelJob();
         RemoveDome();
         shownSet = null; shownAvfxGamePath = null; pendingSet = null; pendingAvfxGamePath = null;
-        synced?.Forget();   // no IPC: Penumbra is gone, and its temp mods with it
+        synced?.Forget();   // no IPC now; the synced mod outlives Penumbra, so its collections stay unsettled for cleanup
         state = BackdropState.Hidden;
         if (wasShowing) message = StatusMessage.Of(MessageKey.PenumbraGone);
         Hidden?.Invoke();
@@ -550,6 +550,14 @@ public sealed class BackdropController : Gui.IGridController
             currentStaging = null;
         }
         Register(texture);
+    }
+
+    /// <summary>The shown synced dome was taken down after a refusal: stop treating it as drawn (Lit, the shown build).</summary>
+    private void ForgetShownSynced()
+    {
+        if (handle is { IsDead: false }) return;   // a local dome is what's drawn
+        shownImagePath = null;
+        shownBuild = null;
     }
 
     private BackdropState FallbackState() =>
@@ -704,12 +712,7 @@ public sealed class BackdropController : Gui.IGridController
         if (failure != MessageKey.None)
         {
             message = failureMessage ?? StatusMessage.Of(failure);
-            if (shownLost && handle is not { IsDead: false })
-            {
-                // The shown synced dome couldn't be put back after the failed rebuild: it is no longer drawn.
-                shownImagePath = null;
-                shownBuild = null;
-            }
+            if (shownLost) ForgetShownSynced();
             state = FallbackState();
             if (shownLost && state == BackdropState.Hidden) Hidden?.Invoke();
             return;
@@ -742,9 +745,11 @@ public sealed class BackdropController : Gui.IGridController
         }
         if (++waitTicks < RedirectTimeoutTicks) return;
         log.Warning("[Milieu] Penumbra did not resolve the synced backdrop files in time.");
-        synced.AbortPending();
+        var lost = synced.AbortPending();
+        if (lost) ForgetShownSynced();
         message = StatusMessage.Of(MessageKey.SyncRedirectTimeout);
         state = FallbackState();
+        if (lost && state == BackdropState.Hidden) Hidden?.Invoke();
     }
 
     private void TickAwaiting()
@@ -887,8 +892,8 @@ public sealed class BackdropController : Gui.IGridController
     }
 
     /// <summary>
-    /// Plugin unload: cancel the job (the caller waits for <see cref="RunningJob"/> up to 2 s), remove the dome and the
-    /// temp mod. Framework thread only.
+    /// Plugin unload: cancel the job (the caller waits for <see cref="RunningJob"/> up to 2 s), remove the dome, the local
+    /// temp mod and the synced mod (disabled and emptied; after Penumbra went away, emptied on disk only). Framework thread only.
     /// </summary>
     public void Teardown()
     {

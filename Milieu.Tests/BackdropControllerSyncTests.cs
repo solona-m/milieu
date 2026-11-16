@@ -950,4 +950,48 @@ public sealed class BackdropControllerSyncTests : IDisposable
         Assert.Equal(3f, c.Lit!.View.URepeat);
         Assert.Equal(userImage, c.Lit!.ImagePath);
     }
+
+    [Fact] // [AC-synced-lighting-7]
+    public void SyncedBuild_RaisesTheDomeToThePlayersWorldHeight()
+    {
+        game.PlayerPosition = new System.Numerics.Vector3(1, 18.25f, 2);
+        ShowSynced();
+        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"];
+        Assert.Equal(18.25f, Avfx(dome).Need("Emit").Need("Pos").Need("Y").CurveValue());
+        Assert.Contains(log.Lines, l => l.Text.Contains("anchor height 18.25"));
+    }
+
+    [Fact] // [EDGE-synced-lighting-8]
+    public void SyncedBuild_PlayerPositionGone_AnchorsAtZero_Logged()
+    {
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        game.PlayerPosition = null;   // the job completes while no position is readable
+        c.Tick();
+        Assert.NotEmpty(pen.SyncSets);
+        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"];
+        Assert.Null(Avfx(dome).Need("Emit").Need("Pos").Child("Y"));   // 0: no key
+        Assert.Contains(log.Lines, l => l.Text.Contains("anchor height 0.00"));
+    }
+
+    [Fact] // [EDGE-synced-lighting-9]
+    public void SyncedBuild_AbsurdPlayerHeight_WriteFailed_NothingRegistered()
+    {
+        game.PlayerPosition = new System.Numerics.Vector3(0, 1e6f, 0);
+        config.Delivery = DeliveryMode.MadBirdRing;
+        c.Show();
+        c.Tick();
+        Assert.Empty(pen.SyncSets);
+        Assert.Equal(MessageKey.WriteFailed, c.Status.Message.Key);
+    }
+
+    [Fact] // [AC-synced-lighting-8] [EDGE-synced-lighting-36]
+    public void SyncedShown_PenumbraDisposed_ThenUnload_StillClearsTheMod()
+    {
+        ShowSynced();
+        c.OnPenumbraDisposed();
+        var clears = pen.SyncClears.Count;
+        c.Teardown();
+        Assert.True(pen.SyncClears.Count > clears);   // disabled (when possible) and emptied on disk
+    }
 }

@@ -89,16 +89,25 @@ Tested in game with the owner (cushion and ring). What changed, and why:
 - **A real mod, "Milieu Sync", replaces the `MilieuSync` temp mod** (owner's choice: it shows in Penumbra's list). The
   staging folder `<mod dir>\_milieu_sync` is no longer Hidden; Milieu writes `meta.json` + `default_mod.json` (v3,
   atomically; Penumbra migrates them to v4) and `SyncModRegistrar` calls `ReloadMod`/`AddMod`, `TrySetModPriority`
-  (1,000,000) **then** `TrySetMod(true)` in the player's collection, then removes an older build's temp mod. A failed
-  priority enables nothing; a failed enable is disabled again (fail closed).
-  - This **amends ADR 0002/0006's "never calls a mod-management API"**: mod-management calls are made on Milieu's own
-    mod only, never on the user's mods.
-  - **Empty at rest.** Hide, Teardown and startup cleanup rewrite the mod with no files and no manipulations
-    (`Neutralize`) and reload it, so an enabled state left behind (a crash, a failed disable, an exit before cleanup)
-    changes nothing even if Milieu never runs again. Startup disables it in every collection (only once it exists).
-  - **Unsettled collections.** A collection whose registration failed is retried by the next Hide, logout, unload or
-    startup cleanup. A failed rebuild puts back what the shared mod held before (the pending registration, else the
-    shown one); if that fails too the shown dome is dropped and the controller goes Hidden (`SyncShownLost`).
+  (1,000,000) **then** `TrySetMod(true)` in the player's collection, then removes an older build's temp mod. On a first
+  show a failed priority enables nothing and a failed enable is disabled again (fail closed); on a rebuild the mod is
+  already enabled, so a refusal is handled by putting back or taking down (below).
+  - **Mod-management calls are new:** until now Milieu only made temporary-mod and read calls (stated in `PenumbraIpc`'s
+    doc, not in an ADR). They are made on Milieu's own mod only, never on the user's mods.
+  - **Empty at rest.** Hide, Teardown, logout and startup cleanup disable the mod and rewrite it with no files and no
+    manipulations (`Neutralize`), then reload it; with Penumbra gone the files are still emptied on disk. An enabled state
+    left behind *after* such a cleanup (a failed disable, an inheriting collection) then changes nothing even if Milieu
+    never runs again. **Residue accepted:** a crash or a game exit *while a synced backdrop is shown* leaves the mod
+    enabled with its content (the user's image included, which PSync can keep sharing) until Milieu's next startup
+    cleanup, or for good if Milieu is removed. The upload notice was shown when the image was first shared.
+  - **Unsettled collections.** A collection whose registration failed, or whose registration Penumbra's disposal made
+    Milieu forget, is retried by the next Hide, logout, unload or startup cleanup. A failed rebuild puts back what the
+    shared mod held before (the pending registration, else the shown one); a registration that can't be put back is
+    dropped, and when nothing is left registered the mod is taken down (disabled and emptied) and the controller goes
+    Hidden (`SyncShownLost`). The same holds when a pending registration times out and the shown one can't be put back.
+  - **Penumbra's migration** turns Milieu's v3 files into v4 on every reload and deletes `default_mod.json` with a backup,
+    so, depending on the user's Penumbra backup mode, `.bak` copies (game paths and IMC entries, no image) may appear in
+    the folder; Milieu neither writes nor deletes them.
   - **Inheritance (accepted).** Unlike a temp mod, a real mod's enabled state is inherited: collections that inherit the
     player's collection show the dome too while it is shown. At rest the mod is empty, so leftovers are harmless.
   - **Evaluated alternative / fallback, not implemented:** Penumbra's temporary mod *settings* with a lock key

@@ -79,23 +79,7 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
         if (code != 0)
         {
             log.Warning($"[Milieu] Penumbra refused the synced backdrop (code {code}).");
-            unsettled.Add(player.Id);   // a failed enable may have left the mod enabled: clean it up later
-            // The one shared mod was already rewritten with the failed plan. Put back what it held before (as AbortPending
-            // does): the pending registration if there is one in this collection, else the shown one. A registration that
-            // can't be put back is dropped; losing the shown one is reported to the caller.
-            var shownLost = false;
-            if (Pending != null && Pending.Collection == player.Id && !Restore(Pending))
-            {
-                log.Warning("[Milieu] Penumbra refused restoring the pending synced backdrop; dropping it.");
-                Pending = null;
-            }
-            if (Pending == null && Shown != null && Shown.Collection == player.Id && !Restore(Shown))
-            {
-                log.Warning("[Milieu] Penumbra refused restoring the shown synced backdrop; taking it down.");
-                baseCache.Remove((Shown.Collection, Shown.Target.Mode));
-                Shown = null;
-                shownLost = true;
-            }
+            var shownLost = RecoverAfterRefusal(player.Id);
             DropUnlessHeld(key);
             if (clearedOld || shownLost) sync.RedrawPlayer();   // the item still carried the old dome: reload it without
             var message = shownLost
@@ -129,23 +113,36 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
         return SharedWarnings(Shown);
     }
 
-    /// <summary>The pending registration didn't resolve: take it out and put the shown one (if any) back.</summary>
-    public void AbortPending()
+    /// <summary>
+    /// The pending registration didn't resolve (or a new Show supersedes it): take it out and put the shown one (if any)
+    /// back. Returns true when the shown one couldn't be put back and was dropped too (the mod is then taken down and
+    /// emptied; the caller must stop treating it as drawn).
+    /// </summary>
+    public bool AbortPending()
     {
-        if (Pending == null) return;
+        if (Pending == null) return false;
         var p = Pending;
         Pending = null;
         sync.ClearSynced(p.Collection);
+        var shownLost = false;
         if (Shown == null) sync.RedrawPlayer();   // nothing to put back: reload the item without the pending dome
-        else if (sync.SetSynced(Shown.Collection, Shown.Plan.Paths, Shown.Plan.Manips) != 0)
-            log.Warning("[Milieu] Penumbra refused restoring the shown synced backdrop.");
+        else if (!Restore(Shown))
+        {
+            log.Warning("[Milieu] Penumbra refused restoring the shown synced backdrop; taking it down.");
+            TakeDown(Shown.Collection);
+            baseCache.Remove((Shown.Collection, Shown.Target.Mode));
+            Shown = null;
+            shownLost = true;
+            sync.RedrawPlayer();
+        }
         DropUnlessHeld((p.Collection, p.Target.Mode));
+        return shownLost;
     }
 
     /// <summary>Hide, logout, unload, switching delivery: removes every registration (redrawing if asked) and the cache.</summary>
     public void RemoveAll(bool redraw)
     {
-        var any = HasRegistration;
+        var any = NeedsCleanup;   // an unsettled-only cleanup may disable a live dome too: redraw then as well
         var cleared = new HashSet<Guid>();
         foreach (var r in new[] { Shown, Pending })
             if (r != null && cleared.Add(r.Collection)) sync.ClearSynced(r.Collection);
@@ -172,17 +169,55 @@ public sealed class SyncedDelivery(IPenumbraSync sync, IGameData gameData, ILogS
     }
 
     /// <summary>
-    /// Penumbra went away (or restarted): forget registrations and cached bases without any IPC. Unsettled collections are
-    /// kept, so the re-init cleanup or the next hide still reaches them.
+    /// Penumbra went away (or restarted): forget registrations and cached bases without any IPC. The real mod and its
+    /// enabled state outlive Penumbra's session (unlike a temp mod), so the forgotten registrations' collections join the
+    /// unsettled ones: the next hide, logout, unload or re-init cleanup still disables and empties the mod.
     /// </summary>
     public void Forget()
     {
+        foreach (var r in new[] { Shown, Pending })
+            if (r != null) unsettled.Add(r.Collection);
         Shown = null;
         Pending = null;
         baseCache.Clear();
     }
 
     private bool Restore(Registration r) => sync.SetSynced(r.Collection, r.Plan.Paths, r.Plan.Manips) == 0;
+
+    /// <summary>
+    /// After a refused registration in <paramref name="collection"/>: the one shared mod was already rewritten (and is still
+    /// enabled there if a dome was live). Put back what it held before, as AbortPending does: the pending registration if
+    /// there is one in this collection, else the shown one. One that can't be put back is dropped, and when nothing is left
+    /// registered there the mod is taken down (disabled and emptied), so a "taken down" dome really is. True when the
+    /// shown registration was lost.
+    /// </summary>
+    private bool RecoverAfterRefusal(Guid collection)
+    {
+        unsettled.Add(collection);   // a failed enable may have left the mod enabled: clean it up later too
+        var shownLost = false;
+        if (Pending != null && Pending.Collection == collection && !Restore(Pending))
+        {
+            log.Warning("[Milieu] Penumbra refused restoring the pending synced backdrop; dropping it.");
+            Pending = null;
+        }
+        if (Pending == null && Shown != null && Shown.Collection == collection && !Restore(Shown))
+        {
+            log.Warning("[Milieu] Penumbra refused restoring the shown synced backdrop; taking it down.");
+            baseCache.Remove((Shown.Collection, Shown.Target.Mode));
+            Shown = null;
+            shownLost = true;
+        }
+        var held = (Pending?.Collection == collection) || (Shown?.Collection == collection);
+        if (!held) TakeDown(collection);
+        return shownLost;
+    }
+
+    /// <summary>Disables and empties the mod in a collection; it stays unsettled (ClearSynced can't report failure).</summary>
+    private void TakeDown(Guid collection)
+    {
+        sync.ClearSynced(collection);
+        unsettled.Add(collection);
+    }
 
     private IReadOnlyList<StatusMessage> SharedWarnings(Registration r)
     {

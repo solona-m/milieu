@@ -26,6 +26,11 @@ public class PenumbraIpcLabelTests
         Assert.Equal("Penumbra.ResolveDefaultPath", PenumbraIpc.LabelResolveDefaultPath);
         Assert.Equal("Penumbra.Initialized", PenumbraIpc.LabelInitialized);
         Assert.Equal("Penumbra.Disposed", PenumbraIpc.LabelDisposed);
+        Assert.Equal("Penumbra.AddMod.V5", PenumbraIpc.LabelAddMod);
+        Assert.Equal("Penumbra.ReloadMod.V5", PenumbraIpc.LabelReloadMod);
+        Assert.Equal("Penumbra.TrySetMod.V5", PenumbraIpc.LabelTrySetMod);
+        Assert.Equal("Penumbra.TrySetModPriority.V5", PenumbraIpc.LabelTrySetModPriority);
+        Assert.Equal("Penumbra.RedrawAll.V5", PenumbraIpc.LabelRedrawAll);
         Assert.Equal("Milieu", PenumbraIpc.Tag);
         Assert.Equal(0, PenumbraIpc.Priority);
         Assert.Equal(0xE0, PenumbraIpc.BaseCollectionType);

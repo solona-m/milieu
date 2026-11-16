@@ -49,7 +49,7 @@ internal static class AvfxChunkReader
         "AVFX", "Schd", "Item", "Trgr", "TmLn", "Emit", "ItPr", "Ptcl", "Modl",
         "Life", "CrC", "CrI", "ARs", "Col", "RGB", "A", "Bri", "Pos", "Rot", "Scl", "Scr", "X", "Y", "Z", "XR", "YR", "ZR",
         "UvSt", "Data", "FrC", "FrRt", "ColB", "ColE", "TC1", "TC2", "TC3", "TC4", "TN", "TR", "TD", "TP", "NPow", "DPow",
-        "Efct", "Amb", "DstS", "Pow",   // VFX effector lights (synced lighting, docs/adr/0011)
+        "Efct", "Amb", "DstS", "Pow",   // VFX effector lights (tested in game; docs/adr/0003)
     };
 
     public static ChunkNode Parse(byte[] data) => Parse(data, DefaultContainers);

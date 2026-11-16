@@ -195,10 +195,11 @@ public class SyncedDeliveryTests
     {
         Begin(); d.Commit();
         var redraws = pen.Redraws;
-        pen.Player = new PlayerCollectionInfo(Guid.NewGuid(), true);
+        var moved = Guid.NewGuid();
+        pen.Player = new PlayerCollectionInfo(moved, true);
         pen.SetSyncedResult = 11;
         Assert.Equal(MessageKey.SyncRefused, Begin());
-        Assert.Equal(A, pen.SyncClears.Single());
+        Assert.Equal([A, moved], pen.SyncClears);   // the old collection first; the refused new one is taken down too
         Assert.Equal(redraws + 1, pen.Redraws);
         Assert.Null(d.Shown);
         Assert.Null(d.Pending);
@@ -232,6 +233,8 @@ public class SyncedDeliveryTests
         Assert.Null(d.Pending);
         Assert.Equal(redraws + 1, pen.Redraws);
         Assert.True(d.NeedsCleanup);   // the collection is unsettled
+        Assert.Contains(A, pen.SyncClears);          // taken down: disabled and emptied
+        Assert.DoesNotContain(A, pen.Synced.Keys);
     }
 
     [Fact] // [EDGE-synced-lighting-37] [EDGE-synced-lighting-51]
@@ -252,5 +255,38 @@ public class SyncedDeliveryTests
         d.ClearEverywhere();
         Assert.Contains(A, pen.ClearEverywhereCalls[^1]);
         Assert.False(d.NeedsCleanup);
+    }
+
+    [Fact] // [EDGE-synced-lighting-46]
+    public void AbortPending_ShownPutBackRefused_TakesItDown_ReportsLost()
+    {
+        Begin(); d.Commit();
+        Begin(SyncTarget.MadBirdRing);   // a pending rebuild
+        pen.SetSyncedResult = 9;          // putting the shown one back fails
+        Assert.True(d.AbortPending());
+        Assert.Null(d.Shown);
+        Assert.DoesNotContain(A, pen.Synced.Keys);
+        Assert.True(d.NeedsCleanup);
+    }
+
+    [Fact]
+    public void AbortPending_ShownPutBack_NotLost()
+    {
+        Begin(); d.Commit();
+        Begin(SyncTarget.MadBirdRing);
+        Assert.False(d.AbortPending());
+        Assert.NotNull(d.Shown);
+    }
+
+    [Fact] // [AC-synced-lighting-8] [EDGE-synced-lighting-36]
+    public void Forget_KeepsTheForgottenCollectionUnsettled_ForCleanup()
+    {
+        Begin(); d.Commit();
+        d.Forget();
+        Assert.False(d.HasRegistration);
+        Assert.True(d.NeedsCleanup);   // the real mod outlives Penumbra's session
+        Assert.Contains(A, d.Unsettled);
+        d.RemoveAll(redraw: true);
+        Assert.Contains(A, pen.SyncClears);
     }
 }

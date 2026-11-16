@@ -75,9 +75,13 @@ public sealed class SyncModRegistrar(ISyncModApi api, Func<string?> modDirectory
         return 0;
     }
 
-    /// <summary>Disables the mod in <paramref name="collection"/> and removes an older build's temp mod there. True when disabled.</summary>
+    /// <summary>
+    /// Disables the mod in <paramref name="collection"/> and removes an older build's temp mod there. True when disabled.
+    /// No IPC while Penumbra is missing (false: still to do).
+    /// </summary>
     public bool Disable(Guid collection)
     {
+        if (!api.PenumbraPresent) return false;
         var off = api.SetModEnabled(collection, Dir, Name, false);
         api.RemoveLegacyTempMod(collection);
         return off is 0 or 1;

@@ -8,9 +8,10 @@ namespace Milieu.Interop;
 
 /// <summary>
 /// Penumbra IPC by label (labels and signatures copied from Penumbra.Api's IpcSubscribers, MIT). Local delivery creates
-/// one temporary mod, tag "Milieu", priority 0, in all collections. Synced delivery (docs/adr/0006) creates one temporary
-/// mod, tag "MilieuSync", priority 1,000,000, in the local player's collection only. Milieu reads Penumbra's enabled
-/// state, collections, mod directory and the player's meta; it never calls a mod-settings or mod-management API.
+/// one temporary mod, tag "Milieu", priority 0, in all collections. Synced delivery (docs/adr/0006, 2026-11-16 amendment)
+/// writes the real mod "Milieu Sync" and makes mod-management calls on it only (ReloadMod/AddMod, TrySetModPriority,
+/// TrySetMod, through <see cref="Sync.SyncModRegistrar"/>), in the local player's collection; it never touches the user's
+/// own mods. It also reads Penumbra's enabled state, collections, mod directory and the player's meta.
 /// </summary>
 public sealed class PenumbraIpc : IPenumbraRedirects, IPenumbraSync, Sync.ISyncModApi, IDisposable
 {

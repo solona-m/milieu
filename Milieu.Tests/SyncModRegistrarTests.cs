@@ -135,4 +135,15 @@ public sealed class SyncModRegistrarTests : IDisposable
         modDir = null;
         r.Neutralize();   // no throw
     }
+
+    [Fact] // [EDGE-synced-lighting-36]
+    public void Clear_PenumbraMissing_EmptiesOnDiskWithoutIpc()
+    {
+        r.Enable(c, Paths(), Manips());
+        api.Calls.Clear();
+        api.PenumbraPresent = false;
+        Assert.False(r.Clear(c));   // not disabled yet: still to do
+        Assert.Empty(api.Calls);
+        Assert.Equal(0, FilesInMod());
+    }
 }
