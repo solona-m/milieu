@@ -19,8 +19,11 @@ public static class VfxLightLayout
     /// <summary>Room mode keeps lights inside the dome: distance ≤ this fraction of the radius.</summary>
     public const float RoomDistanceFraction = 0.9f;
 
-    /// <summary>Key Bri at strength 1, meant to roughly match the sun (Bri 5 cast a faint shadow next to it in game).</summary>
-    public const float KeyBrightness = 40f;
+    /// <summary>
+    /// Key Bri at strength 1, tuned in game (2026-11-16, Mad Bird Ring, sky dome, key 30 units out, Attn 1): Bri 4000 was far too
+    /// bright and Bri 200 looked right.
+    /// </summary>
+    public const float KeyBrightness = 200f;
 
     /// <summary>
     /// The stand-in key's share of <see cref="KeyBrightness"/>, for an image with no sun (ADR 0011). 1: full key brightness,

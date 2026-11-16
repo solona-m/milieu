@@ -9,8 +9,9 @@ namespace Milieu.GameFiles;
 /// <summary>
 /// One VFX point light (effector) baked into a synced dome (docs/adr/0011). <see cref="Position"/> is relative to the light's
 /// emitter (not world space: the emitter carries the player's world height). <see cref="Rgb"/> is the hue with each channel
-/// in [0, 1]; <see cref="Brightness"/> is the effector's Bri; <see cref="Range"/> its DstS. Shadows use the game's recipe
-/// (map + character shadows, no moving-object shadows) between <see cref="ShadowNear"/> and <see cref="ShadowFar"/>.
+/// in [0, 1]; <see cref="Brightness"/> is the effector's Bri; <see cref="Range"/> its DstS. A shadowed light has Attn 1 and all
+/// four shadow flags (bMvS gives character shadows, only near the light) between <see cref="ShadowNear"/> and
+/// <see cref="ShadowFar"/>; an unshadowed one has Attn 2 and no shadow flags.
 /// </summary>
 internal sealed record DomeLight(Vector3 Position, Vector3 Rgb, float Brightness, float Range, bool Shadows, float ShadowNear, float ShadowFar);
 
@@ -309,7 +310,9 @@ internal static class DomeAvfxBuilder
     /// <summary>
     /// One point-light effector (EfVT 0) in the game's own shadow-light recipe, tested in game (2026-11-16): header RoOT 2,
     /// CCOT 0, bAOV 0 (doesn't light other VFX), bAGm 1 (lights the world); Data Col {RGB, Bri}, DstS (range), Rot (none),
-    /// Pos XYZ (emitter-relative), Attn 2 (cubic), shadows bSdw/bChS/bMpS (map + characters) with bMvS 0, SCDN/SCDF. Chunk
+    /// Pos XYZ (emitter-relative), SCDN/SCDF. A shadowed light has Attn 1 (Pickles Venue's falloff, which KeyBrightness was
+    /// tuned with) and bSdw/bChS/bMpS/bMvS 1: map shadows need bMpS, character shadows need bMvS, and in game characters
+    /// shadow only within a few units of the light (2026-11-16). An unshadowed light has Attn 2 and no shadow flags. Chunk
     /// order follows VFXEditor's AvfxEffector / AvfxEffectorDataPointLight.
     /// </summary>
     private static void Effector(AvfxChunkWriter w, DomeLight l)
@@ -328,7 +331,7 @@ internal static class DomeAvfxBuilder
         Curve(w, "Z", l.Position.Z);
         w.End();
         var shadow = l.Shadows ? 1 : 0;
-        w.Int("Attn", 2).Int("bSdw", shadow).Int("bChS", shadow).Int("bMpS", shadow).Int("bMvS", 0)
+        w.Int("Attn", shadow == 1 ? 1 : 2).Int("bSdw", shadow).Int("bChS", shadow).Int("bMpS", shadow).Int("bMvS", shadow)
          .Float("SCDN", l.ShadowNear).Float("SCDF", l.ShadowFar);
         w.End();
         w.End();
