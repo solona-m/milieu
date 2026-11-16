@@ -230,4 +230,42 @@ public class LightingViewModelTests
         Assert.Equal("Light strength is 0, so no lights are added.", vm.StatusText);
         Assert.DoesNotContain("no clear sun", vm.StatusText);
     }
+
+    [Fact] // [AC-synced-lighting-4]
+    public void InSyncedBackdrop_SaysPairsSeeTheLights()
+    {
+        var vm = Vm(LightingStatus.InSyncedBackdrop, delivery: DeliveryMode.MadBirdRing);
+        Assert.Equal(LightingViewModel.InSyncedBackdropText, vm.StatusText);
+        Assert.Contains(LightingViewModel.SyncedLightsNote, vm.Notes);
+        Assert.DoesNotContain(LightingViewModel.OnlyYouNote, vm.Notes);
+        Assert.DoesNotContain(LightingViewModel.PairsNote, vm.Notes);
+    }
+
+    [Theory] // [AC-synced-lighting-2]
+    [InlineData("toggle")]
+    [InlineData("strength")]
+    [InlineData("fills")]
+    public void LightChange_SetsSavesAndRequestsRebuild(string control)
+    {
+        var config = new Configuration();
+        int saves = 0, requests = 0;
+        System.Action<Configuration> set = control switch
+        {
+            "toggle" => c => c.SceneLighting = false,
+            "strength" => c => c.LightStrength = 1.5f,
+            _ => c => c.FillLightCount = 1,
+        };
+        LightingViewModel.LightChange(config, set, () => saves++, () => requests++)();
+        Assert.Equal((1, 1), (saves, requests));
+        Assert.True(control switch { "toggle" => !config.SceneLighting, "strength" => config.LightStrength == 1.5f, _ => config.FillLightCount == 1 });
+    }
+
+    [Fact] // [EDGE-synced-lighting-38]
+    public void InSyncedBackdropInGPose_ShowsDeferralNote()
+    {
+        var vm = new LightingViewModel(new LightingStatusSnapshot(LightingStatus.InSyncedBackdrop, "sky.hdr", GPose: true),
+                                       new Configuration { ImagePath = Hdr }, true, DeliveryMode.MadBirdRing);
+        Assert.Contains(LightingViewModel.GPoseDeferralNote, vm.Notes);
+        Assert.DoesNotContain(LightingViewModel.SyncedLightsNote, vm.Notes);
+    }
 }

@@ -41,6 +41,9 @@ public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configura
         + "Lamps smaller than about a quarter of a degree (about 6 pixels in an 8K image) are missed.";
     public const string OnlyYouNote = "Only you see these lights.";
     public const string PairsNote = "PSync pairs see the backdrop but not these lights.";
+    public const string InSyncedBackdropText = "Lit by the backdrop's own lights, which travel with it: PSync pairs see them too, without Milieu.";
+    public const string SyncedLightsNote = "Shown in and out of GPose. Strength and fill changes rebuild the backdrop, which redraws everyone.";
+    public const string GPoseDeferralNote = "Light changes apply when you leave GPose; applying redraws everyone.";
 
     /// <summary>The section is drawn at all (the kill switch).</summary>
     public bool Visible => lightingAvailable;
@@ -81,6 +84,7 @@ public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configura
         LightingStatus.OnWithKey => (snapshot.Estimated ? EstimatedWithKeyTemplate : OnWithKeyTemplate).Replace("{n}", Fills),
         LightingStatus.OnNoKey => (snapshot.Estimated ? EstimatedNoKeyTemplate : OnNoKeyTemplate).Replace("{n}", Fills),
         LightingStatus.OnKeyNotDrawn => (snapshot.Estimated ? EstimatedKeyNotDrawnTemplate : OnKeyNotDrawnTemplate).Replace("{n}", Fills),
+        LightingStatus.InSyncedBackdrop => InSyncedBackdropText,
         _ => "",
     };
 
@@ -102,9 +106,28 @@ public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configura
             if (!Visible || !ControlsEnabled) return [];
             var notes = new List<string>();
             if (config.SceneLighting && SelectedIsEstimated) notes.Add(EstimatedNote);
+            if (ShownStatus == LightingStatus.InSyncedBackdrop)
+            {
+                // The synced dome carries the lights: pairs see them, so neither "only you" nor "pairs don't" applies.
+                notes.Add(snapshot.GPose ? GPoseDeferralNote : SyncedLightsNote);
+                return notes;
+            }
             notes.Add(OnlyYouNote);
             if (effective != DeliveryMode.Local) notes.Add(PairsNote);
             return notes;
         }
     }
+
+    /// <summary>
+    /// The action the window posts when a lighting control changes: the config is set and saved, then a synced light
+    /// rebuild is requested (the controller replans after 500 ms; it does nothing unless a synced dome is shown).
+    /// Native lights read the config on SceneLighting's next tick as before.
+    /// </summary>
+    public static System.Action LightChange(Configuration config, System.Action<Configuration> set, System.Action save, System.Action requestRebuild) =>
+        () =>
+        {
+            set(config);
+            save();
+            requestRebuild();
+        };
 }

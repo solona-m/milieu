@@ -246,20 +246,26 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.TextUnformatted(LightingViewModel.Header);
         using (ImRaii.Disabled(!vm.ControlsEnabled))
         {
+            // Every lighting control goes through LightChange: set + save + a synced light rebuild request (docs/adr/0011).
             var on = config.SceneLighting;
             if (ImGui.Checkbox(LightingViewModel.ToggleLabel, ref on))
-            {
-                config.SceneLighting = on;
-                save();
-            }
+                controller.Post(LightingViewModel.LightChange(config, c => c.SceneLighting = on, save, controller.RequestLightRebuild));
             var strength = config.LightStrength;
             if (ImGui.SliderFloat(LightingViewModel.StrengthLabel, ref strength, Configuration.LightStrengthRange.Min, Configuration.LightStrengthRange.Max, "%.2f"))
                 config.LightStrength = Math.Clamp(strength, Configuration.LightStrengthRange.Min, Configuration.LightStrengthRange.Max);
-            if (ImGui.IsItemDeactivatedAfterEdit()) save();
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
+                var s = config.LightStrength;
+                controller.Post(LightingViewModel.LightChange(config, c => c.LightStrength = s, save, controller.RequestLightRebuild));
+            }
             var fills = config.FillLightCount;
             if (ImGui.SliderInt(LightingViewModel.FillsLabel, ref fills, Configuration.FillLightRange.Min, Configuration.FillLightRange.Max))
                 config.FillLightCount = Math.Clamp(fills, Configuration.FillLightRange.Min, Configuration.FillLightRange.Max);
-            if (ImGui.IsItemDeactivatedAfterEdit()) save();
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
+                var f = config.FillLightCount;
+                controller.Post(LightingViewModel.LightChange(config, c => c.FillLightCount = f, save, controller.RequestLightRebuild));
+            }
         }
         if (vm.StatusText.Length > 0)
             ImGui.TextColored(vm.StatusSeverity == Severity.Error ? Red : vm.StatusSeverity == Severity.Warning ? Yellow : Vector4.One, vm.StatusText);
