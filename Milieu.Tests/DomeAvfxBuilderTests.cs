@@ -251,4 +251,24 @@ public class DomeAvfxBuilderTests
         var mesh = SphereMesh.Build(floorY: p.FloorY);
         Assert.Throws<InvalidDataException>(() => DomeAvfxBuilder.SelfCheck(DomeAvfxBuilder.Build(Params()), p, mesh));
     }
+
+    [Fact] // [AC-synced-lighting-7]
+    public void EmitterBaseHeight_RaisesTheEmitter_ParticleBakedHeightUnchanged()
+    {
+        var p = Params() with { AttachToOwner = true, BakedHeight = 1.6f, EmitterBaseHeight = 18.25f };
+        var root = Build(p);
+        Assert.Equal(18.25f, root.Need("Emit").Need("Pos").Need("Y").CurveValue());
+        Assert.Equal(1.6f, root.Need("Ptcl").Need("Pos").Need("Y").CurveValue());
+        Assert.Null(Build(Params()).Need("Emit").Need("Pos").Child("Y"));   // 0: no key, byte-identical to before
+    }
+
+    [Theory] // [EDGE-synced-lighting-9]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    [InlineData(10000.5f)]
+    [InlineData(-10001f)]
+    public void EmitterBaseHeight_NonFiniteOrOutOfRange_Rejected(float y)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => DomeAvfxBuilder.Build(Params() with { AttachToOwner = true, EmitterBaseHeight = y }));
+    }
 }

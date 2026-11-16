@@ -599,7 +599,7 @@ public sealed class BackdropController : Gui.IGridController
         try
         {
             avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, build.VerticalScale,
-                build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY, TestLight: DomeAvfxBuilder.TestLightMode));
+                build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY));
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
         {
@@ -670,7 +670,7 @@ public sealed class BackdropController : Gui.IGridController
             avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, build.VerticalScale,
                 build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY,
                 BakedHeight: config.Current.HeightOffset, BakedYawRadians: bakedYaw, AttachToOwner: true,
-                TestLight: DomeAvfxBuilder.TestLightMode, AnchorHeight: anchorY));
+                EmitterBaseHeight: anchorY));
             log.Information($"[Milieu] Synced dome anchor height {anchorY:0.00} (player world Y).");
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
