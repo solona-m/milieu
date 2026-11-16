@@ -29,7 +29,8 @@ internal static class VfxLightPlanner
 {
     public static VfxLightPlan Plan(LightRig rig, DomeView view, float radius, float strength, int fillCount,
                                     bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters,
-                                    float distanceExponent = VfxLightLayout.DistanceCompensationExponent)
+                                    float distanceExponent = VfxLightLayout.DistanceCompensationExponent,
+                                    float standInKeyScale = VfxLightLayout.StandInKeyScale)
     {
         var estimated = rig.IsEstimated;
         rig = LightRigPlanner.Resolve(rig);
@@ -42,8 +43,8 @@ internal static class VfxLightPlanner
         var standIn = false;
         if (rig.Key == null)
         {
-            // No sun in the image at all (an overcast or sunset image whose estimate found no key): the brightest drawn
-            // region by radiance (or a lamp, for a rig with lamps but no key) stands in as the key, so the scene still gets
+            // No sun in the image at all (an overcast or sunset image whose estimate found no key): the first drawn region
+            // (radiance-ordered by both estimators; or a lamp, for a rig with lamps but no key) stands in as the key, so the scene gets
             // one directional light with shadows (EDGE-synced-lighting-52). A sun that exists but isn't drawn stays unlit
             // (EDGE-synced-lighting-2). It is the first entry of the same ordered walk, so it is fills[0] when fills exist.
             var (_, best) = LightRigPlanner.Select(rig, view, 1);
@@ -60,7 +61,7 @@ internal static class VfxLightPlanner
         if (key is { } k && Hue(k.Light.Energy) is { } keyHue)
         {
             var d = Distance(VfxLightLayout.KeyDistance, radius);
-            var bri = VfxLightLayout.KeyBrightness * (standIn ? VfxLightLayout.StandInKeyScale : 1f) * strength
+            var bri = VfxLightLayout.KeyBrightness * (standIn ? standInKeyScale : 1f) * strength
                       * Compensation(d, VfxLightLayout.KeyDistance, distanceExponent);
             lights.Add(new DomeLight(anchor + k.Dir * d, keyHue, bri, VfxLightLayout.KeyRange, true,
                                      VfxLightLayout.KeyShadowNear, VfxLightLayout.KeyShadowFar));

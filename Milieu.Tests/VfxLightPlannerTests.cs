@@ -271,9 +271,13 @@ public class VfxLightPlannerTests
     [Fact] // [EDGE-synced-lighting-52]
     public void NoKeyRig_StandIn_RoomClampAndStrength()
     {
-        var one = Assert.Single(VfxLightPlanner.Plan(NoKey(Regions), Default, 10f, 1f, 0).Lights);
-        var two = Assert.Single(VfxLightPlanner.Plan(NoKey(Regions), Default, 10f, 2f, 0).Lights);
+        var one = Assert.Single(VfxLightPlanner.Plan(NoKey(Regions), Default, 10f, 1f, 0, distanceExponent: 1f).Lights);
+        var two = Assert.Single(VfxLightPlanner.Plan(NoKey(Regions), Default, 10f, 2f, 0, distanceExponent: 1f).Lights);
         Assert.Equal(9f, Vector3.Distance(Anchor, one.Position), 3);   // 0.9 × R
+        // The key's formula, compensation included: KeyBrightness × scale × strength × (9 / 30)^1.
+        Assert.Equal(VfxLightLayout.KeyBrightness * VfxLightLayout.StandInKeyScale * (9f / VfxLightLayout.KeyDistance), one.Brightness, 3);
+        var keyed = VfxLightPlanner.Plan(Rig(Regions[0]), Default, 10f, 1f, 0, distanceExponent: 1f).Lights[0];
+        Assert.Equal(keyed.Brightness * VfxLightLayout.StandInKeyScale, one.Brightness, 3);
         Assert.Equal(one.Brightness * 2, two.Brightness, 3);
         Assert.Equal((VfxLightLayout.KeyRange, VfxLightLayout.KeyShadowNear, VfxLightLayout.KeyShadowFar), (one.Range, one.ShadowNear, one.ShadowFar));
     }
@@ -299,5 +303,16 @@ public class VfxLightPlannerTests
         Assert.Equal(3, three.Lights.Select(l => l.Position).Distinct().Count());
         Assert.Single(three.Lights, l => l.Shadows);
         Assert.Equal(VfxLightLayout.FillBrightness, three.Lights[1].Brightness, 3);
+    }
+
+    [Fact] // [EDGE-synced-lighting-52] [AC-synced-lighting-1]
+    public void NoKeyRig_StandInScaleParameter_ScalesStandInOnly()
+    {
+        var full = VfxLightPlanner.Plan(NoKey(Regions), Default, Sky, 1f, 0, standInKeyScale: 1f).Lights[0];
+        var half = VfxLightPlanner.Plan(NoKey(Regions), Default, Sky, 1f, 0, standInKeyScale: 0.5f).Lights[0];
+        Assert.Equal(full.Brightness * 0.5f, half.Brightness, 4);
+        var keyFull = VfxLightPlanner.Plan(Rig(), Default, Sky, 1f, 0, standInKeyScale: 1f).Lights[0];
+        var keyHalf = VfxLightPlanner.Plan(Rig(), Default, Sky, 1f, 0, standInKeyScale: 0.5f).Lights[0];
+        Assert.Equal(keyFull.Brightness, keyHalf.Brightness);
     }
 }

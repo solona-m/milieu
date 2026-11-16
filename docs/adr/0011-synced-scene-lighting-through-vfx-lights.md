@@ -29,8 +29,9 @@ Tested in game with the owner (testing builds 3-5 and dev builds 23-28, 2026-11-
 
 Under a synced delivery with scene lighting on, the synced dome carries Milieu's light rig as VFX point lights.
 
-- **Planner.** `VfxLightPlanner` (pure) takes the rig (HDR or the LDR estimate, ADR 0009/0010) and the same selection as
-  the native planner (`LightRigPlanner.Select`): the key if drawn, then fills (lamps before regions).
+- **Planner.** `VfxLightPlanner` (pure) takes the rig (HDR or the LDR estimate, ADR 0009/0010) and, for keyed rigs only,
+  the same selection as the native planner (`LightRigPlanner.Select`): the key if drawn, then fills (lamps before
+  regions); a rig with no key gets a stand-in (below).
   - **Key:** a shadow-casting point light at `(0, LightRigLayout.AnchorHeight, 0) + keyDir × d`, Bri =
     `VfxLightLayout.KeyBrightness × strength` (meant to match the sun at strength 1), range `KeyRange`, shadows
     `KeyShadowNear`/`KeyShadowFar`.
@@ -48,16 +49,20 @@ Under a synced delivery with scene lighting on, the synced dome carries Milieu's
 - **Fills off by default.** A particle-less emitter carrying a *point* light hasn't been loaded in game, so
   `VfxLightLayout.FillsOnOwnEmitters = false`: only the key ships until that is checked.
 - **No sun in the image → a stand-in key** (owner's test, 2026-11-16: the bundled Sunset, whose estimate has no key,
-  shipped no light at all). When the rig has no key, the brightest drawn region by radiance (or the first drawn lamp, for a
-  rig with lamps but no key) is the key, with shadows, at `KeyBrightness × StandInKeyScale` (1; UNVERIFIED whether that
-  reads as midday sun on a sunset) × strength. A sun that exists but isn't drawn on the dome still gives no key (no light
-  from a direction the image doesn't show there). The native planner is unchanged, so the two differ for no-key rigs.
-  Once fills ship, the stand-in takes one fill slot (fill count N gives the stand-in + N − 1 fills); revisit then.
+  shipped no light at all). When the rig has no key, the first drawn region (regions are radiance-ordered by both
+  estimators; or the first drawn lamp, for a hand-edited rig with lamps but no key) is the key, with shadows, at the key's
+  brightness formula (including the distance compensation) × `StandInKeyScale` (1; item 11). A sun that exists but isn't
+  drawn on the dome still gives no key (no light from a direction the image doesn't show there). The native planner is
+  unchanged, so the two differ for no-key rigs; under synced delivery in GPose a no-key image trades its native fills for
+  the one stand-in. Night and space HDRs, which ADR 0009 deliberately gives no key, now get a sun-strength stand-in from
+  their brightest drawn region under synced delivery: accepted for now (strength, synced only), with a known-issue
+  follow-up for a scale-free contrast gate. Once fills ship, the stand-in takes one fill slot (item 1).
 - **The rig travels with the synced texture.** The synced job loads it after staging (`PreparedTexture.Rig`); a failure
   logs and shows the dome without lights, never failing the backdrop.
 - **Native lights step aside only when the drawn synced dome carries VFX lights** (`LitBackdrop.Synced &&
   VfxLightCount > 0`, status `InSyncedBackdrop`): no doubled light. A local dome under a synced config, or a synced dome
-  with no VFX lights (no rig, or a key and every lamp/region off the drawn dome with fills off), keeps native GPose lights.
+  with no VFX lights (no rig; a key that isn't drawn, or one with no positive channel, with fills off; or nothing of the
+  rig drawn on the dome), keeps native GPose lights.
 - **Live changes.** The lighting toggle, strength and fill count go through `LightingViewModel.LightChange` (set, save,
   request). The controller replans 500 ms after the last change and rebuilds only if the lights differ. While in GPose
   the request is held and fires 500 ms after GPose ends, because a rebuild redraws everyone and can disturb posing;
@@ -82,7 +87,8 @@ native light colour magnitudes (effector Bri/DstS semantics differ); a camera bi
 
 UNVERIFIED in game:
 
-1. A particle-less emitter carries a point light (then turn `FillsOnOwnEmitters` on).
+1. A particle-less emitter carries a point light (then turn `FillsOnOwnEmitters` on). When fills turn on, revisit the
+   stand-in's fill slot (EDGE-synced-lighting-54: fill count N gives the stand-in + N − 1 fills).
 2. Key brightness matches the sun at strength 1; key and fill range (`KeyRange`, `FillRange`) reach the player.
 3. Key shadows at distance 30 (and 9 in room mode) with near 0.5 / far 45.
 4. The light direction when the character turns: ICbR 0 sits in the dome emitter's ItPr and only stops the *particle*
@@ -95,3 +101,7 @@ UNVERIFIED in game:
 9. A key 30 units away isn't culled by the game (effector or emitter culling at distance).
 10. A light emitter's lifetime: `LightEmitter` copies the dome emitter's Life (60) and creation curves, not those of the
     game's particle-less emitter it was modelled on; compare in VFXEditor before turning fills on (item 1).
+11. The stand-in key on an image with no sun (Mad Bird Ring, synced, Sunset, strength 1): a shadowed light on the
+    character; direction plausible (Sunset's first region, s 0.776, t 0.193, about 55° elevation); full key brightness
+    doesn't read as midday sun on a sunset (else tune `StandInKeyScale`). If the *direction* is wrong, the follow-up is
+    ADR 0010's hand-tuned Sunset rig override (it fixes native and synced), not `StandInKeyScale`.

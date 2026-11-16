@@ -24,7 +24,7 @@ public static class VfxLightLayout
 
     /// <summary>
     /// The stand-in key's share of <see cref="KeyBrightness"/>, for an image with no sun (ADR 0011). 1: full key brightness,
-    /// so it casts a visible shadow. UNVERIFIED (plan item 12): whether that looks like midday sun on a sunset.
+    /// so it casts a visible shadow. UNVERIFIED (ADR 0011 item 11): whether that looks like midday sun on a sunset.
     /// </summary>
     public const float StandInKeyScale = 1f;
 
