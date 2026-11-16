@@ -22,6 +22,12 @@ public static class VfxLightLayout
     /// <summary>Key Bri at strength 1, meant to roughly match the sun (Bri 5 cast a faint shadow next to it in game).</summary>
     public const float KeyBrightness = 40f;
 
+    /// <summary>
+    /// The stand-in key's share of <see cref="KeyBrightness"/>, for an image with no sun (ADR 0011). 1: full key brightness,
+    /// so it casts a visible shadow. UNVERIFIED (plan item 12): whether that looks like midday sun on a sunset.
+    /// </summary>
+    public const float StandInKeyScale = 1f;
+
     /// <summary>Key range (DstS).</summary>
     public const float KeyRange = 60f;
 

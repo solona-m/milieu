@@ -238,7 +238,7 @@ public sealed class SceneLighting
     {
         // The drawn synced dome carries the lights itself (VFX lights; docs/adr/0011): no native lights, so the light isn't
         // doubled. Only a committed synced registration with at least one VFX light counts: a local dome under a synced
-        // config, or a synced dome without lights (no rig, no key with fills off), keeps native lights.
+        // config, or a synced dome without lights (no rig, a key not drawn with fills off, nothing drawn), keeps native lights.
         if (enabled && current is { Synced: true, VfxLightCount: > 0 } && syncedLightsAvailable())
             return new(LightingStatus.InSyncedBackdrop, FileOf(current.ImagePath), GPose: game.IsGPosing);
         if (!spawner.Available) return new(LightingStatus.Unavailable);   // first: the panel disables its controls

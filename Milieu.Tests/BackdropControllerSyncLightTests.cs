@@ -346,4 +346,29 @@ public sealed class BackdropControllerSyncLightTests : IDisposable
         Assert.DoesNotContain(log.Lines, l => l.Text.Contains("Could not load the light rig"));   // cancellation isn't a rig failure
         Assert.Empty(pen.SyncSets);
     }
+
+    [Fact] // [EDGE-synced-lighting-53] [AC-synced-lighting-4]
+    public void NoKeyRig_SyncedShow_StandInOnDomeEmitter_LitVfxLightCountOne()
+    {
+        rig = Rig(key: false);
+        ShowSynced();
+        var root = Dome();
+        var e = Assert.Single(root.All("Efct"));
+        Assert.Equal(1, e.Need("Data").Need("bSdw").AsInt());
+        Assert.Equal(1, e.Need("Data").Need("bChS").AsInt());
+        Assert.Equal(1, e.Need("Data").Need("bMpS").AsInt());
+        Assert.Equal(0, Assert.Single(root.All("Emit")).Need("EfNo").AsInt());
+        Assert.Equal(1, c.Lit!.VfxLightCount);
+    }
+
+    [Fact] // [EDGE-synced-lighting-47]
+    public void KeyGivesNoLight_FillsOff_LitVfxLightCountZero()
+    {
+        // A key that gives no light (no positive channel; the planner treats it like a key not drawn): no stand-in, fills off.
+        rig = new LightRig(LightExtractor.Version, new RigLight(0.5f, 0.25f, Vector3.Zero),
+            [new(0.3f, 0.3f, new Vector3(0.5f, 0.6f, 1f))], new Vector3(10, 10, 10));
+        ShowSynced();
+        Assert.Empty(Dome().All("Efct"));
+        Assert.Equal(0, c.Lit!.VfxLightCount);
+    }
 }

@@ -49,6 +49,7 @@ public class VfxLightPlannerTests
     [Fact] // [AC-synced-lighting-1]
     public void SameSelectionAsNativePlanner()
     {
+        // Rigs with a key; a rig with no key differs by design (EDGE-synced-lighting-53).
         var rig = Rig();
         var native = LightRigPlanner.Plan(rig, Default, Vector3.Zero, 1f, 3);
         var vfx = VfxLightPlanner.Plan(rig, Default, Sky, 1f, 3, fillsOnOwnEmitters: true);
@@ -92,7 +93,7 @@ public class VfxLightPlannerTests
         Assert.Equal(0, plan.Fills);
     }
 
-    [Fact] // [EDGE-synced-lighting-2]
+    [Fact] // [EDGE-synced-lighting-52]
     public void NoKeyInRig_FillsOn_OneStandInKeyWithShadows_RestSoft()
     {
         var plan = VfxLightPlanner.Plan(Rig(noKey: true), Default, Sky, 1f, 2, fillsOnOwnEmitters: true);
@@ -101,7 +102,7 @@ public class VfxLightPlannerTests
         Assert.All(plan.Lights.Skip(1), l => Assert.False(l.Shadows));
     }
 
-    [Fact] // [EDGE-synced-lighting-2]
+    [Fact] // [EDGE-synced-lighting-52]
     public void NoKeyInRig_FillsOff_StandInKeyOnly()
     {
         var plan = VfxLightPlanner.Plan(Rig(noKey: true), Default, Sky, 1f, 2);
@@ -196,8 +197,8 @@ public class VfxLightPlannerTests
         Assert.True(plan.HasKey);
         var key = Assert.Single(plan.Lights);
         Assert.True(key.Shadows);
-        Assert.Equal(VfxLightLayout.KeyBrightness, key.Brightness);
-        var dir = DomeProjection.WorldDirection(0.3f, 0.3f, Default)!.Value;   // the first lamp
+        Assert.Equal(VfxLightLayout.KeyBrightness * VfxLightLayout.StandInKeyScale, key.Brightness);
+        var dir = DomeProjection.WorldDirection(0.3f, 0.3f, Default)!.Value;   // the first region
         Assert.True(Vector3.Distance(Anchor + dir * VfxLightLayout.KeyDistance, key.Position) < 1e-3f);
 
         var withFills = VfxLightPlanner.Plan(Rig(noKey: true), Default, Sky, 1f, 3, fillsOnOwnEmitters: true);
@@ -211,6 +212,92 @@ public class VfxLightPlannerTests
         var rig = Milieu.Assets.BundledLightRigs.Find("sunset");
         Assert.NotNull(rig);
         Assert.Null(rig!.Key);
-        Assert.True(VfxLightPlanner.Plan(rig, Default, Sky, 1f, 0).HasKey);
+        var plan = VfxLightPlanner.Plan(rig, Default, Sky, 1f, 0);
+        Assert.True(plan.HasKey);
+        var key = Assert.Single(plan.Lights);
+        Assert.True(key.Shadows);
+        var dir = DomeProjection.WorldDirection(rig.Regions[0].S, rig.Regions[0].T, Default)!.Value;   // highest radiance
+        Assert.True(Vector3.Distance(Anchor + dir * VfxLightLayout.KeyDistance, key.Position) < 1e-3f);
+    }
+
+    private static LightRig NoKey(RigLight[] regions, RigLight[]? lamps = null) =>
+        new(LightExtractor.Version, null, regions, new Vector3(10, 10, 10), lamps);
+
+    private static readonly RigLight[] Regions =
+        [new(0.3f, 0.3f, new Vector3(0.5f, 0.6f, 1f)), new(0.7f, 0.35f, new Vector3(0.4f, 0.5f, 0.9f)),
+         new(0.4f, 0.7f, new Vector3(0.3f, 0.2f, 0.1f)), new(0.8f, 0.75f, new Vector3(0.2f, 0.2f, 0.1f))];
+
+    private static Vector3 DirOf(RigLight l, DomeView v) => DomeProjection.WorldDirection(l.S, l.T, v)!.Value;
+
+    [Theory] // [EDGE-synced-lighting-10]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void FillsOff_NoKeyRig_StandInOnly_WhateverFillCount(int fills)
+    {
+        Assert.True(Assert.Single(VfxLightPlanner.Plan(NoKey(Regions), Default, Sky, 1f, fills).Lights).Shadows);
+    }
+
+    [Fact] // [EDGE-synced-lighting-52]
+    public void NoKeyRig_LampBeforeRegion_LampStandsIn()
+    {
+        var lamp = new RigLight(0.6f, 0.2f, new Vector3(1, 1, 1));
+        var key = Assert.Single(VfxLightPlanner.Plan(NoKey(Regions, [lamp]), Default, Sky, 1f, 0).Lights);
+        Assert.True(Vector3.Distance(Anchor + DirOf(lamp, Default) * VfxLightLayout.KeyDistance, key.Position) < 1e-3f);
+    }
+
+    [Fact] // [EDGE-synced-lighting-52]
+    public void NoKeyRig_FirstRegionNotDrawn_NextDrawnStandsIn()
+    {
+        var view = Default with { URepeat = 0.5f };
+        RigLight[] regions = [new(0.95f, 0.3f, new Vector3(1, 1, 1)), new(0.5f, 0.3f, new Vector3(0.5f, 0.5f, 0.5f))];
+        Assert.Null(DomeProjection.WorldDirection(0.95f, 0.3f, view));
+        var key = Assert.Single(VfxLightPlanner.Plan(NoKey(regions), view, Sky, 1f, 0).Lights);
+        Assert.True(Vector3.Distance(Anchor + DirOf(regions[1], view) * VfxLightLayout.KeyDistance, key.Position) < 1e-3f);
+    }
+
+    [Fact] // [EDGE-synced-lighting-52]
+    public void NoKeyRig_NothingDrawn_NoLights()
+    {
+        var view = Default with { URepeat = 0.5f };
+        RigLight[] regions = [new(0.95f, 0.3f, new Vector3(1, 1, 1)), new(0.02f, 0.3f, new Vector3(1, 1, 1))];
+        Assert.All(regions, r => Assert.Null(DomeProjection.WorldDirection(r.S, r.T, view)));
+        var plan = VfxLightPlanner.Plan(NoKey(regions), view, Sky, 1f, 2, fillsOnOwnEmitters: true);
+        Assert.Empty(plan.Lights);
+        Assert.False(plan.HasKey);
+    }
+
+    [Fact] // [EDGE-synced-lighting-52]
+    public void NoKeyRig_StandIn_RoomClampAndStrength()
+    {
+        var one = Assert.Single(VfxLightPlanner.Plan(NoKey(Regions), Default, 10f, 1f, 0).Lights);
+        var two = Assert.Single(VfxLightPlanner.Plan(NoKey(Regions), Default, 10f, 2f, 0).Lights);
+        Assert.Equal(9f, Vector3.Distance(Anchor, one.Position), 3);   // 0.9 × R
+        Assert.Equal(one.Brightness * 2, two.Brightness, 3);
+        Assert.Equal((VfxLightLayout.KeyRange, VfxLightLayout.KeyShadowNear, VfxLightLayout.KeyShadowFar), (one.Range, one.ShadowNear, one.ShadowFar));
+    }
+
+    [Fact] // [EDGE-synced-lighting-52]
+    public void NoKeyRig_DuplicateRegions_OnlyStandInRemoved()
+    {
+        RigLight[] regions = [Regions[0], Regions[0], Regions[1], Regions[2]];
+        var plan = VfxLightPlanner.Plan(NoKey(regions), Default, Sky, 1f, 3, fillsOnOwnEmitters: true);
+        Assert.Equal(3, plan.Lights.Count);   // the stand-in + 2 fills: only one copy removed
+        Assert.Single(plan.Lights, l => l.Shadows);
+    }
+
+    [Fact] // [EDGE-synced-lighting-54]
+    public void NoKeyRig_FillsOn_StandInTakesAFillSlot()
+    {
+        VfxLightPlan P(int n) => VfxLightPlanner.Plan(NoKey(Regions), Default, Sky, 1f, n, fillsOnOwnEmitters: true);
+        Assert.Single(P(0).Lights);
+        Assert.True(VfxLightPlan.SameLights(P(0).Lights, P(1).Lights));
+        Assert.Equal(2, P(2).Lights.Count);
+        var three = P(3);
+        Assert.Equal(3, three.Lights.Count);
+        Assert.Equal(3, three.Lights.Select(l => l.Position).Distinct().Count());
+        Assert.Single(three.Lights, l => l.Shadows);
+        Assert.Equal(VfxLightLayout.FillBrightness, three.Lights[1].Brightness, 3);
     }
 }

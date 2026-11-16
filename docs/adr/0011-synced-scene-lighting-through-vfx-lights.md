@@ -48,9 +48,11 @@ Under a synced delivery with scene lighting on, the synced dome carries Milieu's
 - **Fills off by default.** A particle-less emitter carrying a *point* light hasn't been loaded in game, so
   `VfxLightLayout.FillsOnOwnEmitters = false`: only the key ships until that is checked.
 - **No sun in the image → a stand-in key** (owner's test, 2026-11-16: the bundled Sunset, whose estimate has no key,
-  shipped no light at all). When the rig has no key, the first drawn lamp or region (the strongest) is the key, with
-  shadows. A sun that exists but isn't drawn on the dome still gives no key (no light from a direction the image doesn't
-  show there).
+  shipped no light at all). When the rig has no key, the brightest drawn region by radiance (or the first drawn lamp, for a
+  rig with lamps but no key) is the key, with shadows, at `KeyBrightness × StandInKeyScale` (1; UNVERIFIED whether that
+  reads as midday sun on a sunset) × strength. A sun that exists but isn't drawn on the dome still gives no key (no light
+  from a direction the image doesn't show there). The native planner is unchanged, so the two differ for no-key rigs.
+  Once fills ship, the stand-in takes one fill slot (fill count N gives the stand-in + N − 1 fills); revisit then.
 - **The rig travels with the synced texture.** The synced job loads it after staging (`PreparedTexture.Rig`); a failure
   logs and shows the dome without lights, never failing the backdrop.
 - **Native lights step aside only when the drawn synced dome carries VFX lights** (`LitBackdrop.Synced &&

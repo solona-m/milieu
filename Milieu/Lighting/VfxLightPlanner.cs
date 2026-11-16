@@ -7,8 +7,8 @@ using Milieu.GameFiles;
 namespace Milieu.Lighting;
 
 /// <summary>
-/// The VFX lights planned for a synced dome: the lights (key first when drawn), whether the rig's key is among them, the
-/// number of fills, and whether the rig was estimated.
+/// The VFX lights planned for a synced dome: the lights, whether a shadowed key leads the list (the rig's, or the stand-in
+/// for an image with no sun), the number of fills, and whether the rig was estimated.
 /// </summary>
 internal sealed record VfxLightPlan(IReadOnlyList<DomeLight> Lights, bool HasKey, int Fills, bool Estimated)
 {
@@ -39,16 +39,19 @@ internal static class VfxLightPlanner
 
         // Fills need emitters of their own (unproven): with that off, only the key ships, on the dome emitter.
         var (key, fills) = LightRigPlanner.Select(rig, view, fillsOnOwnEmitters ? fillCount : 0);
+        var standIn = false;
         if (rig.Key == null)
         {
-            // No sun in the image at all (an overcast or sunset image whose estimate found no key): the first drawn lamp or
-            // region (the strongest) stands in as the key, so the scene still gets one directional light with shadows. A sun
-            // that exists but isn't drawn stays unlit (EDGE-synced-lighting-2).
+            // No sun in the image at all (an overcast or sunset image whose estimate found no key): the brightest drawn
+            // region by radiance (or a lamp, for a rig with lamps but no key) stands in as the key, so the scene still gets
+            // one directional light with shadows (EDGE-synced-lighting-52). A sun that exists but isn't drawn stays unlit
+            // (EDGE-synced-lighting-2). It is the first entry of the same ordered walk, so it is fills[0] when fills exist.
             var (_, best) = LightRigPlanner.Select(rig, view, 1);
             if (best.Count > 0)
             {
                 key = best[0];
-                fills = fills.Where(f => f.Light != best[0].Light).ToList();
+                standIn = true;
+                if (fills.Count > 0) fills.RemoveAt(0);
             }
         }
         var anchor = new Vector3(0, LightRigLayout.AnchorHeight, 0);
@@ -57,7 +60,8 @@ internal static class VfxLightPlanner
         if (key is { } k && Hue(k.Light.Energy) is { } keyHue)
         {
             var d = Distance(VfxLightLayout.KeyDistance, radius);
-            var bri = VfxLightLayout.KeyBrightness * strength * Compensation(d, VfxLightLayout.KeyDistance, distanceExponent);
+            var bri = VfxLightLayout.KeyBrightness * (standIn ? VfxLightLayout.StandInKeyScale : 1f) * strength
+                      * Compensation(d, VfxLightLayout.KeyDistance, distanceExponent);
             lights.Add(new DomeLight(anchor + k.Dir * d, keyHue, bri, VfxLightLayout.KeyRange, true,
                                      VfxLightLayout.KeyShadowNear, VfxLightLayout.KeyShadowFar));
         }

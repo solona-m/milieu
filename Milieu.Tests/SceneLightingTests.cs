@@ -1001,8 +1001,18 @@ public sealed class SceneLightingTests : IDisposable
     [Fact] // [EDGE-synced-lighting-47]
     public void SyncedDome_NoVfxLights_NativeLightsRun()
     {
-        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 0);   // no key with fills off, or a null rig
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 0);   // a key not drawn with fills off, nothing drawn, or a null rig
         LightUp();
+    }
+
+    [Fact] // [EDGE-synced-lighting-53]
+    public void SyncedDome_NoKeyRigStandIn_InSyncedBackdrop_NoNativeLights()
+    {
+        LightUp();
+        lit = new LitBackdrop(ImageA, View0, Synced: true, VfxLightCount: 1);   // a no-key rig carries the stand-in
+        s.Tick();
+        Assert.Empty(spawner.Live);
+        Assert.Equal(LightingStatus.InSyncedBackdrop, s.Status.Status);
     }
 
     [Fact] // [EDGE-synced-lighting-40]
