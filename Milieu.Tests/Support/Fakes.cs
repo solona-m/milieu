@@ -357,8 +357,10 @@ public sealed class FakeSentinel : Milieu.Lighting.ILightingSentinel
     public bool IsSet;
     public int Sets, Clears;
     public readonly List<string> Calls = [];
+    /// <summary>Optional: runs at each Set, to capture other state at that moment.</summary>
+    public Action? OnSet;
     public FakeSentinel(bool setAtStartup = false) { WasSetAtStartup = setAtStartup; IsSet = setAtStartup; }
-    public void Set() { Sets++; IsSet = true; Calls.Add("Set"); }
+    public void Set() { OnSet?.Invoke(); Sets++; IsSet = true; Calls.Add("Set"); }
     public void Clear() { Clears++; IsSet = false; Calls.Add("Clear"); }
 }
 
@@ -384,5 +386,23 @@ public sealed class FakeEnvTime : Milieu.Lighting.IEnvTime
         Order?.Add("Write");
         Day = seconds;
         return Milieu.Lighting.EnvWrite.Ok;
+    }
+}
+
+/// <summary>The environment-update hook behind ISunSwitch, with a real SunOffShared for the post-step (docs/adr/0013).</summary>
+public sealed class FakeSunSwitch : Milieu.Lighting.ISunSwitch
+{
+    public bool Available { get; set; } = true;
+    public bool InstallResult = true;
+    public int Installs;
+    public Milieu.Lighting.SunOffShared Shared { get; } = new();
+    /// <summary>Optional log shared with a FakeSentinel's Calls, to assert the order of calls across both.</summary>
+    public List<string>? Order;
+
+    public bool Install()
+    {
+        Installs++;
+        Order?.Add("Install");
+        return InstallResult;
     }
 }

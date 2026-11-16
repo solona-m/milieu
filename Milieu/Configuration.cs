@@ -64,6 +64,13 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public bool NightWhileShown { get; set; }
 
+    /// <summary>
+    /// Turn off the game's sun (docs/adr/0013): zero the game's sun and moon light colour while a backdrop is shown to "Only
+    /// me". On by default (the owner asked for it, 2026-11-16), also for a config saved without the field; release-gated in
+    /// ADR 0013.
+    /// </summary>
+    public bool SunOffWhileShown { get; set; } = true;
+
     public static readonly (float Min, float Max) RepeatRange = (0.5f, 4f);
     public static readonly (float Min, float Max) BrightnessRange = (0f, 2f);
     public static readonly (float Min, float Max) ExposureRange = (-10f, 10f);

@@ -12,6 +12,7 @@ The owner asked whether the dome could block the game's sun. It can't: an AVFX p
 The game exposes its local time of day (`EnvManager.DayTimeSeconds`, FFXIVClientStructs
 Client/Graphics/Environment/EnvManager.cs), as weather and time plugins use; setting it to night removes the sun on the
 user's own screen. The sun's colour and strength aren't exposed, so dimming it partway isn't possible this way.
+(Superseded by ADR 0013: Brio/Ktisis lay out the sun and moon colour, and sun off zeroes them through a hook.)
 
 ## Decision
 
@@ -64,5 +65,9 @@ lighting) writes 01:00 ET (`NightTime.Seconds` = 3600) into `DayTimeSeconds` eve
 - Placement: `NightTime`, `IEnvTime` and `EnvWrite` live in `NightWhileShown.cs`; the night sentinel reuses
   `FileLightingSentinel` with its own file and log label.
 
-UNVERIFIED in game: that writing `DayTimeSeconds` in the framework update takes visible effect (else the override above);
+In-game result (owner, 2026-11-16): writing `DayTimeSeconds` doesn't drive the lighting; the game re-derives the time
+and its lighting from the clock. ADR 0013 (sun off, on by default, departing from this ADR's off-by-default precedent)
+turns the sun off instead; recommendation: once sun off is verified in game, turn `NightAvailable()` off and retire night.
+
+UNVERIFIED in game (before the result above): that writing `DayTimeSeconds` in the framework update takes visible effect (else the override above);
 whether the game recomputes or latches the field; zones where the cross-check reports "not in this zone".

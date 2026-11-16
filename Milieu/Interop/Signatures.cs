@@ -14,7 +14,8 @@ public sealed class SourceAttribute(string source) : Attribute
 /// (InteropUnavailable) and nothing native is ever called. The create function comes from FFXIVClientStructs
 /// (<c>VfxObject.Addresses.Create</c>), which is kept current with the game by its maintainers. Scene lighting
 /// (docs/adr/0009) likewise scans FFXIVClientStructs' <c>Scene.Light.Addresses.Create</c> (in <c>LightInterop</c>); it has
-/// no constant here because Dalamud's bundled ClientStructs provides it.
+/// no constant here because Dalamud's bundled ClientStructs provides it. Sun off (docs/adr/0013) hooks the game's environment
+/// update, a signature Brio maintains (<see cref="UpdateEnvironment"/>).
 /// </summary>
 public static class Signatures
 {
@@ -30,4 +31,11 @@ public static class Signatures
     /// <summary>The pool name static VFX are created in (VFXEditor Interop/Structs/Vfx/StaticVfx.cs).</summary>
     [Source("VFXEditor Interop/Structs/Vfx/StaticVfx.cs pool name")]
     public const string StaticVfxPool = "Client.System.Scheduler.Instance.VfxObject";
+
+    /// <summary>
+    /// The game's environment update, <c>UpdateEnvironment(EnvState* a1, EnvState* a2)</c>: a general EnvState copy (it copies
+    /// a2 into a1), hooked by sun off (docs/adr/0013). Scanned with <c>ScanAllText</c>: it must match exactly once.
+    /// </summary>
+    [Source("Brio Game/World/EnvironmentService.cs UpdateEnvironment")]
+    public const string UpdateEnvironment = "0F 10 42 08 0F 11 41 08 F2 0F 10 4A 18";
 }
