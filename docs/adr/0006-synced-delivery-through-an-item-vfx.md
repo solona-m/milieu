@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (experimental; unverified in game). Offered on testing and dev builds only until 2026-11-09; since then on every build (see the kill switch amendment).
+Accepted (experimental). Offered on testing and dev builds only until 2026-11-09; since then on every build (see the kill switch amendment). First verified in game on 2026-11-16, which changed the delivery (see the 2026-11-16 amendment; it supersedes the temporary mod, the VFX id range and the Hidden folder below).
 
 ## Context
 
@@ -79,16 +79,57 @@ the behaviour above. The "(experimental)" label and the PSync notice are unchang
 - Tech debt: `BackdropController` now holds both deliveries' lifecycles; splitting the synced branch into its own
   coordinator is a follow-up.
 
+## Amendment (2026-11-16): verified in game; a real mod, low VFX ids, height anchoring
+
+Tested in game with the owner (cushion and ring). What changed, and why:
+
+- **VFX ids 1..127, not 200+.** With the cushion at id 200 the game asked for `vfx/monster/eff/vm0200.avfx` (a shared
+  folder), not the cushion's own path; the ring at 200 never loaded. Milieu now takes the lowest id from 1 to 127 that
+  neither the vanilla IMC nor the user's overrides use (`SyncTarget.FirstVfxId`/`LastVfxId`).
+- **A real mod, "Milieu Sync", replaces the `MilieuSync` temp mod** (owner's choice: it shows in Penumbra's list). The
+  staging folder `<mod dir>\_milieu_sync` is no longer Hidden; Milieu writes `meta.json` + `default_mod.json` (v3,
+  atomically; Penumbra migrates them to v4) and `SyncModRegistrar` calls `ReloadMod`/`AddMod`, `TrySetModPriority`
+  (1,000,000) **then** `TrySetMod(true)` in the player's collection, then removes an older build's temp mod. A failed
+  priority enables nothing; a failed enable is disabled again (fail closed).
+  - This **amends ADR 0002/0006's "never calls a mod-management API"**: mod-management calls are made on Milieu's own
+    mod only, never on the user's mods.
+  - **Empty at rest.** Hide, Teardown and startup cleanup rewrite the mod with no files and no manipulations
+    (`Neutralize`) and reload it, so an enabled state left behind (a crash, a failed disable, an exit before cleanup)
+    changes nothing even if Milieu never runs again. Startup disables it in every collection (only once it exists).
+  - **Unsettled collections.** A collection whose registration failed is retried by the next Hide, logout, unload or
+    startup cleanup. A failed rebuild puts back what the shared mod held before (the pending registration, else the
+    shown one); if that fails too the shown dome is dropped and the controller goes Hidden (`SyncShownLost`).
+  - **Inheritance (accepted).** Unlike a temp mod, a real mod's enabled state is inherited: collections that inherit the
+    player's collection show the dome too while it is shown. At rest the mod is empty, so leftovers are harmless.
+  - **Evaluated alternative / fallback, not implemented:** Penumbra's temporary mod *settings* with a lock key
+    (`SetTemporaryModSettings`, `TemporaryApi.cs`) keep the real mod's files (which PSync hashes) while saving nothing
+    in the user's collections; its inheritance behaviour is unchecked.
+- **Height anchoring.** Item VFX are anchored at **world height 0**, not at the item or the player: on an upper floor
+  (world Y 18.25) the dome sat ~18 units low, hidden under the floor ("small domes don't show"). The synced build writes
+  the player's world Y into the emitter's Pos Y (`DomeAvfxParams.EmitterBaseHeight`, |y| ≤ 10,000). It is baked at
+  build time: after changing floors, pick the scene again (or change a setting) to move it (ND-4a, documented only).
+  No camera binder is needed.
+- **Redraw everything.** A player redraw doesn't reload the cushion (a separate object); synced rebuilds call
+  `RedrawAll`, falling back to a player redraw.
+- **Own-override rule.** An IMC override is skipped as Milieu's own only when it equals exactly the entry Milieu
+  registered for that variant this session (`SyncPlan.Entries`); any other override, even one using Milieu's last id, is
+  the user's and its id is avoided. A foreign override identical in every field can't be told apart (harmless: Milieu's
+  priority mod wins the IMC entry and the path).
+- **Mod conflicts (surfaced, not fixed).** With mods that replace the cushion's model or textures enabled, the dome didn't
+  show on it; the cause is unknown. The cushion option's hint says so.
+
+The rest of this ADR stands (player's collection only, kept IMC fields, baked placement, the notice, the kill switch).
+
 ## Implementation notes
 
-- Internal signatures drifted from the plan, behaviour unchanged: `SyncPlanner.ResolveBase(target, vanillaImc,
-  string? playerMeta, byte? ignoreVfxId)` and `Build(SyncBase, atexGamePath, atexDisk, avfxDisk)` (the target comes
-  from the base, no separate parameter); `SyncedDelivery.Begin` returns `(MessageKey Failure, StatusMessage? Message)`;
-  `PenumbraMeta.ReadImcOverrides(string?)` plus `TryReadImcOverrides` for the unreadable-meta status.
+- Internal signatures (as of the 2026-11-16 amendment): `SyncPlanner.ResolveBase(target, vanillaImc, string? playerMeta,
+  IReadOnlyList<ImcEntry>? ownEntries)` and `Build(SyncBase, atexGamePath, atexDisk, avfxDisk)`; `SyncedDelivery.Begin`
+  returns `(MessageKey Failure, StatusMessage? Message, bool ShownLost)`; `PenumbraMeta.ReadImcOverrides(string?)` plus
+  `TryReadImcOverrides` for the unreadable-meta status.
 - The ring's VFX path `chara/accessory/a0028/vfx/eff/va####.avfx` is shared by every a0028 slot. While synced, in the
   player's collection only, Milieu's redirect overrides a user mod's own `va####` at the chosen id (200 or the next
-  free one), and an IMC VFX id ≥ 200 that a user mod gives another a0028 slot then loads Milieu's dome if it equals
-  the chosen id. The chosen id skips every id the vanilla IMC and the user's overrides use for the right-ring part only.
+  free one; 1..127 since the 2026-11-16 amendment), and an IMC VFX id that a user mod gives another a0028 slot then loads
+  Milieu's dome if it equals the chosen id. The chosen id skips every id the vanilla IMC and the user's overrides use for the right-ring part only.
 
 ## When the dome doesn't show
 
@@ -99,9 +140,12 @@ The dome is the item's own VFX, so it shows only while the game draws that item 
 - The character isn't drawn: culled by distance or the game's character limit, or hidden by a plugin.
 - Pairs: they paused the user in PSync, filter VFX in PSync's settings, or haven't synced since the change.
 - The ornament has its own individual Penumbra collection: it resolves there, not in the player's collection that holds
-  `MilieuSync`.
+  "Milieu Sync".
+- A mod that changes the cushion's model or textures is enabled (seen in game; turn it off).
+- An upper floor before the 2026-11-16 amendment: the dome was anchored at world height 0, under the floor.
 - Penumbra didn't pick up the files in time: `SyncRedirectTimeout`; try again.
 
-Open in-game questions (UNVERIFIED): the dome loads on the cushion and on the ring; it follows when walking and doesn't
-swing with emotes (else try `PICd 2`); item VFX culling with a 20000-unit sky dome; what a pair outside the dome radius
-sees (room mode); two synced Milieu users near each other; that the kill switch hides the options when off.
+Verified in game (2026-11-16): the dome loads on the cushion and on the ring (sky mode on the ring, sky and room on the
+cushion) once at the player's height. Still open (UNVERIFIED): it follows when walking and doesn't swing with emotes
+(else try `PICd 2`); what a pair outside the dome radius sees (room mode); two synced Milieu users near each other; that
+the kill switch hides the options when off; poses surviving a `RedrawAll` in GPose.

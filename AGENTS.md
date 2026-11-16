@@ -94,8 +94,8 @@ tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 
 - Binary game-file writers (`.avfx`, `.atex`/`.tex` output) — a malformed VFX or texture can crash the game
 - Native interop: function signatures, hooks, unsafe struct access, VFX spawn/remove — a wrong signature or a dangling VFX pointer crashes the game
-- Penumbra IPC (temporary mods/redirects) — must be removed on dispose and never touch the user's own mods
-- Synced delivery (`Milieu/Sync/`, ADR 0006): writes into Penumbra's mod directory (`_milieu_sync`), an IMC manipulation and the `MilieuSync` temp mod in the player's collection, and the user's image leaving the machine via PSync (notice first); offered on every build (`Plugin.SyncedAvailable` is the kill switch)
+- Penumbra IPC: temporary mods/redirects (local), and mod-management calls on Milieu's own "Milieu Sync" mod only (synced; ReloadMod/AddMod, priority, enable, which write the user's collection settings) — removed or emptied on dispose, never touch the user's own mods (ADR 0006 amendment)
+- Synced delivery (`Milieu/Sync/`, ADR 0006): writes the real "Milieu Sync" mod into Penumbra's mod directory (`_milieu_sync`: meta.json, default_mod.json, staged files), an IMC manipulation enabled in the player's collection (emptied at rest), and the user's image leaving the machine via PSync (notice first); offered on every build (`Plugin.SyncedAvailable` is the kill switch)
 - The OpenEXR decoder (`Milieu/Imaging/Exr/`, ADR 0008) — parses untrusted binary files in the game process; every size and offset is checked against `ExrLimits` before use, and the offset table before the output is allocated
 - Scene lighting: native light create/update/destroy (`Milieu/Interop/LightInterop.cs`), GPose-only, crash sentinel; `Plugin.LightingAvailable` is the kill switch (ADR 0009)
 - `Milieu/Configuration.cs` migrations — a mistake loses user settings
