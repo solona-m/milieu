@@ -54,7 +54,7 @@ Under a synced delivery with scene lighting on, the synced dome carries Milieu's
   brightness formula (including the distance compensation) × `StandInKeyScale` (1; item 11). A sun that exists but isn't
   drawn on the dome still gives no key (no light from a direction the image doesn't show there). The native planner is
   unchanged, so the two differ for no-key rigs; under synced delivery in GPose a no-key image trades its native fills for
-  the one stand-in. Night and space HDRs, which ADR 0009 deliberately gives no key, now get a sun-strength stand-in from
+  the one stand-in. Night and space HDRs, whose stars ADR 0009's key test deliberately keeps from becoming the key, now get a sun-strength stand-in from
   their brightest drawn region under synced delivery: accepted for now (strength, synced only), with a known-issue
   follow-up for a scale-free contrast gate. Once fills ship, the stand-in takes one fill slot (item 1).
 - **The rig travels with the synced texture.** The synced job loads it after staging (`PreparedTexture.Rig`); a failure
