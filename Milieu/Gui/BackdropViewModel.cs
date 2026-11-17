@@ -111,10 +111,13 @@ public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker,
     /// <summary>How close a repeat value must be to a whole number to snap to it.</summary>
     public const float RepeatSnap = 0.1f;
 
-    /// <summary>A repeat within <see cref="RepeatSnap"/> of a whole number becomes that number (the owner's request).</summary>
+    /// <summary>
+    /// A repeat within <see cref="RepeatSnap"/> of a whole number of at least 1 becomes that number (the owner's request). The
+    /// small tolerance makes typed values like 1.9 and 1.1 snap despite float rounding.
+    /// </summary>
     public static float SnapRepeat(float value)
     {
         var whole = System.MathF.Round(value);
-        return whole >= 1f && System.MathF.Abs(value - whole) <= RepeatSnap ? whole : value;
+        return whole >= 1f && System.MathF.Abs(value - whole) <= RepeatSnap + 1e-4f ? whole : value;
     }
 }
