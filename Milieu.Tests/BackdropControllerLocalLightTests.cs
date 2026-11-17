@@ -751,4 +751,22 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         Assert.Equal(MessageKey.GameEndedVfx, c.Status.Message.Key);
         Assert.Null(c.LocalLights);
     }
+    [Fact] // [AC-local-dome-lights-6] [EDGE-local-dome-lights-27]
+    public void SwapWriteFails_OneAttemptPerEdge()
+    {
+        Show();
+        // A folder where the unlit swap's .avfx goes: File.Exists is false and the atomic move throws.
+        Directory.CreateDirectory(cache.AvfxDiskPath(CacheStore.AvfxKey(BuildFor(null))));
+        var sets = SetCalls;
+        game.IsGPosing = true;
+        c.Tick();
+        Advance(600);                                      // the one attempt: the write fails
+        Assert.Equal(MessageKey.WriteFailed, c.Status.Message.Key);
+        c.ReportStatus(StatusMessage.None);                // any further attempt would set it again
+        for (var i = 0; i < 100; i++) Advance(200);
+        Assert.Equal(MessageKey.None, c.Status.Message.Key);
+        Assert.Equal(sets, SetCalls);
+        Assert.True(c.IsDrawn);
+        Assert.Equal(1, c.Lit!.VfxLightCount);
+    }
 }
