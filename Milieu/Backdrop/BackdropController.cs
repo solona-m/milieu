@@ -73,7 +73,9 @@ public sealed class BackdropController : Gui.IGridController
 
     // Scene lighting (docs/adr/0009): the image and build values of the dome as drawn. The image path travels with the
     // texture: the job's request, then the texture when assigned, then the pending registration, then the shown dome.
-    private readonly record struct DomeBuild(bool Flip, float VerticalScale, float URepeat, float VRepeat, float? BakedYawRadians);
+    // Radius and HeightOffset are the values the dome was built with (local lights are planned from them, never live config).
+    private readonly record struct DomeBuild(bool Flip, float VerticalScale, float URepeat, float VRepeat, float? BakedYawRadians,
+                                             float Radius, float HeightOffset);
 
     private string? jobImagePath;
     private string? textureImagePath;
@@ -113,9 +115,12 @@ public sealed class BackdropController : Gui.IGridController
                               IBundledBackdrops? bundled = null, Action? save = null, Func<bool>? syncedAvailable = null,
                               IPenumbraSync? sync = null, IGameData? gameData = null, Func<string, SyncStaging>? stagingFor = null,
                               Func<string, CancellationToken, Task<LightRig?>>? loadRig = null,
-                              bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters)
+                              bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters,
+                              Func<string, CancellationToken, Task<LightRig?>>? loadLocalRig = null)
     {
         this.loadRig = loadRig;
+        this.loadLocalRig = loadLocalRig;
+        lastSceneLighting = config.SceneLighting;
         this.fillsOnOwnEmitters = fillsOnOwnEmitters;
         this.bundled = bundled;
         this.save = save ?? (() => { });
@@ -153,7 +158,8 @@ public sealed class BackdropController : Gui.IGridController
                 return new LitBackdrop(shownImagePath, new DomeView(baked, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat),
                                        Synced: true, VfxLightCount: SyncedLights?.Lights.Count ?? 0);
             if (handle is { IsDead: false } && b.BakedYawRadians == null)
-                return new LitBackdrop(shownImagePath, new DomeView(spawnedYaw, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat));
+                return new LitBackdrop(shownImagePath, new DomeView(spawnedYaw, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat),
+                                       Synced: false, VfxLightCount: LocalLights?.Lights.Count ?? 0);
             return null;
         }
     }
@@ -163,6 +169,15 @@ public sealed class BackdropController : Gui.IGridController
 
     /// <summary>The VFX lights the shown synced dome carries (docs/adr/0011); null when no synced dome is shown.</summary>
     internal VfxLightPlan? SyncedLights { get; private set; }
+
+    /// <summary>The VFX lights the shown local dome carries (outside GPose; ADR 0011 local amendment); null when none is shown.</summary>
+    internal VfxLightPlan? LocalLights { get; private set; }
+
+    /// <summary>
+    /// Local dome lights can be planned: the local loader is present (both kill switches on) and the early-removal latch
+    /// isn't set. Read by the window on the draw thread (the latch is volatile, written on the framework thread only).
+    /// </summary>
+    public bool LocalLightsActive => loadLocalRig != null && !localLightsLatched;
 
     /// <summary>The delivery in force: the configured one when synced delivery is available, otherwise always Local.</summary>
     public DeliveryMode EffectiveDelivery => synced != null && syncedAvailable() ? config.Delivery : DeliveryMode.Local;
@@ -200,7 +215,18 @@ public sealed class BackdropController : Gui.IGridController
     private DateTime? reconvertAt;
 
     private readonly Func<string, CancellationToken, Task<LightRig?>>? loadRig;
+    private readonly Func<string, CancellationToken, Task<LightRig?>>? loadLocalRig;
     private readonly bool fillsOnOwnEmitters;
+
+    // Local dome lights (ADR 0011 local amendment): what the pending and the shown local dome were planned for.
+    private VfxLightPlan? pendingLocalLights;
+    private bool pendingLocalGPose;
+    private bool shownLocalGPose;
+    /// <summary>The GPose state a local register last failed for: the level check doesn't retry it until an edge or a commit.</summary>
+    private bool? failedLocalGPose;
+    private volatile bool localLightsLatched;
+    private bool? lastGPose;
+    private bool lastSceneLighting;
     private VfxLightPlan? pendingLights;
     private DateTime? lightRebuildAt;
     private bool lightRebuildHeld;
@@ -228,6 +254,11 @@ public sealed class BackdropController : Gui.IGridController
         }
         if (lightRebuildAt is not { } at || utcNow() < at) return;
         lightRebuildAt = null;
+        if (EffectiveDelivery == DeliveryMode.Local && !SyncedLive)
+        {
+            TickLocalLightCheck();
+            return;
+        }
         // A synced registration is pending (planned before this change): wait for it, then compare against what it committed.
         if (synced?.Pending != null && state == BackdropState.AwaitingRedirect) { lightRebuildAt = utcNow() + ReconvertDelay; return; }
         if (synced?.Shown == null || texture == null || state != BackdropState.Shown) return;   // nothing synced shown: dropped
@@ -238,14 +269,81 @@ public sealed class BackdropController : Gui.IGridController
     }
 
     /// <summary>
+    /// Local: replan the shown dome's lights for the current GPose state and settings; rebuild only if they differ. No GPose
+    /// hold (a local swap redraws nobody). A pending local registration is waited for; anything else not shown drops the
+    /// check (the level check in <see cref="TickLocalLightEdges"/> re-arms it after a respawn).
+    /// </summary>
+    private void TickLocalLightCheck()
+    {
+        if (pendingSet != null && state == BackdropState.AwaitingRedirect) { lightRebuildAt = utcNow() + ReconvertDelay; return; }
+        if (state != BackdropState.Shown || texture == null || LiveDelivery != DeliveryMode.Local || handle is not { IsDead: false }
+            || shownBuild is not { } built)
+            return;
+        var gpose = game.IsGPosing;
+        var planned = PlanLocalLights(texture, built, gpose);
+        if (VfxLightPlan.SameLights(planned.Lights, LocalLights?.Lights)) { shownLocalGPose = gpose; return; }
+        ApplyRebuild();
+    }
+
+    /// <summary>
+    /// Local GPose and lighting edges (framework thread, every tick): a GPose edge schedules a light check (500 ms after the
+    /// last edge); turning lighting off then on clears the early-removal latch; the level check re-arms a check when the
+    /// shown dome was planned for the other GPose state (after a respawn), at most once per state until an edge or a commit.
+    /// </summary>
+    private void TickLocalLightEdges()
+    {
+        var gpose = game.IsGPosing;
+        var lighting = config.SceneLighting;
+        if (lighting && !lastSceneLighting && localLightsLatched)
+        {
+            localLightsLatched = false;
+            log.Information("[Milieu] Scene lighting ticked again: the backdrop's own lights are back on.");
+        }
+        lastSceneLighting = lighting;
+        var local = EffectiveDelivery == DeliveryMode.Local;
+        if (lastGPose is { } was && was != gpose && local)
+        {
+            failedLocalGPose = null;
+            RequestLightRebuild();
+        }
+        lastGPose = gpose;
+        if (local && LiveDelivery == DeliveryMode.Local && state == BackdropState.Shown && handle is { IsDead: false }
+            && shownLocalGPose != gpose && failedLocalGPose != gpose && lightRebuildAt == null)
+            lightRebuildAt = utcNow() + ReconvertDelay;
+    }
+
+    /// <summary>
     /// The VFX lights for a synced dome of <paramref name="tex"/> built as <paramref name="build"/>: empty unless scene
     /// lighting is on, the synced-lights switch gave a rig loader, and the job loaded a rig.
     /// </summary>
     private VfxLightPlan PlanLights(PreparedTexture tex, DomeBuild? build)
     {
-        if (!config.SceneLighting || loadRig == null || tex.Rig is not { } rig || build is not { } b) return VfxLightPlan.Empty;
+        if (!LightsWanted(tex, loadRig, build, out var rig, out var b)) return VfxLightPlan.Empty;
         var view = new DomeView(b.BakedYawRadians ?? 0f, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat);
         return VfxLightPlanner.Plan(rig, view, config.Current.Radius, config.LightStrength, config.FillLightCount, fillsOnOwnEmitters);
+    }
+
+    /// <summary>
+    /// The VFX lights for a local dome of <paramref name="tex"/> built as <paramref name="build"/>: empty in GPose (native
+    /// lights take over) or unless local lights are active, else as for synced (lighting on, a rig). Planned in the dome's
+    /// local frame from the build's own radius and height.
+    /// </summary>
+    private VfxLightPlan PlanLocalLights(PreparedTexture tex, DomeBuild build, bool gpose)
+    {
+        if (gpose || !LocalLightsActive || !LightsWanted(tex, loadLocalRig, build, out var rig, out var b)) return VfxLightPlan.Empty;
+        return VfxLightPlanner.PlanLocal(rig, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat, b.Radius, b.HeightOffset,
+                                         config.LightStrength, config.FillLightCount, fillsOnOwnEmitters);
+    }
+
+    /// <summary>The guard shared by synced and local planning: scene lighting on, a loader, a rig and a build.</summary>
+    private bool LightsWanted(PreparedTexture tex, object? loader, DomeBuild? build, out LightRig rig, out DomeBuild b)
+    {
+        rig = null!;
+        b = default;
+        if (!config.SceneLighting || loader == null || tex.Rig is not { } r || build is not { } bb) return false;
+        rig = r;
+        b = bb;
+        return true;
     }
 
     /// <summary>
@@ -381,7 +479,22 @@ public sealed class BackdropController : Gui.IGridController
         }
         else
         {
-            job = run(() => preparer.PrepareTextureAsync(request, reporter, cts.Token));
+            var token = cts.Token;
+            var localLoader = loadLocalRig;
+            job = localLoader == null
+                ? run(() => preparer.PrepareTextureAsync(request, reporter, token))
+                : run(async () =>
+                {
+                    var prepared = await preparer.PrepareTextureAsync(request, reporter, token).ConfigureAwait(false);
+                    // The light rig for the dome's own lights, whatever the lighting toggle says (ticking it later needs no
+                    // re-show). It never fails the backdrop: no lights instead.
+                    try { return prepared with { Rig = await localLoader(request.ImagePath, token).ConfigureAwait(false) }; }
+                    catch (Exception e) when (e is not OperationCanceledException)
+                    {
+                        log.Warning("[Milieu] Could not load the light rig for the backdrop; showing it without its own lights: " + e.GetType().Name);
+                        return prepared;
+                    }
+                });
             jobImagePath = request.ImagePath;
             currentStaging = null;
         }
@@ -411,6 +524,7 @@ public sealed class BackdropController : Gui.IGridController
             penumbra.Clear();
             shownSet = null; shownAvfxGamePath = null;
             pendingSet = null; pendingAvfxGamePath = null;
+            LocalLights = null; pendingLocalLights = null;
         }
         else if (synced != null)
         {
@@ -431,6 +545,7 @@ public sealed class BackdropController : Gui.IGridController
         pendingSet = null; pendingAvfxGamePath = null;
         if (synced is { NeedsCleanup: true }) synced.RemoveAll(redraw: true);
         SyncedLights = null;
+        LocalLights = null; pendingLocalLights = null;
         CleanupStaging(keepShown: false);   // whenever the folder exists (e.g. a failed registration's atex); never creates it
         state = BackdropState.Hidden;
         message = StatusMessage.None;
@@ -461,7 +576,9 @@ public sealed class BackdropController : Gui.IGridController
     public void ApplyHeight()
     {
         if (SyncedLive) { ApplyRebuild(); return; }
-        // While a rebuild is pending, the VFX about to appear is the pending one: compare against its floor.
+        // A lit local dome has the height baked into its light offsets: rebuild. While a rebuild is pending, the VFX about
+        // to appear is the pending one: compare against its lights and its floor.
+        if ((pendingSet != null ? pendingLocalLights : LocalLights) is { Lights.Count: > 0 }) { ApplyRebuild(); return; }
         var current = pendingSet != null ? pendingFloorY : shownFloorY;
         if (config.Current.FloorY() != current) ApplyRebuild();
         else ApplyPlacement();
@@ -511,6 +628,7 @@ public sealed class BackdropController : Gui.IGridController
         shownSet = null; shownAvfxGamePath = null; pendingSet = null; pendingAvfxGamePath = null;
         synced?.Forget();   // no IPC now; the synced mod outlives Penumbra, so its collections stay unsettled for cleanup
         SyncedLights = null;
+        LocalLights = null; pendingLocalLights = null;
         state = BackdropState.Hidden;
         if (wasShowing) message = StatusMessage.Of(MessageKey.PenumbraGone);
         Hidden?.Invoke();
@@ -550,6 +668,7 @@ public sealed class BackdropController : Gui.IGridController
         if (++ticks % PenumbraRefreshTicks == 0) penumbra.Refresh();
         while (posted.TryDequeue(out var action)) action();
         TickReconvert();
+        TickLocalLightEdges();
         TickLightRebuild();
 
         CheckGameRemoval();
@@ -583,13 +702,15 @@ public sealed class BackdropController : Gui.IGridController
         if (handle is not { IsDead: true } dead) return;
         handle = null;
         if (state is not (BackdropState.Shown or BackdropState.Suspended)) return;
-        if (game.IsReady && utcNow() - dead.SpawnedAtUtc < EarlyRemovalWindow)
+        var early = game.IsReady && utcNow() - dead.SpawnedAtUtc < EarlyRemovalWindow;
+        if (early)
         {
             earlyRemovals++;
             if (earlyRemovals > MaxEarlyRemovals)
             {
                 penumbra.Clear();
                 shownSet = null; shownAvfxGamePath = null;
+                LocalLights = null; pendingLocalLights = null;
                 state = BackdropState.Hidden;
                 message = StatusMessage.Of(MessageKey.GameEndedVfx);
                 log.Warning("[Milieu] The game kept ending the backdrop VFX right after it was shown; stopped re-showing it.");
@@ -598,6 +719,15 @@ public sealed class BackdropController : Gui.IGridController
         }
         state = BackdropState.Suspended;
         readyFrames = 0;
+        // A lit local dome the game ended early: the backdrop's own lights are latched off (until lighting is ticked off and
+        // on) and the dome is rebuilt without them, rather than respawning the lit file.
+        if (early && LocalLights is { Lights.Count: > 0 } && texture != null && LiveDelivery == DeliveryMode.Local && !SyncedLive)
+        {
+            if (!localLightsLatched)
+                log.Warning("[Milieu] The game ended the backdrop with its own lights right after it was shown; showing it without them until scene lighting is ticked off and on.");
+            localLightsLatched = true;
+            Register(texture);
+        }
     }
 
     private void TickPreparing()
@@ -678,16 +808,28 @@ public sealed class BackdropController : Gui.IGridController
         if (IsSynced) { RegisterSynced(tex); return; }
         byte[] avfx;
         var floorY = config.Current.FloorY();
-        var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, null);
+        var gpose = game.IsGPosing;
+        var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, null,
+                                  config.Current.Radius, config.Current.HeightOffset);
+        var lights = PlanLocalLights(tex, build, gpose);
+        byte[] BuildWith(VfxLightPlan l) => DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, build.Radius, build.VerticalScale,
+            build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY, Lights: l.Lights.Count > 0 ? l.Lights : null));
         try
         {
-            avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, build.VerticalScale,
-                build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY));
+            try { avfx = BuildWith(lights); }
+            catch (Exception e) when (lights.Lights.Count > 0 && e is ArgumentException or InvalidDataException)
+            {
+                // The planner keeps lights within the builder's bounds; this is a backstop: the dome is shown without lights.
+                log.Warning("[Milieu] Could not build the dome VFX with its own lights; building it without them: " + LogText.Describe(e, cache.Root));
+                lights = VfxLightPlan.Empty with { Estimated = lights.Estimated };
+                avfx = BuildWith(lights);
+            }
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
         {
             log.Error("[Milieu] Could not build the dome VFX: " + LogText.Describe(e, cache.Root));
             message = StatusMessage.Of(MessageKey.WriteFailed);
+            failedLocalGPose = gpose;
             state = FallbackState();
             return;
         }
@@ -697,6 +839,7 @@ public sealed class BackdropController : Gui.IGridController
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             message = StatusMessage.Of(MessageKey.WriteFailed);
+            failedLocalGPose = gpose;
             state = FallbackState();
             return;
         }
@@ -704,6 +847,7 @@ public sealed class BackdropController : Gui.IGridController
         penumbra.Refresh();
         if (Blocker() is not (MessageKey.None or MessageKey.NotLoggedIn))
         {
+            failedLocalGPose = gpose;
             state = FallbackState();
             return;
         }
@@ -715,6 +859,7 @@ public sealed class BackdropController : Gui.IGridController
         if (!penumbra.Set(set))
         {
             message = StatusMessage.Of(MessageKey.RedirectTimeout);
+            failedLocalGPose = gpose;
             state = FallbackState();
             return;
         }
@@ -723,6 +868,8 @@ public sealed class BackdropController : Gui.IGridController
         pendingFloorY = floorY;
         pendingImagePath = textureImagePath;
         pendingBuild = build;
+        pendingLocalLights = lights;
+        pendingLocalGPose = gpose;
         waitTicks = 0;
         state = BackdropState.AwaitingRedirect;
     }
@@ -744,7 +891,8 @@ public sealed class BackdropController : Gui.IGridController
         var staging = stagingFor(modDir);
         var floorY = config.Current.FloorY();
         var bakedYaw = YawRadians();
-        var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, bakedYaw);
+        var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, bakedYaw,
+                                  config.Current.Radius, config.Current.HeightOffset);
         // Item VFX are anchored at world height 0, not at the item (seen in game, 2026-11-16): raise the dome to the player.
         var anchorY = game.PlayerPosition?.Y ?? 0f;
         var lights = PlanLights(tex, build);
@@ -756,7 +904,7 @@ public sealed class BackdropController : Gui.IGridController
                 BakedHeight: config.Current.HeightOffset, BakedYawRadians: bakedYaw, AttachToOwner: true,
                 EmitterBaseHeight: anchorY, Lights: lights.Lights));
             log.Information($"[Milieu] Synced dome anchor height {anchorY:0.00} (player world Y).");
-            LogLights(lights);
+            LogLights("Synced", lights, new Vector3(0, LightRigLayout.AnchorHeight, 0));
         }
         catch (Exception e) when (e is ArgumentException or InvalidDataException)
         {
@@ -802,16 +950,19 @@ public sealed class BackdropController : Gui.IGridController
         state = BackdropState.AwaitingRedirect;
     }
 
-    /// <summary>One log line per synced VFX light: azimuth, elevation, Bri and distance (for in-game tuning).</summary>
-    private void LogLights(VfxLightPlan plan)
+    /// <summary>
+    /// One log line per dome VFX light: azimuth, elevation, Bri and distance from <paramref name="reference"/> (the anchor in
+    /// the lights' frame), for in-game tuning.
+    /// </summary>
+    private void LogLights(string label, VfxLightPlan plan, Vector3 reference)
     {
         foreach (var l in plan.Lights)
         {
-            var rel = l.Position - new System.Numerics.Vector3(0, LightRigLayout.AnchorHeight, 0);
+            var rel = l.Position - reference;
             var d = rel.Length();
             var az = MathF.Atan2(rel.X, rel.Z) * 180f / MathF.PI;
             var el = d > 0 ? MathF.Asin(Math.Clamp(rel.Y / d, -1f, 1f)) * 180f / MathF.PI : 0f;
-            log.Information($"[Milieu] Synced {(l.Shadows ? "key" : "fill")} light: azimuth {az:0}°, elevation {el:0}°, Bri {l.Brightness:0.0}, distance {d:0.0}.");
+            log.Information($"[Milieu] {label} {(l.Shadows ? "key" : "fill")} light: azimuth {az:0}°, elevation {el:0}°, Bri {l.Brightness:0.0}, distance {d:0.0}.");
         }
     }
 
@@ -861,6 +1012,7 @@ public sealed class BackdropController : Gui.IGridController
             if (spawned == null)
             {
                 message = StatusMessage.Of(MessageKey.InteropUnavailable);
+                failedLocalGPose = pendingLocalGPose;
                 state = FallbackState();
                 return;
             }
@@ -871,7 +1023,12 @@ public sealed class BackdropController : Gui.IGridController
             shownFloorY = pendingFloorY;
             shownImagePath = pendingImagePath;
             shownBuild = pendingBuild;
-            pendingSet = null; pendingAvfxGamePath = null;
+            LocalLights = pendingLocalLights;
+            shownLocalGPose = pendingLocalGPose;
+            failedLocalGPose = null;
+            if (LocalLights is { Lights.Count: > 0 } lit && shownBuild is { } sb)
+                LogLights("Local", lit, new Vector3(0, LightRigLayout.AnchorHeight - sb.HeightOffset, 0));
+            pendingSet = null; pendingAvfxGamePath = null; pendingLocalLights = null;
             state = BackdropState.Shown;
             readyFrames = 0;
             CleanupCache();
@@ -880,7 +1037,8 @@ public sealed class BackdropController : Gui.IGridController
         if (++waitTicks < RedirectTimeoutTicks) return;
         message = StatusMessage.Of(MessageKey.RedirectTimeout);
         log.Warning("[Milieu] Penumbra did not resolve the backdrop files in time.");
-        pendingSet = null; pendingAvfxGamePath = null;
+        failedLocalGPose = pendingLocalGPose;
+        pendingSet = null; pendingAvfxGamePath = null; pendingLocalLights = null;
         if (shownSet != null) penumbra.Set(shownSet);
         else penumbra.Clear();
         state = FallbackState();
@@ -995,6 +1153,7 @@ public sealed class BackdropController : Gui.IGridController
         shownSet = null; pendingSet = null;
         if (synced is { NeedsCleanup: true }) synced.RemoveAll(redraw: true);
         SyncedLights = null;
+        LocalLights = null; pendingLocalLights = null;
         CleanupStaging(keepShown: false);   // whenever the folder exists (e.g. a failed registration's atex); never creates it
         state = BackdropState.Hidden;
         Hidden?.Invoke();

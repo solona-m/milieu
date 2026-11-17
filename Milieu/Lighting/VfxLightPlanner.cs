@@ -7,7 +7,7 @@ using Milieu.GameFiles;
 namespace Milieu.Lighting;
 
 /// <summary>
-/// The VFX lights planned for a synced dome: the lights, whether a shadowed key leads the list (the rig's, or the stand-in
+/// The VFX lights planned for a dome (synced, or local outside GPose): the lights, whether a shadowed key leads the list (the rig's, or the stand-in
 /// for an image with no sun), the number of fills, and whether the rig was estimated.
 /// </summary>
 internal sealed record VfxLightPlan(IReadOnlyList<DomeLight> Lights, bool HasKey, int Fills, bool Estimated)
@@ -19,7 +19,7 @@ internal sealed record VfxLightPlan(IReadOnlyList<DomeLight> Lights, bool HasKey
 }
 
 /// <summary>
-/// Turns a <see cref="LightRig"/> into VFX point lights for a synced dome (pure; docs/adr/0011). The selection is the native
+/// Turns a <see cref="LightRig"/> into VFX point lights for a synced dome, or a local one outside GPose (pure; docs/adr/0011). The selection is the native
 /// planner's (<see cref="LightRigPlanner.Select"/>). Positions are emitter-relative: (0, LightRigLayout.AnchorHeight, 0) +
 /// dir × distance, independent of the player's world height (the emitter carries that). The key is a shadow-casting light
 /// far away in the key's direction at <see cref="VfxLightLayout.KeyBrightness"/> × strength ("match the sun"); fills are
@@ -82,6 +82,27 @@ internal static class VfxLightPlanner
             fillCountOut++;
         }
         return new VfxLightPlan(lights, hasKey, fillCountOut, estimated);
+    }
+
+    /// <summary>
+    /// The lights for a local ("Only me") dome outside GPose (docs/adr/0011, local amendment): the static VFX root carries
+    /// the dome's yaw and height, so the plan is made at yaw 0 and every light is shifted down by the height offset (the
+    /// anchor then lands at the player's chest, as in synced). Empty (keeping <see cref="VfxLightPlan.Estimated"/>) when any
+    /// shifted position is beyond <see cref="DomeAvfxBuilder.MaxLightPosition"/>, so the plan always equals what is built.
+    /// </summary>
+    public static VfxLightPlan PlanLocal(LightRig rig, bool flip, float verticalScale, float uRepeat, float vRepeat, float radius,
+                                         float heightOffset, float strength, int fillCount,
+                                         bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters)
+    {
+        var plan = Plan(rig, new DomeView(0f, flip, verticalScale, uRepeat, vRepeat), radius, strength, fillCount, fillsOnOwnEmitters);
+        if (plan.Lights.Count == 0) return plan;
+        var shift = new Vector3(0, heightOffset, 0);
+        var lights = plan.Lights.Select(l => l with { Position = l.Position - shift }).ToList();
+        foreach (var l in lights)
+            if (!float.IsFinite(l.Position.X) || !float.IsFinite(l.Position.Y) || !float.IsFinite(l.Position.Z)
+                || MathF.Max(MathF.Abs(l.Position.X), MathF.Max(MathF.Abs(l.Position.Y), MathF.Abs(l.Position.Z))) > DomeAvfxBuilder.MaxLightPosition)
+                return VfxLightPlan.Empty with { Estimated = plan.Estimated };
+        return plan with { Lights = lights };
     }
 
     /// <summary>

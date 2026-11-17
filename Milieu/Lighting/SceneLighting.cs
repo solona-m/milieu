@@ -31,6 +31,8 @@ public enum LightingStatus
     OnKeyNotDrawn,
     /// <summary>The drawn synced dome carries VFX lights (docs/adr/0011): no native lights, so the light isn't doubled.</summary>
     InSyncedBackdrop,
+    /// <summary>The drawn local dome carries VFX lights (outside GPose; ADR 0011 local amendment): no native lights.</summary>
+    InLocalBackdrop,
 }
 
 /// <summary>
@@ -241,6 +243,9 @@ public sealed class SceneLighting
         // config, or a synced dome without lights (no rig, a key not drawn with fills off, nothing drawn), keeps native lights.
         if (enabled && current is { Synced: true, VfxLightCount: > 0 } && syncedLightsAvailable())
             return new(LightingStatus.InSyncedBackdrop, FileOf(current.ImagePath), GPose: game.IsGPosing);
+        // The same for a local dome that carries lights (outside GPose; after entering GPose until the unlit dome is in).
+        if (enabled && current is { Synced: false, VfxLightCount: > 0 })
+            return new(LightingStatus.InLocalBackdrop, FileOf(current.ImagePath), GPose: game.IsGPosing);
         if (!spawner.Available) return new(LightingStatus.Unavailable);   // first: the panel disables its controls
         if (!enabled) return new(LightingStatus.Off);
         switch (latch)

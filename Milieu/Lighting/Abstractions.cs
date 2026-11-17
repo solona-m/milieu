@@ -52,7 +52,7 @@ public readonly record struct DomeView(float YawRadians, bool Flip, float Vertic
 
 /// <summary>The image the drawn dome shows, and how it is drawn.</summary>
 /// <param name="Synced">The drawn dome is a committed synced registration (not a local dome under a synced config).</param>
-/// <param name="VfxLightCount">How many VFX lights that synced dome carries (0 otherwise).</param>
+/// <param name="VfxLightCount">How many VFX lights the drawn dome carries, synced or local (0 otherwise).</param>
 public sealed record LitBackdrop(string ImagePath, DomeView View, bool Synced = false, int VfxLightCount = 0);
 
 /// <summary>

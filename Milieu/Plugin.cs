@@ -36,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 53;
+    public const int BuildNumber = 55;
 
     private const string CommandName = "/milieu";
 
@@ -75,7 +75,8 @@ public sealed class Plugin : IDalamudPlugin
         controller = new BackdropController(vfx, penumbra, gameState, preparer, cache, config, log,
                                             bundled: downloads, save: Save, syncedAvailable: SyncedAvailable,
                                             sync: penumbra, gameData: new GameData(DataManager),
-                                            loadRig: SyncedRigLoader(LightingAvailable(), SyncedLightsAvailable(), preparer.PrepareLightsAsync));
+                                            loadRig: SyncedRigLoader(LightingAvailable(), SyncedLightsAvailable(), preparer.PrepareLightsAsync),
+                                            loadLocalRig: LocalRigLoader(LightingAvailable(), LocalLightsAvailable(), preparer.PrepareLightsAsync));
         lighting = CreateLighting(LightingAvailable(), () => new LightInterop(SigScanner, Framework, log), gameState, () => controller.Lit,
                                   config, preparer.PrepareLightsAsync,
                                   () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.FileName), log), log,
@@ -112,7 +113,8 @@ public sealed class Plugin : IDalamudPlugin
         Framework.RunOnFrameworkThread(controller.OnPenumbraInitialized);   // clear a temp mod an earlier session left
 
         grid = new SceneGridViewModel(config, Save, controller.Post, controller, downloads, File.Exists);
-        mainWindow = new MainWindow(controller, config, Save, grid, new ThumbnailCache(TextureProvider, thumbStore), SyncedAvailable,
+        mainWindow = new MainWindow(controller, config, Save, grid, new ThumbnailCache(TextureProvider, thumbStore),
+                                    () => controller.LocalLightsActive, SyncedAvailable,
                                     () => lighting?.Status ?? LightingStatusSnapshot.Initial, lighting != null,
                                     () => night?.Status ?? NightStatus.Off, night != null,
                                     () => sunOff?.Status ?? SunOffStatus.Off, sunOff != null);
@@ -161,6 +163,14 @@ public sealed class Plugin : IDalamudPlugin
     private static bool SyncedLightsAvailable() => true;
 
     /// <summary>
+    /// Local dome lights' kill switch (docs/adr/0011, local amendment): return false and "Only me" domes carry no lights (no
+    /// rig is loaded for them, no effector is written; the panel texts are today's), and the scene keeps only ambient light
+    /// outside GPose with the sun off. Off as well whenever scene lighting itself is off. Release gate: flip this to false
+    /// before tagging if the in-game positive control (ADR 0011 local amendment) fails or local dome lights regress.
+    /// </summary>
+    private static bool LocalLightsAvailable() => true;
+
+    /// <summary>
     /// Night while shown's kill switch (docs/adr/0012): return false and nothing night-related is constructed, resolved or
     /// drawn (no time-of-day read or write, no "Time of day" block).
     /// </summary>
@@ -200,6 +210,11 @@ public sealed class Plugin : IDalamudPlugin
     internal static Func<string, CancellationToken, Task<LightRig?>>? SyncedRigLoader(bool lightingAvailable, bool syncedLightsAvailable,
                                                                                        Func<string, CancellationToken, Task<LightRig?>> load) =>
         lightingAvailable && syncedLightsAvailable ? load : null;
+
+    /// <summary>Test seam: the controller's rig loader for local dome lights, or null when either kill switch is off.</summary>
+    internal static Func<string, CancellationToken, Task<LightRig?>>? LocalRigLoader(bool lightingAvailable, bool localLightsAvailable,
+                                                                                      Func<string, CancellationToken, Task<LightRig?>> load) =>
+        lightingAvailable && localLightsAvailable ? load : null;
 
     /// <summary>Test seam: builds scene lighting, or nothing at all (the factories are never called) when the kill switch is off.</summary>
     internal static SceneLighting? CreateLighting(bool available, Func<ILightSpawner> spawnerFactory, Backdrop.IGameState game,

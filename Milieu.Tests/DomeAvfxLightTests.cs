@@ -114,11 +114,40 @@ public class DomeAvfxLightTests
         Assert.Equal(DomeAvfxBuilder.Build(Synced(null)), DomeAvfxBuilder.Build(Synced([])));
     }
 
-    [Fact] // [EDGE-synced-lighting-7] [AC-synced-lighting-3]
-    public void LightsWithoutAttachToOwner_Throws()
+    // Local builds with lights (ADR 0011 local amendment) replace the old rule that lights belonged to synced domes only.
+    private static DomeAvfxParams LocalWith(IReadOnlyList<DomeLight> lights) =>
+        new("bgcommon/milieu/aabbccddeeff0011/sky.atex", 20000, 1, 2, 1, false, 1, Lights: lights);
+
+    private static readonly DomeLight SpikeKey = new(new Vector3(0, -0.6f, 30), new Vector3(1, 0.9f, 0.8f), 200, 60, true, 0.5f, 45);
+
+    [Fact] // [AC-local-dome-lights-1]
+    public void LocalBuild_WithKey_LinksDomeEmitter_LocalAttach()
     {
-        var local = Synced([Key]) with { AttachToOwner = false, EmitterBaseHeight = 0, BakedHeight = 0 };
-        Assert.Throws<ArgumentException>(() => DomeAvfxBuilder.Build(local));
+        var root = Build(LocalWith([SpikeKey]));   // Build runs SelfCheck
+        Assert.Equal(1, root.Need("EfCn").AsInt());
+        var emit = Assert.Single(root.All("Emit"));
+        Assert.Equal(0, emit.Need("EfNo").AsInt());
+        var itpr = emit.Need("ItPr");
+        Assert.Equal(DomeAvfxBuilder.LocalAttach, (itpr.Need("PICd").AsInt(), itpr.Need("ICbS").AsInt(), itpr.Need("ICbR").AsInt(), itpr.Need("ICbP").AsInt()));
+        Assert.Equal(1, Assert.Single(root.All("Efct")).Need("Data").Need("bMvS").AsInt());
+    }
+
+    [Fact] // [AC-local-dome-lights-1]
+    public void LocalBuild_WithKey_GoldenPin()
+    {
+        // The SHA-256 the spike build (fd9d993, build 54) produced for these params: the file the owner saw lighting the
+        // character in game. The spike's builder differed from this one only by the removed local rejection (and comments).
+        var bytes = DomeAvfxBuilder.Build(LocalWith([SpikeKey]));
+        Assert.Equal("CA79E9FEA3C2C65358385D952F80B0D6A3FC3D19DE190797A4F8DCD95A3A18AB", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)));
+    }
+
+    [Theory] // [AC-local-dome-lights-5]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LocalBuild_NoLights_ByteIdenticalToDefault(bool empty)
+    {
+        var plain = new DomeAvfxParams("bgcommon/milieu/aabbccddeeff0011/sky.atex", 20000, 1, 2, 1, false, 1);
+        Assert.Equal(DomeAvfxBuilder.Build(plain), DomeAvfxBuilder.Build(plain with { Lights = empty ? [] : null }));
     }
 
     private static DomeLight[] InvalidCase(int i) => i switch

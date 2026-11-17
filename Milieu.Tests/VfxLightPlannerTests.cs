@@ -324,4 +324,41 @@ public class VfxLightPlannerTests
         Assert.Equal(VfxLightLayout.KeyBrightness, sky.Brightness, 3);
         Assert.InRange(room.Brightness / sky.Brightness, 0.38f, 0.45f);   // owner: about 40% in a room dome (2026-11-16)
     }
+    [Theory] // [AC-local-dome-lights-1]
+    [InlineData(1.6f, 1f)]
+    [InlineData(0f, 2f)]
+    [InlineData(-3f, 1f)]
+    public void PlanLocal_EqualsPlanAtYaw0_ShiftedByHeight(float height, float strength)
+    {
+        var rig = Rig();
+        var plan = VfxLightPlanner.Plan(rig, new DomeView(0, true, 0.8f, 2, 1), 10f, strength, 2, fillsOnOwnEmitters: true);
+        var local = VfxLightPlanner.PlanLocal(rig, true, 0.8f, 2, 1, 10f, height, strength, 2, fillsOnOwnEmitters: true);
+        Assert.Equal(plan.Lights.Count, local.Lights.Count);
+        Assert.True(local.Lights.Count >= 2);
+        for (var i = 0; i < plan.Lights.Count; i++)
+            Assert.Equal(plan.Lights[i] with { Position = plan.Lights[i].Position - new Vector3(0, height, 0) }, local.Lights[i]);
+        Assert.Equal((plan.HasKey, plan.Fills, plan.Estimated), (local.HasKey, local.Fills, local.Estimated));
+    }
+
+    [Fact] // [AC-local-dome-lights-1]
+    public void PlanLocal_IgnoresNothingButYaw_RoomCompensationApplies()
+    {
+        var sky = VfxLightPlanner.PlanLocal(Rig(), false, 1, 2, 1, Sky, 1.6f, 1f, 0);
+        var room = VfxLightPlanner.PlanLocal(Rig(), false, 1, 2, 1, 8f, 1.6f, 1f, 0);
+        Assert.True(room.Lights[0].Brightness < sky.Lights[0].Brightness);   // the room dome's key is dimmer (ADR 0011)
+    }
+
+    [Theory] // [EDGE-local-dome-lights-8]
+    [InlineData(2000f)]
+    [InlineData(-2000f)]
+    [InlineData(float.NaN)]
+    public void PlanLocal_OutOfBounds_ReturnsEmpty(float height)
+    {
+        var local = VfxLightPlanner.PlanLocal(Rig(), false, 1, 2, 1, Sky, height, 1f, 2);
+        Assert.Empty(local.Lights);
+        Assert.False(local.HasKey);
+    }
+
+    [Fact] // [EDGE-local-dome-lights-6]
+    public void PlanLocal_StrengthZero_Empty() => Assert.Empty(VfxLightPlanner.PlanLocal(Rig(), false, 1, 2, 1, Sky, 1.6f, 0f, 2).Lights);
 }

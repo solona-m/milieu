@@ -75,7 +75,9 @@ also local: PSync pairs never see them.
   item VFX's world yaw is the baked yaw (ICbR 0; ADR 0006's PICd 2 fallback would need the character's yaw), and a
   committed synced registration counts as drawn even if the item isn't (the lights then stay).
   **Amended by ADR 0011 (2026-11-16):** under synced delivery the dome carries the rig as VFX lights that pairs see; native
-  lights step aside only when the drawn synced dome carries at least one VFX light.
+  lights step aside only when the drawn synced dome carries at least one VFX light. **Amended again (2026-11-17, ADR
+  0011's local amendment):** an "Only me" dome carries VFX lights outside GPose; native lights step aside whenever the drawn
+  dome, synced or local, carries at least one (local domes carry none in GPose).
 - **Brio coexistence.** Brio lists Milieu's lights as world lights and its DestroyAll doesn't free them; edits made in
   Brio last until Milieu's next planned change.
 - **Deferred:** an ambient WorldLight (untested `Create(WorldLight)`, exterior only) and the environment-lighting

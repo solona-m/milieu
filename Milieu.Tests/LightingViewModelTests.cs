@@ -11,8 +11,10 @@ public class LightingViewModelTests
     private const string Hdr = @"C:\Users\someone\Pictures\Panoramas\sky.hdr";
 
     private static LightingViewModel Vm(LightingStatus status, string file = "sky.hdr", int fills = 2, string? image = Hdr, bool on = true,
-                                        bool available = true, DeliveryMode delivery = DeliveryMode.Local, bool estimated = false) =>
-        new(new LightingStatusSnapshot(status, file, fills, estimated), new Configuration { ImagePath = image, SceneLighting = on }, available, delivery);
+                                        bool available = true, DeliveryMode delivery = DeliveryMode.Local, bool estimated = false,
+                                        bool localLights = false) =>
+        new(new LightingStatusSnapshot(status, file, fills, estimated), new Configuration { ImagePath = image, SceneLighting = on }, available, delivery,
+            localLights);
 
     private const string OldHdrNote = "Only .hdr and .exr images carry the light information this needs.";
 
@@ -264,8 +266,55 @@ public class LightingViewModelTests
     public void InSyncedBackdropInGPose_ShowsDeferralNote()
     {
         var vm = new LightingViewModel(new LightingStatusSnapshot(LightingStatus.InSyncedBackdrop, "sky.hdr", GPose: true),
-                                       new Configuration { ImagePath = Hdr }, true, DeliveryMode.MadBirdRing);
+                                       new Configuration { ImagePath = Hdr }, true, DeliveryMode.MadBirdRing, false);
         Assert.Contains(LightingViewModel.GPoseDeferralNote, vm.Notes);
         Assert.DoesNotContain(LightingViewModel.SyncedLightsNote, vm.Notes);
+    }
+    [Fact] // [AC-local-dome-lights-7]
+    public void InLocalBackdrop_TextAndNotes()
+    {
+        var vm = Vm(LightingStatus.InLocalBackdrop, localLights: true);
+        Assert.Equal("Lit by the backdrop's own lights.", vm.StatusText);
+        Assert.Equal([LightingViewModel.LocalLightsNote, LightingViewModel.OnlyYouNote], vm.Notes);
+        Assert.DoesNotContain(LightingViewModel.PairsNote, vm.Notes);
+    }
+
+    [Theory] // [AC-local-dome-lights-7]
+    [InlineData(LightingStatus.InLocalBackdrop, true)]
+    [InlineData(LightingStatus.OnWithKey, true)]
+    [InlineData(LightingStatus.OnNoKey, true)]
+    [InlineData(LightingStatus.OnKeyNotDrawn, true)]
+    [InlineData(LightingStatus.StrengthZero, true)]
+    [InlineData(LightingStatus.WaitingForGPose, false)]
+    [InlineData(LightingStatus.WaitingForBackdrop, false)]
+    [InlineData(LightingStatus.Analysing, false)]
+    public void LocalLightsNote_OnlyWithInLocalBackdropOrGPoseNativeStatus(LightingStatus status, bool shown)
+    {
+        Assert.Equal(shown, System.Linq.Enumerable.Contains(Vm(status, localLights: true).Notes, LightingViewModel.LocalLightsNote));
+        Assert.DoesNotContain(LightingViewModel.LocalLightsNote, Vm(status, localLights: false).Notes);
+        Assert.DoesNotContain(LightingViewModel.LocalLightsNote, Vm(status, localLights: true, delivery: DeliveryMode.MadBirdRing).Notes);
+    }
+
+    [Fact] // [AC-local-dome-lights-7] [EDGE-local-dome-lights-14] [EDGE-local-dome-lights-29]
+    public void FlagOff_TodaysTexts()
+    {
+        var vm = Vm(LightingStatus.OnWithKey, localLights: false);
+        Assert.Equal([LightingViewModel.OnlyYouNote], vm.Notes);
+        Assert.Equal(LightingViewModel.WaitingForGPoseText, Vm(LightingStatus.WaitingForGPose, localLights: false).StatusText);
+    }
+
+    [Fact] // [EDGE-local-dome-lights-19]
+    public void InLocalBackdrop_EstimatedImage_ShowsEstimatedNote()
+    {
+        var vm = Vm(LightingStatus.InLocalBackdrop, image: @"C:\pics\room.jpg", file: "room.jpg", estimated: true, localLights: true);
+        Assert.Equal([LightingViewModel.EstimatedNote, LightingViewModel.LocalLightsNote, LightingViewModel.OnlyYouNote], vm.Notes);
+    }
+
+    [Fact] // [EDGE-local-dome-lights-22]
+    public void Unticked_ShowsOffImmediately()
+    {
+        var vm = Vm(LightingStatus.InLocalBackdrop, on: false, localLights: true);
+        Assert.Equal(LightingStatus.Off, vm.ShownStatus);
+        Assert.DoesNotContain(LightingViewModel.LocalLightsNote, vm.Notes);
     }
 }
