@@ -156,8 +156,16 @@ public sealed unsafe class SunOffPatchTests : IDisposable
         rearming.SetWriting(true);
         Assert.Equal(PostResult.Probed, buf.Post(rearming));
         AllPaths();
-        var baseline = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 1000; i++) AllPaths();
-        Assert.Equal(baseline, GC.GetAllocatedBytesForCurrentThread());
+        // Tiered JIT can re-compile these methods mid-run and charge a few bytes to this thread once. A real per-call
+        // allocation shows in every 1000-call round, so the paths pass if any of three rounds allocates nothing.
+        var allocated = new long[3];
+        for (var round = 0; round < allocated.Length; round++)
+        {
+            var baseline = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 1000; i++) AllPaths();
+            allocated[round] = GC.GetAllocatedBytesForCurrentThread() - baseline;
+            if (allocated[round] == 0) return;
+        }
+        Assert.Fail($"every round allocated: {string.Join(", ", allocated)} bytes");
     }
 }
