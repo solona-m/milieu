@@ -331,4 +331,21 @@ public sealed class PerBackdropSwitchTests : IDisposable
         Click(b);
         Assert.DoesNotContain(log.Lines, l => l.Text.Contains(dir.File("")) || l.Text.Contains(a) || l.Text.Contains(b));
     }
+    [Fact] // [EDGE-per-backdrop-settings-15]
+    public void PendingLightRebuild_Synced_HeldInGPose_NoRebuildAfterSwitch()
+    {
+        config.Delivery = DeliveryMode.MadBirdRing;
+        game.IsGPosing = true;
+        Click(b);                                          // synced, lit
+        config.LightStrength = 0.4f;                       // an edit on B in GPose: the rebuild is held
+        c.RequestLightRebuild();
+        Tick(40);
+        var (redraws, syncSets) = (pen.Redraws, pen.SyncSets.Count);
+        Click(a);                                          // A commits (one registration, one redraw)
+        Assert.Equal(redraws + 1, pen.Redraws);
+        game.IsGPosing = false;                            // the held rebuild fires and compares against A's committed lights
+        Tick(125);
+        Assert.Equal(redraws + 1, pen.Redraws);
+        Assert.Equal(syncSets + 1, pen.SyncSets.Count);
+    }
 }

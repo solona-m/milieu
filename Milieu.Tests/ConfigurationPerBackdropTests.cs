@@ -323,16 +323,31 @@ public sealed class ConfigurationPerBackdropTests
         var c = WithTwo();
         var known = new HashSet<string> { Json(Distinct(1)), Json(Distinct(2)) };
         var stop = false;
+        var saves = 0;
         Exception? error = null;
-        var saver = Task.Run(() =>
+        using var started = new ManualResetEventSlim();
+        var saver = new Thread(() =>
         {
-            try { while (!Volatile.Read(ref stop)) Plugin.SaveConfig(c, cfg => JsonConvert.SerializeObject(cfg, Dalamud)); }
+            started.Set();
+            try
+            {
+                while (!Volatile.Read(ref stop))
+                {
+                    Plugin.SaveConfig(c, cfg => JsonConvert.SerializeObject(cfg, Dalamud));
+                    Interlocked.Increment(ref saves);
+                }
+            }
             catch (Exception e) { error = e; }
-        });
-        for (var i = 0; i < 10_000; i++) c.SelectBackdrop(i % 2 == 0 ? A : B);
+        }) { IsBackground = true };
+        saver.Start();
+        Assert.True(started.Wait(TimeSpan.FromSeconds(10)));
+        var selects = 0;
+        while (selects < 10_000 || Volatile.Read(ref saves) < 200)   // real overlap: both sides run many times
+            c.SelectBackdrop(selects++ % 2 == 0 ? A : B);
         Volatile.Write(ref stop, true);
-        saver.Wait();
+        saver.Join();
         Assert.Null(error);
+        Assert.True(saves >= 200);
         Assert.Contains(Json(c.Backdrops[A]), known);
         Assert.Contains(Json(c.Backdrops[B]), known);
     }
@@ -361,7 +376,7 @@ public sealed class ConfigurationPerBackdropTests
     public void ImagePath_AssignedOnlyInsideConfiguration()
     {
         var root = Path.Combine(RepoPaths.Root(), "Milieu");
-        var pattern = new Regex(@"(\.|\b)ImagePath\s*=(?!=)");
+        var pattern = new Regex(@"(\.|\b)ImagePath\s*(\?\?)?=(?![=>])");   // also ??=, never == or =>
         var hits = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
             .Where(f => !f.EndsWith($"{Path.DirectorySeparatorChar}Configuration.cs"))
@@ -381,5 +396,25 @@ public sealed class ConfigurationPerBackdropTests
         Assert.NotNull(c.Sky);
         Assert.Equal(20000f, c.Backdrops[@"C:\x.png"].Sky.Radius);
         Assert.Equal(10f, c.Backdrops[@"C:\x.png"].Room.Radius);
+    }
+    [Fact] // [AC-per-backdrop-settings-10] [EDGE-per-backdrop-settings-9]
+    public void Clamp_NullBackdropsMap_DoesNotThrow_Seeds()
+    {
+        var c = JsonConvert.DeserializeObject<Configuration>("{\"Version\":5,\"Backdrops\":null,\"UserImages\":[\"C:\\\\x.png\"]}", Dalamud)!;
+        c.Migrate("config");
+        c.Clamp();
+        Assert.Equal(1 + BackdropPins.Count, c.Backdrops.Count);
+        Assert.All(c.Backdrops.Values, e => Assert.Equal(Json(c.CaptureLive()), Json(e)));
+    }
+
+    [Fact] // [AC-per-backdrop-settings-3]
+    public void AddUserImage_UnparseableStoredPath_FallsBackToCaseInsensitiveEquality()
+    {
+        var bad = "C:\\pics\\bad\0name.png";
+        var c = new Configuration { UserImages = [bad] };
+        Assert.Equal(bad, c.AddUserImage(bad.ToUpperInvariant().Replace("\0", "\0")));
+        Assert.Single(c.UserImages);
+        Assert.Equal(@"C:\pics\ok.png", c.AddUserImage(@"C:\pics\ok.png"));
+        Assert.Equal(2, c.UserImages.Count);
     }
 }
