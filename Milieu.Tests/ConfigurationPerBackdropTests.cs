@@ -342,8 +342,8 @@ public sealed class ConfigurationPerBackdropTests
         saver.Start();
         Assert.True(started.Wait(TimeSpan.FromSeconds(10)));
         var selects = 0;
-        while (selects < 10_000 || Volatile.Read(ref saves) < 200)   // real overlap: both sides run many times
-            c.SelectBackdrop(selects++ % 2 == 0 ? A : B);
+        while ((selects < 10_000 || Volatile.Read(ref saves) < 200) && saver.IsAlive)   // real overlap; a crashed saver ends the loop
+            c.SelectBackdrop(++selects % 50 == 0 ? $@"C:\pics\new{selects}.png" : selects % 2 == 0 ? A : B);   // new keys grow the map mid-save
         Volatile.Write(ref stop, true);
         saver.Join();
         Assert.Null(error);
@@ -412,7 +412,7 @@ public sealed class ConfigurationPerBackdropTests
     {
         var bad = "C:\\pics\\bad\0name.png";
         var c = new Configuration { UserImages = [bad] };
-        Assert.Equal(bad, c.AddUserImage(bad.ToUpperInvariant().Replace("\0", "\0")));
+        Assert.Equal(bad, c.AddUserImage(bad.ToUpperInvariant()));
         Assert.Single(c.UserImages);
         Assert.Equal(@"C:\pics\ok.png", c.AddUserImage(@"C:\pics\ok.png"));
         Assert.Equal(2, c.UserImages.Count);
