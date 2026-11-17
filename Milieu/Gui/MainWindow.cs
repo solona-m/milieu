@@ -196,8 +196,8 @@ public sealed class MainWindow : Window, IDisposable
         else ImGui.TextDisabled(d.ProjectionStatus());
 
         ImGui.Separator();
-        Slider("Horizontal repeat", "HorizontalRepeat", config.HorizontalRepeat, Configuration.RepeatRange.Min, Configuration.RepeatRange.Max, v => config.HorizontalRepeat = v);
-        Slider("Vertical repeat", "VerticalRepeat", config.VerticalRepeat, Configuration.RepeatRange.Min, Configuration.RepeatRange.Max, v => config.VerticalRepeat = v);
+        Slider("Horizontal repeat", "HorizontalRepeat", config.HorizontalRepeat, Configuration.RepeatRange.Min, Configuration.RepeatRange.Max, v => config.HorizontalRepeat = BackdropViewModel.SnapRepeat(v));
+        Slider("Vertical repeat", "VerticalRepeat", config.VerticalRepeat, Configuration.RepeatRange.Min, Configuration.RepeatRange.Max, v => config.VerticalRepeat = BackdropViewModel.SnapRepeat(v));
         var flip = config.FlipHorizontal;
         if (ImGui.Checkbox("Flip horizontally", ref flip))
         {
