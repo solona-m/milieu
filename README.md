@@ -36,7 +36,8 @@ The window shows a grid of scenes. **Click a scene to show it**; there is no Sho
 - **Add more…** adds your own `.hdr`, `.png` or `.jpg` as a tile and shows it. Your images are converted on your PC
   the first time (an 8K image takes a while), then cached; their tile gets a preview once converted. **×** removes a
   tile from the grid without touching the file.
-- **Sky dome / Room dome** picks the dome. Each remembers its own settings.
+- **Sky dome / Room dome** picks the dome. Each backdrop remembers its own settings (dome, look, lighting, sun and
+  night); only **Texture size** and **Visible to** are shared.
 
 **Settings** (collapsed by default; the plugin's settings button in `/xlplugins` opens it expanded):
 
