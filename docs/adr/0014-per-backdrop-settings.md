@@ -53,5 +53,9 @@ scene lighting, and sun and night.
 - Clicking an undownloaded or missing tile now hides the current backdrop, where it used to stay up. Under a PSync delivery
   an undownloaded click redraws pairs twice (the hide, then the show). An unpublished or failing scene leaves nothing shown
   until another tile is clicked.
+- Accepted edge: when Show() is blocked (Penumbra mods disabled or no Base collection) while a local dome is up, a tile
+  click leaves the old dome drawn with the new selection's settings until Show succeeds; nothing persisted is crossed.
+- The first save writes `Backdrops` with a generic `$type` naming a plugin type; Dalamud resolves that shape for other
+  plugins (Brio stores `Dictionary<string, List<Brio type>>`). The restart check on build 56 confirms it for Milieu.
 - The README line about Sky/Room remembering their own settings is stale until the testing-6 release.
 - `Configuration` grows by the selection and store bookkeeping; a separate store helper is a behaviour-free follow-up.
