@@ -158,7 +158,7 @@ public sealed unsafe class SunOffPatchTests : IDisposable
         AllPaths();
         // Tiered JIT can re-compile these methods mid-run and charge a few bytes to this thread once, so the paths pass if
         // any of three rounds allocates nothing. Each round is at least twice as long as everything before it, so a buffer
-        // that grows by up to 3x resizes inside every round, and anything allocating at least every 6000 calls shows in the last.
+        // that grows by up to about 3x resizes inside every round, and anything allocating at least every 1000 calls shows in every round.
         int[] rounds = [1000, 2000, 6000];
         var allocated = new long[rounds.Length];
         for (var round = 0; round < rounds.Length; round++)
