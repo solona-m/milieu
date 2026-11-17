@@ -165,6 +165,11 @@ unticking scene lighting darkens the character and re-ticking it relights it abo
 **Release gate.** Flip `LocalLightsAvailable()` to false before tagging if the positive control fails or local dome
 lights regress.
 
+**Tech debt.** `BackdropController` grows by the local light state (pending and shown plans, the GPose flags, the latch and
+the edge and level-check bookkeeping), mirroring the synced light state beside it; extracting a small `LocalLightState` is
+a behaviour-free follow-up. The build backstop (a lit build that fails is rebuilt unlit) is unreachable with valid
+settings and kept as defence in depth, untested.
+
 UNVERIFIED in game (local domes):
 
 12. Brightness parity with a synced dome at the same strength (the owner judges; no tuning).

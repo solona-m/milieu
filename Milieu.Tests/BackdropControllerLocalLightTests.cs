@@ -373,7 +373,7 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         Assert.Null(c.Lit);
     }
 
-    [Fact] // [EDGE-local-dome-lights-7]
+    [Fact] // [AC-local-dome-lights-6] [EDGE-local-dome-lights-7]
     public void LocalRigLoadThrows_DomeShownWithoutLights_Warning()
     {
         rigThrows = true;
@@ -382,12 +382,13 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         Assert.Contains(log.Lines, l => l.Text.Contains("Could not load the light rig"));
     }
 
-    [Fact] // [EDGE-local-dome-lights-8]
+    [Fact] // [AC-local-dome-lights-6] [EDGE-local-dome-lights-8]
     public void HugeHeightOffset_DomeShownWithoutLights_GPoseEnterExit_NoSet()
     {
         config.Current.HeightOffset = 2000f;
         Show();
         Assert.Equal(0, Efcts());
+        Assert.Single(log.Lines, l => l.Text.Contains("too far from the dome"));
         var sets = SetCalls;
         GPose(true);
         GPose(false);
@@ -454,7 +455,7 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         Assert.Equal(3, spawner.Spawns.Count);
     }
 
-    [Fact] // [EDGE-local-dome-lights-11]
+    [Fact] // [AC-local-dome-lights-6] [EDGE-local-dome-lights-11]
     public void GameEndsLitDomeEarly_LatchesAndRebuildsUnlit_WarningLogged()
     {
         Show();
@@ -602,7 +603,7 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         Assert.Equal((sets, spawns), (SetCalls, spawner.Spawns.Count));
     }
 
-    [Fact] // [EDGE-local-dome-lights-27]
+    [Fact] // [AC-local-dome-lights-6] [EDGE-local-dome-lights-27]
     public void SwapSetRefusedInGPose_OneAttemptPerEdge()
     {
         Show();
@@ -619,7 +620,7 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         Assert.Equal(sets + 2, SetCalls);
     }
 
-    [Fact] // [EDGE-local-dome-lights-27]
+    [Fact] // [AC-local-dome-lights-6] [EDGE-local-dome-lights-27]
     public void SwapResolveTimeout_OneAttemptPerEdge()
     {
         Show();
@@ -688,5 +689,66 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         GPose(false);
         Assert.Equal(sets, SetCalls);
         Assert.False(c.LocalLightsActive);
+    }
+    [Fact] // [AC-local-dome-lights-4]
+    public void ToggleAndFillChanges_GoThroughLightChange()
+    {
+        Create(fills: true);
+        Show();
+        Assert.Equal(3, Efcts());   // key + 2 fills (default fill count 2)
+        var sets = SetCalls;
+        LightingViewModel.LightChange(config, cfg => cfg.FillLightCount = 1, () => { }, c.RequestLightRebuild)();
+        Advance(600);
+        c.Tick();
+        Assert.Equal(sets + 1, SetCalls);
+        Assert.Equal(2, Efcts());
+    }
+
+    [Fact] // [AC-local-dome-lights-6] [EDGE-local-dome-lights-27]
+    public void SwapBlockedByPenumbra_OneAttemptPerEdge()
+    {
+        Show();
+        pen.State = PenumbraState.ModsDisabled;
+        var (sets, refreshes) = (SetCalls, pen.Refreshes);
+        game.IsGPosing = true;
+        c.Tick();
+        for (var i = 0; i < 100; i++) Advance(200);   // 20 s
+        Assert.Equal(sets, SetCalls);
+        Assert.InRange(pen.Refreshes - refreshes, 1, 3);   // one attempt (plus at most two periodic refreshes)
+        Assert.True(c.IsDrawn);
+    }
+
+    [Fact] // [AC-local-dome-lights-6] [EDGE-local-dome-lights-27]
+    public void SwapSpawnFails_OneAttemptPerEdge()
+    {
+        Show();
+        spawner.ReturnNull = true;
+        var sets = SetCalls;
+        game.IsGPosing = true;
+        c.Tick();
+        for (var i = 0; i < 100; i++) Advance(200);
+        Assert.Equal(sets + 1, SetCalls);
+        Assert.Equal(1, spawner.Calls.Count(x => x == "SpawnRefused"));
+        Assert.True(c.IsDrawn);
+    }
+
+    [Fact] // [EDGE-local-dome-lights-11]
+    public void GameEndsLitDomeEarly_ThenUnlitTwice_CountingHides()
+    {
+        spawner.Clock = () => now;
+        Show();
+        spawner.GameFrees(spawner.Spawns[^1].Handle);   // lit, early: latched, rebuilt unlit
+        c.Tick();
+        c.Tick();
+        Assert.Equal(0, Efcts());
+        spawner.GameFrees(spawner.Spawns[^1].Handle);   // unlit, early: the second early removal
+        c.Tick();
+        for (var i = 0; i < BackdropController.RespawnDelayFrames; i++) c.Tick();
+        Assert.Equal(BackdropState.Shown, c.State);
+        spawner.GameFrees(spawner.Spawns[^1].Handle);   // the third: the guard hides it
+        c.Tick();
+        Assert.Equal(BackdropState.Hidden, c.State);
+        Assert.Equal(MessageKey.GameEndedVfx, c.Status.Message.Key);
+        Assert.Null(c.LocalLights);
     }
 }

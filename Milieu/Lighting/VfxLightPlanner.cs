@@ -8,9 +8,10 @@ namespace Milieu.Lighting;
 
 /// <summary>
 /// The VFX lights planned for a dome (synced, or local outside GPose): the lights, whether a shadowed key leads the list (the rig's, or the stand-in
-/// for an image with no sun), the number of fills, and whether the rig was estimated.
+/// for an image with no sun), the number of fills, and whether the rig was estimated. <see cref="OutOfBounds"/>: a local plan
+/// dropped its lights because a position would be beyond the builder's bound (logged once per build).
 /// </summary>
-internal sealed record VfxLightPlan(IReadOnlyList<DomeLight> Lights, bool HasKey, int Fills, bool Estimated)
+internal sealed record VfxLightPlan(IReadOnlyList<DomeLight> Lights, bool HasKey, int Fills, bool Estimated, bool OutOfBounds = false)
 {
     public static readonly VfxLightPlan Empty = new([], false, 0, false);
 
@@ -101,7 +102,7 @@ internal static class VfxLightPlanner
         foreach (var l in lights)
             if (!float.IsFinite(l.Position.X) || !float.IsFinite(l.Position.Y) || !float.IsFinite(l.Position.Z)
                 || MathF.Max(MathF.Abs(l.Position.X), MathF.Max(MathF.Abs(l.Position.Y), MathF.Abs(l.Position.Z))) > DomeAvfxBuilder.MaxLightPosition)
-                return VfxLightPlan.Empty with { Estimated = plan.Estimated };
+                return VfxLightPlan.Empty with { Estimated = plan.Estimated, OutOfBounds = true };
         return plan with { Lights = lights };
     }
 

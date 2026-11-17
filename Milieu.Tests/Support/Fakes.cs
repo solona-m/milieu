@@ -56,9 +56,13 @@ public sealed class FakeSpawner : IVfxSpawner
     public Func<DateTime> Clock = () => DateTime.UtcNow;
     public event Action<VfxHandle>? GameRemoved;
 
+    /// <summary>The next spawns return null (the game refused), without recording a spawn.</summary>
+    public bool ReturnNull;
+
     public VfxHandle? Spawn(string gamePath, Vector3 position, float yawRadians)
     {
         if (!Available) throw new InvalidOperationException("native call while unavailable");
+        if (ReturnNull) { Calls.Add("SpawnRefused"); return null; }
         var h = new VfxHandle(Spawns.Count + 1, gamePath, Clock());
         Spawns.Add((gamePath, position, yawRadians, h));
         Calls.Add("Spawn");

@@ -812,6 +812,8 @@ public sealed class BackdropController : Gui.IGridController
         var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, null,
                                   config.Current.Radius, config.Current.HeightOffset);
         var lights = PlanLocalLights(tex, build, gpose);
+        if (lights.OutOfBounds)
+            log.Information("[Milieu] The backdrop's own lights would sit too far from the dome at this height; showing it without them.");
         byte[] BuildWith(VfxLightPlan l) => DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, build.Radius, build.VerticalScale,
             build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY, Lights: l.Lights.Count > 0 ? l.Lights : null));
         try
@@ -819,7 +821,8 @@ public sealed class BackdropController : Gui.IGridController
             try { avfx = BuildWith(lights); }
             catch (Exception e) when (lights.Lights.Count > 0 && e is ArgumentException or InvalidDataException)
             {
-                // The planner keeps lights within the builder's bounds; this is a backstop: the dome is shown without lights.
+                // Defence in depth, unreachable with valid settings: the planner keeps positions within the builder's bound and
+                // every other light value is planner-made and clamped. If it ever fires, the dome is shown without lights.
                 log.Warning("[Milieu] Could not build the dome VFX with its own lights; building it without them: " + LogText.Describe(e, cache.Root));
                 lights = VfxLightPlan.Empty with { Estimated = lights.Estimated };
                 avfx = BuildWith(lights);
