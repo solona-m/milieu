@@ -168,7 +168,9 @@ lights regress.
 **Tech debt.** `BackdropController` grows by the local light state (pending and shown plans, the GPose flags, the latch and
 the edge and level-check bookkeeping), mirroring the synced light state beside it; extracting a small `LocalLightState` is
 a behaviour-free follow-up. The build backstop (a lit build that fails is rebuilt unlit) is unreachable with valid
-settings and kept as defence in depth, untested.
+settings and kept as defence in depth, untested. Accepted edge: if the unlit rebuild after a latch fails (Penumbra
+refuses), the shown lit file respawns from Suspended until the next successful rebuild; native lights stay off, and further
+early removals run on the usual counter.
 
 UNVERIFIED in game (local domes):
 

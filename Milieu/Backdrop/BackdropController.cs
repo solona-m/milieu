@@ -721,7 +721,10 @@ public sealed class BackdropController : Gui.IGridController
         readyFrames = 0;
         // A lit local dome the game ended early: the backdrop's own lights are latched off (until lighting is ticked off and
         // on) and the dome is rebuilt without them, rather than respawning the lit file.
-        if (early && LocalLights is { Lights.Count: > 0 } && texture != null && LiveDelivery == DeliveryMode.Local && !SyncedLive)
+        // Only while the config is local too: a local dome left up under a synced config must never be re-registered here
+        // (that would skip Show's teardown and the first-upload gate); the counting above handles it as before.
+        if (early && LocalLights is { Lights.Count: > 0 } && texture != null && LiveDelivery == DeliveryMode.Local && !SyncedLive
+            && EffectiveDelivery == DeliveryMode.Local)
         {
             if (!localLightsLatched)
                 log.Warning("[Milieu] The game ended the backdrop with its own lights right after it was shown; showing it without them until scene lighting is ticked off and on.");

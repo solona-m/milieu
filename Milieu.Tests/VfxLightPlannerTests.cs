@@ -361,4 +361,20 @@ public class VfxLightPlannerTests
 
     [Fact] // [EDGE-local-dome-lights-6]
     public void PlanLocal_StrengthZero_Empty() => Assert.Empty(VfxLightPlanner.PlanLocal(Rig(), false, 1, 2, 1, Sky, 1.6f, 0f, 2).Lights);
+    [Fact] // [EDGE-local-dome-lights-8]
+    public void PlanLocal_BoundsMatchBuilder_AtTheLimit()
+    {
+        var rig = SceneLightingTests.RigE;   // estimated, so Estimated must survive the drop
+        var keyY = VfxLightPlanner.PlanLocal(rig, false, 1, 2, 1, Sky, 0f, 1f, 0).Lights[0].Position.Y;
+        // The height that puts the key exactly at -MaxLightPosition is accepted (and builds); a little past it drops the lights.
+        var atLimit = keyY + DomeAvfxBuilder.MaxLightPosition;
+        var ok = VfxLightPlanner.PlanLocal(rig, false, 1, 2, 1, Sky, atLimit - 0.01f, 1f, 0);
+        Assert.Single(ok.Lights);
+        Assert.False(ok.OutOfBounds);
+        DomeAvfxBuilder.Build(new DomeAvfxParams("bgcommon/milieu/aabbccddeeff0011/sky.atex", Sky, 1, 2, 1, false, 1, Lights: ok.Lights));
+        var past = VfxLightPlanner.PlanLocal(rig, false, 1, 2, 1, Sky, atLimit + 0.5f, 1f, 0);
+        Assert.Empty(past.Lights);
+        Assert.True(past.OutOfBounds);
+        Assert.True(past.Estimated);
+    }
 }

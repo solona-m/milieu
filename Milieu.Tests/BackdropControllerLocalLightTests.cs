@@ -46,6 +46,7 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         config.ImagePath = dir.File("pano.hdr");
         config.SyncUploadNoticeShown = true;
         config.Delivery = DeliveryMode.Local;
+        spawner.Clock = () => now;   // "early" removal measured on the test clock
         Create();
     }
 
@@ -768,5 +769,18 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         Assert.Equal(sets, SetCalls);
         Assert.True(c.IsDrawn);
         Assert.Equal(1, c.Lit!.VfxLightCount);
+    }
+    [Fact] // [EDGE-local-dome-lights-11] [EDGE-local-dome-lights-13]
+    public void GameEndsLitDomeEarly_UnderSyncedConfig_NoSyncedRegistration()
+    {
+        config.SyncUploadNoticeShown = false;
+        Show();
+        config.Delivery = DeliveryMode.MadBirdRing;   // saved but not applied: the local dome stays up
+        spawner.GameFrees(spawner.Spawns[^1].Handle);
+        c.Tick();
+        c.Tick();
+        Assert.Empty(pen.SyncSets);
+        Assert.True(c.LocalLightsActive);             // not latched: the plain counting handled it
+        Assert.Equal(BackdropState.Suspended, c.State);
     }
 }
