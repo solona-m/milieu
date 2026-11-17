@@ -81,6 +81,7 @@ public sealed class SceneLighting
     private Latch latch;
     private string? readFailedPath;
     private bool wasEnabled;
+    private int seenGeneration;
     private int settle;
     private int stable;
     private bool sentinelOwned;   // set by this instance and not yet cleared
@@ -113,6 +114,7 @@ public sealed class SceneLighting
         this.delivery = delivery;
         this.run = run ?? (f => Task.Run(f));
         wasEnabled = config.SceneLighting;
+        seenGeneration = config.SelectionGeneration;
         if (sentinel.WasSetAtStartup)
         {
             latch = Latch.CrashGuard;
@@ -140,7 +142,7 @@ public sealed class SceneLighting
 
         // (a) The user's off→on: every latch and the sentinel are cleared (the retry).
         var enabled = config.SceneLighting;
-        if (enabled && !wasEnabled)
+        if (enabled && !wasEnabled && config.SelectionGeneration == seenGeneration)
         {
             latch = Latch.None;
             readFailedPath = null;
@@ -148,6 +150,7 @@ public sealed class SceneLighting
             sentinelOwned = false;
         }
         wasEnabled = enabled;
+        seenGeneration = config.SelectionGeneration;   // a backdrop switch that ticks the flag isn't a retry (docs/adr/0014)
 
         // (b) Everything that must hold for lights; otherwise none, now.
         var current = lit();

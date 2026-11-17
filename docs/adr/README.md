@@ -43,3 +43,4 @@ real decision.]
 - [0011](0011-synced-scene-lighting-through-vfx-lights.md) Synced scene lighting through VFX lights
 - [0012](0012-night-while-shown.md) Night while the backdrop is shown
 - [0013](0013-sun-off-while-shown.md) Sun off while the backdrop is shown to you only
+- [0014](0014-per-backdrop-settings.md) Settings remembered per backdrop

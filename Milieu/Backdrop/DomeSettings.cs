@@ -55,6 +55,22 @@ public sealed class DomeSettings
 
     public bool ProjectionInactive => GroundProjection && FloorY() == null;
 
+    /// <summary>A copy with all five values (per-backdrop settings, docs/adr/0014).</summary>
+    public DomeSettings Copy() => new()
+    {
+        Radius = Radius, VerticalScale = VerticalScale, HeightOffset = HeightOffset, YawDegrees = YawDegrees, GroundProjection = GroundProjection,
+    };
+
+    /// <summary>Takes all five values from <paramref name="other"/>, keeping this instance (a reference held elsewhere follows).</summary>
+    public void CopyFrom(DomeSettings other)
+    {
+        Radius = other.Radius;
+        VerticalScale = other.VerticalScale;
+        HeightOffset = other.HeightOffset;
+        YawDegrees = other.YawDegrees;
+        GroundProjection = other.GroundProjection;
+    }
+
     public void Clamp(DomeMode mode)
     {
         var d = mode == DomeMode.Sky ? SkyDefaults() : RoomDefaults();

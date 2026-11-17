@@ -94,6 +94,7 @@ public sealed class NightWhileShown
     private bool crashGuard;
     private bool notInThisZone;
     private bool wasEnabled;
+    private int seenGeneration;
     private bool tornDown;
     private int stable;
 
@@ -109,6 +110,7 @@ public sealed class NightWhileShown
         this.isUnloading = isUnloading;
         this.utcNow = utcNow ?? (() => DateTime.UtcNow);
         wasEnabled = config.NightWhileShown;
+        seenGeneration = config.SelectionGeneration;
         if (sentinel.WasSetAtStartup)
         {
             crashGuard = true;
@@ -122,7 +124,7 @@ public sealed class NightWhileShown
     {
         if (tornDown || isUnloading()) return;
         var on = config.NightWhileShown;
-        if (on && !wasEnabled)
+        if (on && !wasEnabled && config.SelectionGeneration == seenGeneration)
         {
             // Off → on: the explicit retry.
             unavailable = false;
@@ -131,6 +133,7 @@ public sealed class NightWhileShown
             sentinel.Clear();
         }
         wasEnabled = on;
+        seenGeneration = config.SelectionGeneration;   // a backdrop switch that ticks the flag isn't a retry (docs/adr/0014)
 
         if (restorePending && game.IsReady)
         {

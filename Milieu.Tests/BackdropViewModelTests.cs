@@ -219,4 +219,14 @@ public class BackdropViewModelTests
         c.Delivery = Milieu.Sync.DeliveryMode.Cushion;
         Assert.EndsWith(BackdropViewModel.CushionConflictSentence, vm.DeliveryHint);
     }
+    [Fact] // [AC-per-backdrop-settings-9]
+    public void SettingsScopeNote_PerBackdropOrNone()
+    {
+        Assert.Equal("Each backdrop remembers its own settings, except Texture size and Visible to.", BackdropViewModel.PerBackdropNote);
+        Assert.Equal("No backdrop selected: images you add later start from these settings.", BackdropViewModel.NoneSelectedNote);
+        var status = new BackdropStatus(BackdropState.Hidden, 0, StatusMessage.None, []);
+        Assert.Equal(BackdropViewModel.NoneSelectedNote, new BackdropViewModel(status, MessageKey.None, new Configuration()).SettingsScopeNote);
+        Assert.Equal(BackdropViewModel.PerBackdropNote,
+                     new BackdropViewModel(status, MessageKey.None, new Configuration { ImagePath = "bundled:moon" }).SettingsScopeNote);
+    }
 }

@@ -177,6 +177,9 @@ public sealed class MainWindow : Window, IDisposable
     {
         if (grid.ConsumeSettingsExpand()) ImGui.SetNextItemOpen(true, ImGuiCond.Always);
         if (!ImGui.CollapsingHeader("Settings")) return;
+        ImGui.PushTextWrapPos(0);
+        ImGui.TextDisabled(vm.SettingsScopeNote);
+        ImGui.PopTextWrapPos();
 
         var d = config.Current;
         var (rMin, rMax) = DomeSettings.RadiusRange(config.Mode);

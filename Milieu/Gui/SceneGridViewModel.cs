@@ -119,14 +119,18 @@ public sealed class SceneGridViewModel(Configuration config, Action save, Action
         };
     }
 
-    /// <summary>A tile was clicked: select it, persist, and show (downloading first if needed). Posted.</summary>
+    /// <summary>
+    /// A tile was clicked: select it (its remembered settings become the working copy, docs/adr/0014), persist, and show.
+    /// A scene still downloading or a missing file hides the current backdrop, so the drawn dome never carries another
+    /// backdrop's settings; the scene shows when its download completes. Posted.
+    /// </summary>
     public void Click(Tile tile)
     {
         switch (tile.Kind)
         {
             case TileKind.None:
                 pendingShow = null;
-                post(() => { config.ImagePath = null; save(); controller.Hide(); });
+                post(() => { config.SelectBackdrop(null); save(); controller.Hide(); });
                 return;
             case TileKind.Bundled:
             {
@@ -134,12 +138,12 @@ public sealed class SceneGridViewModel(Configuration config, Action save, Action
                 if (!downloads.IsDownloaded(stem))
                 {
                     pendingShow = stem;
-                    post(() => { config.ImagePath = tile.Id; save(); downloads.Request(stem); });
+                    post(() => { config.SelectBackdrop(tile.Id); save(); controller.Hide(); downloads.Request(stem); });
                     return;
                 }
                 pendingShow = null;
                 if (tile.Selected && !NeedsShow()) return;
-                post(() => { config.ImagePath = tile.Id; save(); controller.Show(); });
+                post(() => { config.SelectBackdrop(tile.Id); save(); controller.Show(); });
                 return;
             }
             default:
@@ -148,11 +152,18 @@ public sealed class SceneGridViewModel(Configuration config, Action save, Action
                 var path = tile.Id;
                 if (!fileExists(path))
                 {
-                    post(() => { config.ImagePath = path; save(); controller.ReportStatus(StatusMessage.Of(MessageKey.FileMissing, ("file", Path.GetFileName(path)))); });
+                    // After the hide, which clears the message.
+                    post(() =>
+                    {
+                        config.SelectBackdrop(path);
+                        save();
+                        controller.Hide();
+                        controller.ReportStatus(StatusMessage.Of(MessageKey.FileMissing, ("file", Path.GetFileName(path))));
+                    });
                     return;
                 }
                 if (tile.Selected && !NeedsShow()) return;
-                post(() => { config.ImagePath = path; save(); controller.Show(); });
+                post(() => { config.SelectBackdrop(path); save(); controller.Show(); });
                 return;
             }
         }
@@ -167,9 +178,7 @@ public sealed class SceneGridViewModel(Configuration config, Action save, Action
         pendingShow = null;
         post(() =>
         {
-            var existing = config.UserImages.FirstOrDefault(p => string.Equals(Path.GetFullPath(p), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase));
-            if (existing == null) config.UserImages.Add(path);
-            config.ImagePath = existing ?? path;
+            config.SelectBackdrop(config.AddUserImage(path));
             save();
             controller.Show();
         });
@@ -181,9 +190,7 @@ public sealed class SceneGridViewModel(Configuration config, Action save, Action
         if (tile.Kind != TileKind.User) return;
         post(() =>
         {
-            config.UserImages.RemoveAll(p => string.Equals(p, tile.Id, StringComparison.OrdinalIgnoreCase));
-            var wasSelected = string.Equals(config.ImagePath, tile.Id, StringComparison.OrdinalIgnoreCase);
-            if (wasSelected) config.ImagePath = null;
+            var wasSelected = config.RemoveUserImage(tile.Id);   // its settings are forgotten too
             save();
             if (wasSelected) controller.Hide();
         });

@@ -88,7 +88,7 @@ public class ConfigurationTests
         Assert.Equal(1.6f, c.Room.HeightOffset);
         Assert.True(c.Sky.GroundProjection);
         Assert.True(c.Room.GroundProjection);
-        Assert.Equal(4, c.Version);
+        Assert.Equal(5, c.Version);
         Assert.Empty(c.UserImages);
     }
 
@@ -103,7 +103,7 @@ public class ConfigurationTests
         Assert.Equal(1.6f, untouched.Sky.HeightOffset);
         Assert.True(untouched.Room.GroundProjection);
         Assert.True(untouched.Sky.GroundProjection);
-        Assert.Equal(4, untouched.Version);
+        Assert.Equal(5, untouched.Version);
 
         var userSet = V1("{\"Version\":1,\"Sky\":{\"Radius\":20000,\"VerticalScale\":1,\"HeightOffset\":250,\"YawDegrees\":30}}");
         userSet.Migrate(@"C:\cfg");
@@ -117,7 +117,7 @@ public class ConfigurationTests
         v2.Migrate(@"C:\cfg");
         Assert.Equal(1.6f, v2.Sky.HeightOffset);
         Assert.True(v2.Sky.GroundProjection);
-        Assert.Equal(4, v2.Version);
+        Assert.Equal(5, v2.Version);
 
         // A v3 config with a height the user chose keeps it.
         var v3 = new Configuration { Version = 3 };
@@ -248,7 +248,7 @@ public class ConfigurationTests
         var old = JsonConvert.DeserializeObject<Configuration>("{\"Version\":4,\"ImagePath\":\"p.hdr\",\"Brightness\":0.5}")!;
         old.Migrate("config");
         old.Clamp();
-        Assert.Equal(4, old.Version);
+        Assert.Equal(5, old.Version);
         Assert.Equal(Configuration.CurrentVersion, old.Version);
         Assert.True(old.SceneLighting);
         Assert.Equal(1f, old.LightStrength);
@@ -265,8 +265,8 @@ public class ConfigurationTests
     {
         var old = JsonConvert.DeserializeObject<Configuration>("{\"Version\":4,\"SceneLighting\":true,\"LightStrength\":1.0}")!;
         Assert.False(old.NightWhileShown);
-        Assert.Equal(4, old.Version);
-        Assert.Equal(4, Configuration.CurrentVersion);
+        Assert.Equal(4, old.Version);   // as read; Migrate's v5 step bumps it (per-backdrop settings)
+        Assert.Equal(5, Configuration.CurrentVersion);
         var on = new Configuration { NightWhileShown = true };
         Assert.True(JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(on))!.NightWhileShown);
     }
@@ -277,7 +277,7 @@ public class ConfigurationTests
         Assert.True(new Configuration().SunOffWhileShown);
         var old = JsonConvert.DeserializeObject<Configuration>("{\"Version\":4,\"SceneLighting\":true,\"NightWhileShown\":false}")!;
         Assert.True(old.SunOffWhileShown);
-        Assert.Equal(4, Configuration.CurrentVersion);
+        Assert.Equal(5, Configuration.CurrentVersion);
         var off = new Configuration { SunOffWhileShown = false };
         Assert.False(JsonConvert.DeserializeObject<Configuration>(JsonConvert.SerializeObject(off))!.SunOffWhileShown);
     }

@@ -257,7 +257,9 @@ public sealed class FakeGridController : Milieu.Gui.IGridController
     public float Progress { get; set; }
     public readonly List<string> Calls = [];
     public StatusMessage? Reported;
-    public void Show() => Calls.Add("Show");
+    /// <summary>Optional: runs at each Show, to snapshot state at that moment.</summary>
+    public Action? OnShow;
+    public void Show() { OnShow?.Invoke(); Calls.Add("Show"); }
     public void Hide() => Calls.Add("Hide");
     public void ReportStatus(StatusMessage message) { Calls.Add("Report"); Reported = message; }
 }

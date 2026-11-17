@@ -350,4 +350,18 @@ public class NightWhileShownTests
         Assert.False(found.IsSet);
         Assert.Equal(NightStatus.Waiting, n.Status);
     }
+    [Fact] // [AC-per-backdrop-settings-8] [EDGE-per-backdrop-settings-21]
+    public void SelectionChangeOffToOn_KeepsCrashGuard_UserToggleStillRetries()
+    {
+        config.NightWhileShown = false;
+        n = Make(new FakeSentinel(setAtStartup: true));
+        Tick();
+        BackdropSettingsTests.SwitchTo(config, @"C:\pics\b.hdr", e => e.NightWhileShown = true);
+        Tick(); Tick();
+        Assert.Equal(NightStatus.CrashGuard, n.Status);
+        Assert.Empty(env.Writes);
+        config.NightWhileShown = false; Tick();
+        config.NightWhileShown = true; Tick();
+        Assert.Equal(NightStatus.On, n.Status);
+    }
 }

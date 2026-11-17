@@ -497,4 +497,19 @@ public sealed class SunOffTests : IDisposable
         Assert.Equal(expected, SunOff.LocalDomeDrawn(new LitBackdrop("x", default, synced), d));
         Assert.False(SunOff.LocalDomeDrawn(null, d));
     }
+    [Fact] // [AC-per-backdrop-settings-8] [EDGE-per-backdrop-settings-21]
+    public void SelectionChangeOffToOn_KeepsCrashGuard_UserToggleStillRetries()
+    {
+        config.SunOffWhileShown = false;
+        sentinel = new FakeSentinel(setAtStartup: true);
+        s = Make();
+        s.Tick();
+        BackdropSettingsTests.SwitchTo(config, "pano.jpg", e => e.SunOffWhileShown = true);
+        s.Tick(); s.Tick();
+        Assert.Equal(SunOffStatus.CrashGuard, s.Status);
+        Assert.Equal(0, sw.Installs);
+        config.SunOffWhileShown = false; s.Tick();
+        config.SunOffWhileShown = true; s.Tick();
+        Assert.Equal(1, sw.Installs);
+    }
 }

@@ -1063,4 +1063,33 @@ public sealed class BackdropControllerTests : IDisposable
         c.Tick();
         Assert.Equal(b, c.Lit!.ImagePath);
     }
+    [Theory] // [AC-per-backdrop-settings-5]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ShowAndHide_ClearPendingReconvert(bool show)
+    {
+        var (c, preparer, now) = PerBackdropHarness();
+        c.Show(); c.Tick(); c.Tick();
+        var calls = preparer.Calls;
+        c.RequestReconvert();
+        if (show) c.Show(); else c.Hide();
+        var after = preparer.Calls;
+        for (var i = 0; i < 10; i++) { now.Value += TimeSpan.FromMilliseconds(200); c.Tick(); }
+        Assert.Equal(after, preparer.Calls);   // the queued reconvert never runs
+        Assert.Equal(show ? calls + 1 : calls, after);
+    }
+
+    private sealed class Clock { public DateTime Value = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc); }
+
+    private (BackdropController, KeyedPreparer, Clock) PerBackdropHarness()
+    {
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "milieu-pb-" + Guid.NewGuid().ToString("N")[..8]);
+        var cache = new CacheStore(System.IO.Path.Combine(root, "cache"));
+        var prep = new KeyedPreparer(cache);
+        var clock = new Clock();
+        var cfg = new Configuration { ImagePath = System.IO.Path.Combine(root, "pano.hdr") };
+        var ctl = new BackdropController(new FakeSpawner(), new FakePenumbra(), new FakeGame(), prep, cache, cfg, new FakeLog(),
+                                         run: f => f(), utcNow: () => clock.Value);
+        return (ctl, prep, clock);
+    }
 }

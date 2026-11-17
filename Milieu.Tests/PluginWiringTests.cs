@@ -201,4 +201,14 @@ public sealed class PluginWiringTests : IDisposable
         Plugin.TeardownOrder(null, null, () => order.Add("controller"));
         Assert.Equal(["controller"], order);
     }
+    [Fact] // [AC-per-backdrop-settings-2]
+    public void SaveConfig_StoresWorkingCopyIntoSelectedEntryBeforePersist()
+    {
+        var cfg = new Configuration { UserImages = [@"C:\a.jpg"] };
+        cfg.SelectBackdrop(@"C:\a.jpg");
+        cfg.Brightness = 0.35f;
+        float? persisted = null;
+        Plugin.SaveConfig(cfg, x => persisted = x.Backdrops[@"C:\a.jpg"].Brightness);
+        Assert.Equal(0.35f, persisted);
+    }
 }

@@ -783,4 +783,57 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         Assert.True(c.LocalLightsActive);             // not latched: the plain counting handled it
         Assert.Equal(BackdropState.Suspended, c.State);
     }
+    // ---------------------------------------------------------------- per-backdrop settings (docs/adr/0014)
+
+    [Fact] // [EDGE-per-backdrop-settings-24] [AC-per-backdrop-settings-5]
+    public void BackdropSwitch_UnlitAToLitB_RegistersOnceWithBsLights()
+    {
+        config.UserImages = [config.ImagePath!, dir.File("b.hdr")];
+        config.SceneLighting = false;
+        config.StoreSelected();
+        Show();
+        Assert.Equal(0, Efcts());
+        var sets = SetCalls;
+        BackdropSettingsTests.SwitchTo(config, dir.File("b.hdr"), e => { e.SceneLighting = true; e.LightStrength = 1.5f; });
+        Show();
+        Assert.Equal(sets + 1, SetCalls);
+        Assert.Equal(Expected().Lights, c.LocalLights!.Lights);
+        for (var i = 0; i < 10; i++) Advance(200);   // 2 s
+        Assert.Equal(sets + 1, SetCalls);
+    }
+
+    [Fact] // [AC-per-backdrop-settings-5] [EDGE-per-backdrop-settings-24] [EDGE-per-backdrop-settings-15]
+    public void BackdropSwitch_OneRegistrationWithNewBackdropsLights_NoRebuild()
+    {
+        config.UserImages = [config.ImagePath!, dir.File("b.hdr")];
+        config.StoreSelected();
+        Show();
+        config.LightStrength = 2f;
+        c.RequestLightRebuild();                       // queued for A
+        var sets = SetCalls;
+        BackdropSettingsTests.SwitchTo(config, dir.File("b.hdr"), e => e.LightStrength = 0.5f);
+        Show();
+        for (var i = 0; i < 10; i++) Advance(200);
+        Assert.Equal(sets + 1, SetCalls);              // the queued check compares against B's committed lights
+        Assert.Equal(Expected().Lights, c.LocalLights!.Lights);
+    }
+
+    [Fact] // [AC-per-backdrop-settings-8] [EDGE-per-backdrop-settings-21]
+    public void BackdropSwitch_DoesNotClearLocalLightsLatch_UserToggleStillDoes()
+    {
+        config.UserImages = [config.ImagePath!, dir.File("b.hdr")];
+        Show();
+        spawner.GameFrees(spawner.Spawns[^1].Handle);
+        c.Tick(); c.Tick();
+        Assert.False(c.LocalLightsActive);
+        config.SceneLighting = false;
+        config.StoreSelected();
+        c.Tick();
+        BackdropSettingsTests.SwitchTo(config, dir.File("b.hdr"), e => e.SceneLighting = true);   // off→on by a switch
+        c.Tick();
+        Assert.False(c.LocalLightsActive);
+        config.SceneLighting = false; c.Tick();
+        config.SceneLighting = true; c.Tick();
+        Assert.True(c.LocalLightsActive);
+    }
 }

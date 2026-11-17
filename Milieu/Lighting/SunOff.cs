@@ -54,6 +54,7 @@ public sealed class SunOff
     private bool unavailable;
     private bool crashGuard;
     private bool wasEnabled;
+    private int seenGeneration;
     private bool tornDown;
     private bool sentinelOurs;
     private bool inconclusiveLogged;
@@ -75,6 +76,7 @@ public sealed class SunOff
         this.log = log;
         this.isUnloading = isUnloading;
         wasEnabled = config.SunOffWhileShown;
+        seenGeneration = config.SelectionGeneration;
         if (sentinel.WasSetAtStartup)
         {
             crashGuard = true;
@@ -93,7 +95,7 @@ public sealed class SunOff
         if (isUnloading()) { Drop(); return; }
         sessionTick++;
         var on = config.SunOffWhileShown;
-        if (on && !wasEnabled)
+        if (on && !wasEnabled && config.SelectionGeneration == seenGeneration)
         {
             // Off → on: the explicit retry (an Unavailable latch stays: the game build hasn't changed).
             crashGuard = false;
@@ -101,6 +103,7 @@ public sealed class SunOff
             sentinelOurs = false;
         }
         wasEnabled = on;
+        seenGeneration = config.SelectionGeneration;   // a backdrop switch that ticks the flag isn't a retry (docs/adr/0014)
 
         EvaluateProbe();
 
