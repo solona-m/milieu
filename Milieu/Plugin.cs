@@ -36,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 52;
+    public const int BuildNumber = 53;
 
     private const string CommandName = "/milieu";
 
@@ -121,6 +121,8 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Open the Milieu window. '/milieu off' hides the backdrop.",
         });
+        // Scene lighting runs only in GPose, so the window has to stay usable there.
+        PluginInterface.UiBuilder.DisableGposeUiHide = true;
         PluginInterface.UiBuilder.Draw += windows.Draw;
         PluginInterface.UiBuilder.OpenMainUi += mainWindow.Toggle;
         PluginInterface.UiBuilder.OpenConfigUi += mainWindow.OpenSettings;
