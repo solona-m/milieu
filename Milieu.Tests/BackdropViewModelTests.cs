@@ -22,6 +22,23 @@ public class BackdropViewModelTests
         Assert.Equal("Keep the camera inside the dome for an undistorted view.", BackdropViewModel.RoomHint);
     }
 
+    [Theory]
+    [InlineData(1.95f, 2f)]
+    [InlineData(2.08f, 2f)]
+    [InlineData(1.09f, 1f)]
+    [InlineData(1.1f, 1f)]   // the edge snaps despite float rounding
+    [InlineData(1.9f, 2f)]
+    [InlineData(1.89f, 1.89f)]
+    [InlineData(2.11f, 2.11f)]
+    [InlineData(3.9f, 4f)]
+    [InlineData(1.85f, 1.85f)]
+    [InlineData(2.5f, 2.5f)]
+    [InlineData(0.55f, 0.55f)]
+    [InlineData(0.05f, 0.05f)]   // never snaps to 0
+    [InlineData(0.95f, 1f)]
+    public void SnapRepeat_SnapsOnlyNearWholeNumbers(float value, float expected) =>
+        Assert.Equal(expected, BackdropViewModel.SnapRepeat(value));
+
     [Fact] // [AC-hdri-backdrop-3]
     public void ApplyOf_SingleSwapRouting()
     {
