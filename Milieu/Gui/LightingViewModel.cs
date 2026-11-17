@@ -11,7 +11,9 @@ namespace Milieu.Gui;
 /// Pure state and texts of the "Scene lighting" block in Settings (unit-tested). Drawn only when the kill switch
 /// (Plugin.LightingAvailable) is on; its controls are disabled while the game's light functions are missing.
 /// </summary>
-public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configuration config, bool lightingAvailable, DeliveryMode effective)
+/// <param name="localLightsAvailable">The backdrop's own lights are active (BackdropController.LocalLightsActive).</param>
+public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configuration config, bool lightingAvailable, DeliveryMode effective,
+                                      bool localLightsAvailable)
 {
     public const string Header = "Scene lighting";
     public const string ToggleLabel = "Light the scene from the image";
@@ -42,6 +44,9 @@ public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configura
     public const string OnlyYouNote = "Only you see these lights.";
     public const string PairsNote = "PSync pairs see the backdrop but not these lights.";
     public const string InSyncedBackdropText = "Lit by the backdrop's own lights, which travel with it: PSync pairs see them too, without Milieu.";
+    public const string InLocalBackdropText = "Lit by the backdrop's own lights.";
+    public const string LocalLightsNote =
+        "Outside GPose the backdrop carries these lights; in GPose Milieu's scene lights replace them, so the backdrop reloads when you enter or leave GPose.";
     public const string SyncedLightsNote = "Shown in and out of GPose. A light change rebuilds the backdrop, which redraws everyone.";
     public const string GPoseDeferralNote = "Light changes apply when you leave GPose; applying redraws everyone.";
 
@@ -85,6 +90,7 @@ public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configura
         LightingStatus.OnNoKey => (snapshot.Estimated ? EstimatedNoKeyTemplate : OnNoKeyTemplate).Replace("{n}", Fills),
         LightingStatus.OnKeyNotDrawn => (snapshot.Estimated ? EstimatedKeyNotDrawnTemplate : OnKeyNotDrawnTemplate).Replace("{n}", Fills),
         LightingStatus.InSyncedBackdrop => InSyncedBackdropText,
+        LightingStatus.InLocalBackdrop => InLocalBackdropText,
         _ => "",
     };
 
@@ -94,6 +100,15 @@ public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configura
         LightingStatus.CrashGuard or LightingStatus.OnKeyNotDrawn => Severity.Warning,
         _ => Severity.Info,
     };
+
+    /// <summary>
+    /// The local-lights note: only while the backdrop's own lights are active under Only me, and only beside a status that
+    /// fits it (lit by the backdrop, or Milieu's GPose lights on), never beside "Lights appear in GPose.".
+    /// </summary>
+    private bool ShowsLocalLightsNote =>
+        localLightsAvailable && effective == DeliveryMode.Local
+        && ShownStatus is LightingStatus.InLocalBackdrop or LightingStatus.OnWithKey or LightingStatus.OnNoKey
+            or LightingStatus.OnKeyNotDrawn or LightingStatus.StrengthZero;
 
     /// <summary>
     /// "Only you see these lights." whenever the section is usable, plus the PSync note under synced delivery; first, the
@@ -112,6 +127,7 @@ public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configura
                 notes.Add(snapshot.GPose ? GPoseDeferralNote : SyncedLightsNote);
                 return notes;
             }
+            if (ShowsLocalLightsNote) notes.Add(LocalLightsNote);
             notes.Add(OnlyYouNote);
             if (effective != DeliveryMode.Local) notes.Add(PairsNote);
             return notes;
@@ -119,8 +135,8 @@ public sealed class LightingViewModel(LightingStatusSnapshot snapshot, Configura
     }
 
     /// <summary>
-    /// The action the window posts when a lighting control changes: the config is set and saved, then a synced light
-    /// rebuild is requested (the controller replans after 500 ms; it does nothing unless a synced dome is shown).
+    /// The action the window posts when a lighting control changes: the config is set and saved, then a light rebuild is
+    /// requested (the controller replans after 500 ms: a shown synced dome, or a shown local dome outside GPose).
     /// Native lights read the config on SceneLighting's next tick as before.
     /// </summary>
     public static System.Action LightChange(Configuration config, System.Action<Configuration> set, System.Action save, System.Action requestRebuild) =>

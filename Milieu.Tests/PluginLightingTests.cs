@@ -65,4 +65,20 @@ public class PluginLightingTests
         s.Tick();
         Assert.Equal(expected, s.Status.Status);
     }
+    [Fact] // [EDGE-local-dome-lights-14] [EDGE-local-dome-lights-15]
+    public void LocalRigLoader_OnlyWhenBothSwitchesAreOn()
+    {
+        System.Func<string, System.Threading.CancellationToken, Task<LightRig?>> load = (_, _) => Task.FromResult<LightRig?>(null);
+        Assert.Same(load, Plugin.LocalRigLoader(true, true, load));
+        Assert.Null(Plugin.LocalRigLoader(true, false, load));
+        Assert.Null(Plugin.LocalRigLoader(false, true, load));
+    }
+
+    [Fact] // [EDGE-local-dome-lights-16]
+    public void LocalRigLoader_IndependentOfSyncedSwitch()
+    {
+        System.Func<string, System.Threading.CancellationToken, Task<LightRig?>> load = (_, _) => Task.FromResult<LightRig?>(null);
+        Assert.Null(Plugin.SyncedRigLoader(true, false, load));
+        Assert.Same(load, Plugin.LocalRigLoader(true, true, load));
+    }
 }

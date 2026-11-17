@@ -283,7 +283,7 @@ public sealed class BackdropControllerSyncLightTests : IDisposable
         Assert.Equal(0, c.Lit!.VfxLightCount);   // [EDGE-synced-lighting-47]
     }
 
-    [Fact] // [AC-synced-lighting-3]
+    [Fact] // [AC-synced-lighting-3] [EDGE-local-dome-lights-14] (no local loader: the kill-switch-off path)
     public void LocalShow_WithRig_DomeHasNoEffector()
     {
         config.Delivery = DeliveryMode.Local;

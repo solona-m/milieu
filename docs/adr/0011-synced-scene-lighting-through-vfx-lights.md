@@ -22,7 +22,8 @@ Tested in game with the owner (testing builds 3-5 and dev builds 23-28, 2026-11-
   in red the shadow was faint next to the sun.
 - **Directional effectors (EfVT 1) never lit anything**, even the game's exact world-lighting recipe (19 of the game's
   506 directional effectors have bAGm 1) on its own particle-less emitter.
-- **Static VFX (local delivery) never run effectors**, not even the Pickles Venue's own file.
+- **Static VFX (local delivery) never run effectors**, not even the Pickles Venue's own file. *(Superseded 2026-11-17 by
+  the amendment at the end: with this ADR's recipe and the sun off, a static local dome's key lights the character.)*
 - An effector links from an emitter (`Emit.EfNo`), never from a timeline item; one effector per emitter.
 
 Tuned in game with the owner after the merge (dev builds 32-41, 2026-11-16, Mad Bird Ring, sky dome):
@@ -86,7 +87,8 @@ Under a synced delivery with scene lighting on, the synced dome carries Milieu's
 - **Kill switch.** `Plugin.SyncedLightsAvailable()` (and `LightingAvailable()`): off means no rig loader, no effectors,
   and native lights under synced delivery as before.
 
-Rejected: directional effectors (never lit); VFX lights for local delivery (static VFX don't run them); reusing the
+Rejected: directional effectors (never lit); VFX lights for local delivery (static VFX don't run them; superseded by the
+amendment below); reusing the
 native light colour magnitudes (effector Bri/DstS semantics differ); a camera binder (unneeded once the height is fixed).
 
 ## Consequences
@@ -123,3 +125,61 @@ UNVERIFIED in game:
     character; direction plausible (Sunset's first region, s 0.776, t 0.193, about 55° elevation); full key brightness
     doesn't read as midday sun on a sunset (else tune `StandInKeyScale`). If the *direction* is wrong, the follow-up is
     ADR 0010's hand-tuned Sunset rig override (it fixes native and synced), not `StandInKeyScale`.
+
+## Amendment (2026-11-17): local domes outside GPose
+
+**Context.** With sun off (ADR 0013) under "Only me", the scene outside GPose kept only ambient light: native lights are
+GPose-only (ADR 0009) and static VFX were recorded as never running effectors. That finding came from the 2026-11-09
+experiment (testing builds 3-5): venue-style point lights (DstS 1-10, intensity 1-3, bAOV 1), seen with the game's sun on.
+The owner chose "Dome lights outside GPose". A spike (branch `spike/local-dome-lights`, fd9d993, build 54) baked this ADR's
+proven key recipe (Attn 1, all four shadow flags, Bri 200, bAOV 0) into the static local dome: the owner reported "the
+lights work now" (2026-11-17). The formal evidence is the positive control on build 55: with the sun off, outside GPose,
+unticking scene lighting darkens the character and re-ticking it relights it about 500 ms later (pending until run).
+
+**Decision.**
+- **D1, vehicle:** the same effectors, baked into the local static dome (light 0 links from the dome emitter; `LocalAttach`
+  stays). Rejected: a lights-only actor VFX bound to the player (new signatures and hooks, likely PSync attribution); the
+  whole dome as an actor VFX (the user's image would be uploaded); native lights outside GPose (ADR 0009's safety choice).
+- **D2, outside GPose only.** In GPose native lights cast better character shadows; both together would double the light.
+- **D3, the switch** is a local rebuild and respawn (new dome first, then the old one removed), 500 ms after the last GPose
+  edge, with no hold: a local swap redraws nobody.
+- **D4, local frame.** The static root carries yaw and height, so lights are planned at yaw 0 and shifted down by the
+  height offset (`VfxLightPlanner.PlanLocal`), from the radius and height the dome was built with. Yaw changes respawn
+  the same file; a height change on a lit dome rebuilds.
+- **D5, kill switch** `Plugin.LocalLightsAvailable()` (with `LightingAvailable()`); off means no local rig loader, no
+  effectors in the local file and today's panel texts.
+- **D6, independent of sun off**, as synced: with the sun on there are two light sources.
+- **D7, a light problem never costs the backdrop:** a rig load failure shows the dome without lights; `PlanLocal` returns
+  no lights when any position would exceed the builder's bound (so the compared plan always equals the built file), with a
+  build backstop; a lit dome the game ends early latches local lights off (Warning) until scene lighting is ticked off and
+  on (ADR 0009's convention), and the dome is rebuilt without them.
+- **D8, no doubling:** native lights step aside whenever the drawn dome, synced or local, carries VFX lights
+  (`LightingStatus.InLocalBackdrop`); native lights start only after the unlit dome is in and the usual settle.
+- **D9, no sentinel:** no native light call is made.
+- **D10, bounded retries:** a failed or timed-out local swap records the GPose state it was for; the level check doesn't
+  retry that state until the next GPose edge or a successful commit (one attempt per edge).
+- **D11, the rig always loads** with the local texture while the loader is present (as synced), whatever the toggle, so
+  ticking lighting later needs no re-show. Usually a rig-store hit; a full decode only when the rig was trimmed or never
+  stored, which then delays that show.
+
+**Release gate.** Flip `LocalLightsAvailable()` to false before tagging if the positive control fails or local dome
+lights regress.
+
+**Tech debt.** `BackdropController` grows by the local light state (pending and shown plans, the GPose flags, the latch and
+the edge and level-check bookkeeping), mirroring the synced light state beside it; extracting a small `LocalLightState` is
+a behaviour-free follow-up. The build backstop (a lit build that fails is rebuilt unlit) is unreachable with valid
+settings and kept as defence in depth, untested. Accepted edge: if the unlit rebuild after a latch fails (Penumbra
+refuses), the shown lit file respawns from Suspended until the next successful rebuild; native lights stay off, and further
+early removals run on the usual counter.
+
+UNVERIFIED in game (local domes):
+
+12. Brightness parity with a synced dome at the same strength (the owner judges; no tuning).
+13. The light direction at dome yaw 90°: the VFX key's shadow outside GPose matches the native key's in GPose (does the
+    effector follow the static root's rotation?). Yaw 0 was seen working in the spike.
+14. The GPose enter/exit swap, also with GPose motion paused: no flicker, poses undisturbed, native lights after the
+    settle, no doubled light.
+15. The game doesn't end a lit static dome early; no crash across show/hide, zone change, GPose, plugin reload, game exit.
+16. Room-dome brightness, and the light staying inside the dome (items 2 and 7).
+17. Walking away from the dome centre: the light stays with the dome (Recenter restores both).
+18. With sun off unticked, the dome key plus the game's sun read acceptably.

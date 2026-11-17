@@ -29,6 +29,7 @@ public sealed class MainWindow : Window, IDisposable
     private readonly bool lightingAvailable;
     private readonly Func<NightStatus> nightStatus;
     private readonly bool nightAvailable;
+    private readonly Func<bool> localLightsActive;
     private readonly Func<SunOffStatus> sunOffStatus;
     private readonly bool sunOffAvailable;
     private readonly FileDialogManager files = new();
@@ -38,11 +39,12 @@ public sealed class MainWindow : Window, IDisposable
     private static readonly Vector2 TileSize = new(176, 88);
 
     public MainWindow(BackdropController controller, Configuration config, Action save, SceneGridViewModel grid, ThumbnailCache thumbs,
-                      Func<bool>? syncedAvailable = null, Func<LightingStatusSnapshot>? lightingStatus = null, bool lightingAvailable = false,
+                      Func<bool> localLightsActive, Func<bool>? syncedAvailable = null, Func<LightingStatusSnapshot>? lightingStatus = null, bool lightingAvailable = false,
                       Func<NightStatus>? nightStatus = null, bool nightAvailable = false,
                       Func<SunOffStatus>? sunOffStatus = null, bool sunOffAvailable = false)
         : base($"Milieu (build {Plugin.BuildNumber})###MilieuMain")
     {
+        this.localLightsActive = localLightsActive;
         this.sunOffStatus = sunOffStatus ?? (() => SunOffStatus.Off);
         this.sunOffAvailable = sunOffAvailable;
         this.nightStatus = nightStatus ?? (() => NightStatus.Off);
@@ -249,7 +251,7 @@ public sealed class MainWindow : Window, IDisposable
     /// <summary>"Game sun" (docs/adr/0013), only when the kill switch (Plugin.SunOffAvailable) is on.</summary>
     private void DrawSunOff()
     {
-        var vm = new SunOffViewModel(sunOffStatus(), sunOffAvailable);
+        var vm = new SunOffViewModel(sunOffStatus(), sunOffAvailable, lightingAvailable && localLightsActive());
         if (!vm.Visible) return;
         ImGui.Separator();
         ImGui.TextUnformatted(SunOffViewModel.Header);
@@ -259,7 +261,7 @@ public sealed class MainWindow : Window, IDisposable
         if (vm.StatusText.Length > 0)
             ImGui.TextColored(vm.StatusSeverity == Severity.Error ? Red : vm.StatusSeverity == Severity.Warning ? Yellow : Vector4.One, vm.StatusText);
         ImGui.PushTextWrapPos(0f);
-        ImGui.TextDisabled(SunOffViewModel.Note);
+        ImGui.TextDisabled(vm.NoteText);
         ImGui.PopTextWrapPos();
     }
 
@@ -285,7 +287,7 @@ public sealed class MainWindow : Window, IDisposable
     /// </summary>
     private void DrawLighting(BackdropViewModel backdrop)
     {
-        var vm = new LightingViewModel(lightingStatus(), config, lightingAvailable, backdrop.EffectiveDelivery);
+        var vm = new LightingViewModel(lightingStatus(), config, lightingAvailable, backdrop.EffectiveDelivery, localLightsActive());
         if (!vm.Visible) return;
         ImGui.Separator();
         ImGui.TextUnformatted(LightingViewModel.Header);

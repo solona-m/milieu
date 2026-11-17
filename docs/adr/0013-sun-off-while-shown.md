@@ -36,9 +36,10 @@ sun (pairs would see it anyway).
   `UpdateEnvDetour` calls it on an environment-part object too), only while the flag is set, and only after the sample
   was approved. Brio writes into every a1, but writes a1's own pre-call values back; Milieu's zeros could linger in other
   copies, so it doesn't (`SunOffLayout.OwnStateOnly`).
-- **Why sun and moon, not ambient.** The moon also lights and casts shadows; the dome replaces the whole sky. Outside GPose
-  under local delivery Milieu has no lights (ADR 0009 native lights are GPose-only, ADR 0011 effectors don't run in static
-  VFX), so zeroing ambient would black the scene out: outside GPose the scene keeps only ambient light.
+- **Why sun and moon, not ambient.** The moon also lights and casts shadows; the dome replaces the whole sky. Ambient stays:
+  when `LocalLightsAvailable` (and not latched) with scene lighting on, the backdrop's own lights light the scene outside
+  GPose (ADR 0011's local amendment); otherwise Milieu has no lights there (ADR 0009 native lights are GPose-only), so
+  zeroing ambient would black the scene out and the scene keeps only ambient light.
 - **Plausibility check (per session) before the first zeroing.** On the first own-state call while writing, the detour
   claims the probe (CAS NotProbed → Capturing), copies the six floats and publishes Captured; nothing is zeroed on that
   call. The next tick logs them and checks: each finite, 0 or normal (no subnormals), within [0, 100]. Pass (at least one
@@ -101,7 +102,8 @@ and 5 have passed in game. Otherwise flip the kill switch to false, or the defau
 
 - It patches a game function's behaviour on the user's client: a wrong signature after a patch disables it (exactly one
   match), a crash at install or in the first zeroing latches CrashGuard next session.
-- Outside GPose the scene is darker (ambient only); the note says so.
+- Outside GPose the scene is lit by the backdrop's own lights when `LocalLightsAvailable` (ADR 0011's local amendment);
+  otherwise it is darker (ambient only). The note follows the switch.
 - Brio cases B and C above.
 - Placement: `ISunSwitch`, `SunOffStatus` and `SunOff` in `SunOff.cs`; `SunOffScan`, `SunOffPlausibility` and
   `SunOffPostStep` in `SunOffPatch.cs`; `SunOffShared` in its own file; the mirrored native layout, `SunOffLayout`, in

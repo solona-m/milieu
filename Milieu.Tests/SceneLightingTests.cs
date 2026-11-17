@@ -1034,4 +1034,48 @@ public sealed class SceneLightingTests : IDisposable
         Ticks(Settle + 1);
         Assert.Equal(3, spawner.Live.Count());
     }
+    [Fact] // [AC-local-dome-lights-2] [EDGE-local-dome-lights-17] [EDGE-local-dome-lights-13]
+    public void LocalDomeWithVfxLights_InGPose_NoNativeLights_InLocalBackdrop()
+    {
+        lit = new LitBackdrop(ImageA, View0, Synced: false, VfxLightCount: 1);
+        for (var i = 0; i < 100; i++)
+        {
+            s.Tick();
+            Assert.Equal(0, s.LiveCount);
+        }
+        Assert.Empty(spawner.Creates);
+        Assert.Equal(LightingStatus.InLocalBackdrop, s.Status.Status);
+        Assert.True(s.Status.GPose);
+        Assert.Equal("sky.hdr", s.Status.FileName);
+    }
+
+    [Fact] // [AC-local-dome-lights-2]
+    public void LocalDomeLightsDrop_InGPose_NativeLightsAfterSettle()
+    {
+        lit = new LitBackdrop(ImageA, View0, Synced: false, VfxLightCount: 1);
+        Ticks(10);
+        lit = new LitBackdrop(ImageA, View0, Synced: false, VfxLightCount: 0);   // the unlit dome is in
+        Ticks(Settle - 1);
+        Assert.Empty(spawner.Creates);
+        Ticks(2);
+        Assert.Equal(3, spawner.Live.Count());
+    }
+
+    [Fact] // [AC-local-dome-lights-3]
+    public void LeaveGPose_NativeLightsRemovedSameTick()
+    {
+        LightUp();
+        game.IsGPosing = false;
+        s.Tick();
+        Assert.Empty(spawner.Live);
+    }
+
+    [Fact] // [AC-local-dome-lights-2]
+    public void LocalDomeAppearsLit_NativeLightsGo()
+    {
+        LightUp();
+        lit = new LitBackdrop(ImageA, View0, Synced: false, VfxLightCount: 1);
+        s.Tick();
+        Assert.Empty(spawner.Live);
+    }
 }

@@ -7,7 +7,7 @@ using System.Numerics;
 namespace Milieu.GameFiles;
 
 /// <summary>
-/// One VFX point light (effector) baked into a synced dome (docs/adr/0011). <see cref="Position"/> is relative to the light's
+/// One VFX point light (effector) baked into a synced dome, or a local one outside GPose (docs/adr/0011). <see cref="Position"/> is relative to the light's
 /// emitter (not world space: the emitter carries the player's world height). <see cref="Rgb"/> is the hue with each channel
 /// in [0, 1]; <see cref="Brightness"/> is the effector's Bri; <see cref="Range"/> its DstS. A shadowed light has Attn 1 and all
 /// four shadow flags (bMvS gives character shadows, only near the light) between <see cref="ShadowNear"/> and
@@ -21,8 +21,8 @@ internal sealed record DomeLight(Vector3 Position, Vector3 Rgb, float Brightness
 /// not Milieu) bakes height and yaw into the particle's Pos/Rot Y curves and binds the emitter to its owner
 /// (<see cref="AttachToOwner"/>). <see cref="EmitterBaseHeight"/> is the player's world Y, written into the emitter's Pos Y:
 /// item VFX are anchored at world height 0, not at the item (seen in game, 2026-11-16), so a synced dome built without it
-/// sits that far below an upper floor. <see cref="Lights"/> (synced only) are VFX point lights: light 0 links from the dome
-/// emitter, lights 1..n-1 from particle-less emitters of their own. All defaults give byte-identical local output.
+/// sits that far below an upper floor. <see cref="Lights"/> (synced, and local outside GPose) are VFX point lights: light 0 links from the dome
+/// emitter, lights 1..n-1 from particle-less emitters of their own. All defaults (no lights) give byte-identical local output.
 /// </summary>
 internal sealed record DomeAvfxParams(
     string TextureGamePath,
@@ -109,8 +109,6 @@ internal static class DomeAvfxBuilder
             if (!float.IsFinite(v) || v < 0 || (v == 0 && name != "Brightness"))
                 throw new ArgumentOutOfRangeException(nameof(p), $"{name} must be finite and positive (got {v}).");
         if (p.Lights is not { Count: > 0 } lights) return;
-        // Static (local) VFX never run effectors (seen in game), and a light must never reach the local file.
-        if (!p.AttachToOwner) throw new ArgumentException("VFX lights belong to a synced dome only.", nameof(p));
         if (lights.Count > MaxLights) throw new ArgumentOutOfRangeException(nameof(p), $"At most {MaxLights} VFX lights (got {lights.Count}).");
         foreach (var l in lights)
         {
