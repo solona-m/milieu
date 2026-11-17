@@ -227,6 +227,7 @@ public sealed class BackdropController : Gui.IGridController
     private volatile bool localLightsLatched;
     private bool? lastGPose;
     private bool lastSceneLighting;
+    private int seenGeneration;
     private VfxLightPlan? pendingLights;
     private DateTime? lightRebuildAt;
     private bool lightRebuildHeld;
@@ -294,12 +295,14 @@ public sealed class BackdropController : Gui.IGridController
     {
         var gpose = game.IsGPosing;
         var lighting = config.SceneLighting;
-        if (lighting && !lastSceneLighting && localLightsLatched)
+        // A backdrop switch that turns lighting on isn't the user retrying (docs/adr/0014): only a toggle clears the latch.
+        if (lighting && !lastSceneLighting && localLightsLatched && config.SelectionGeneration == seenGeneration)
         {
             localLightsLatched = false;
             log.Information("[Milieu] Scene lighting ticked again: the backdrop's own lights are back on.");
         }
         lastSceneLighting = lighting;
+        seenGeneration = config.SelectionGeneration;
         var local = EffectiveDelivery == DeliveryMode.Local;
         if (lastGPose is { } was && was != gpose && local)
         {
@@ -401,6 +404,7 @@ public sealed class BackdropController : Gui.IGridController
     /// <summary>Converts the configured image (or reuses the cache) and shows it. The latest request wins.</summary>
     public void Show()
     {
+        reconvertAt = null;   // a reconvert queued for the previous selection is dropped (docs/adr/0014)
         if (Blocker() != MessageKey.None) return;
         if (string.IsNullOrEmpty(config.ImagePath))
         {
@@ -538,6 +542,7 @@ public sealed class BackdropController : Gui.IGridController
     /// <summary>Hide, /milieu off: removes the dome, its temp mod or the synced mod (disabled and emptied), cancels a conversion.</summary>
     public void Hide()
     {
+        reconvertAt = null;
         CancelJob();
         RemoveDome();
         if (shownSet != null || pendingSet != null) penumbra.Clear();

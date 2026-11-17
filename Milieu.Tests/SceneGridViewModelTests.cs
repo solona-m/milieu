@@ -246,7 +246,7 @@ public sealed class SceneGridViewModelTests
         Assert.Equal(TileState.Missing, T(@"C:\gone.jpg").State);
         vm.Click(T(@"C:\gone.jpg"));
         RunPosted();
-        Assert.Equal(new[] { "Report" }, controller.Calls);
+        Assert.Equal(new[] { "Hide", "Report" }, controller.Calls);   // hide first: it clears the message
         Assert.Equal(MessageKey.FileMissing, controller.Reported!.Key);
         Assert.Equal("gone.jpg no longer exists.", controller.Reported.Text);
     }
@@ -257,13 +257,13 @@ public sealed class SceneGridViewModelTests
         vm.Click(T("bundled:forest"));
         RunPosted();
         Assert.Equal(new[] { "forest" }, downloads.Requests);
-        Assert.Empty(controller.Calls);
+        Assert.Equal(new[] { "Hide" }, controller.Calls);   // the old backdrop hides (docs/adr/0014)
         vm.OnDraw();
         Assert.Empty(posted);                      // not downloaded yet
         downloads.Downloaded.Add("forest");
         vm.OnDraw();
         RunPosted();
-        Assert.Equal(new[] { "Show" }, controller.Calls);
+        Assert.Equal(new[] { "Hide", "Show" }, controller.Calls);
         vm.OnDraw();
         Assert.Empty(posted);                      // once only
     }
@@ -282,7 +282,7 @@ public sealed class SceneGridViewModelTests
         downloads.Downloaded.Add("galaxy");
         vm.OnDraw();
         RunPosted();
-        Assert.Equal(new[] { "Show" }, controller.Calls);
+        Assert.Equal(new[] { "Hide", "Hide", "Show" }, controller.Calls);
     }
 
     [Fact] // [EDGE-hdri-backdrop-75]
@@ -311,7 +311,7 @@ public sealed class SceneGridViewModelTests
         downloads.Downloaded.Add("sunset");
         vm.OnDraw();
         RunPosted();
-        Assert.Equal(new[] { "Show" }, controller.Calls);
+        Assert.Equal(new[] { "Hide", "Show" }, controller.Calls);
     }
 
     [Fact] // [EDGE-hdri-backdrop-76]
@@ -359,11 +359,144 @@ public sealed class SceneGridViewModelTests
         vm.Click(T("bundled:moon"));
         RunPosted();
         downloads.Downloaded.Add("moon");   // the download finished on its worker thread: nothing happens there
-        Assert.Empty(controller.Calls);
+        Assert.Equal(new[] { "Hide" }, controller.Calls);
         vm.OnDraw();
         Assert.Single(posted);
-        Assert.Empty(controller.Calls);
+        Assert.Equal(new[] { "Hide" }, controller.Calls);
         RunPosted();
-        Assert.Equal(new[] { "Show" }, controller.Calls);
+        Assert.Equal(new[] { "Hide", "Show" }, controller.Calls);
+    }
+    // ---------------------------------------------------------------- per-backdrop settings (docs/adr/0014)
+
+    [Fact] // [AC-per-backdrop-settings-1]
+    public void ClickTile_ConfigHoldsTileSettingsWhenShowRuns()
+    {
+        config.UserImages = [@"C:\a.jpg", @"C:\b.jpg"];
+        existing.Add(@"C:\a.jpg");
+        existing.Add(@"C:\b.jpg");
+        config.Backdrops[@"C:\b.jpg"] = new BackdropSettings { Brightness = 0.3f, ExposureEv = 2 };
+        string? atShow = null;
+        controller.OnShow = () => atShow = Newtonsoft.Json.JsonConvert.SerializeObject(config.CaptureLive());
+        vm.Click(T(@"C:\b.jpg"));
+        RunPosted();
+        Assert.Equal(Newtonsoft.Json.JsonConvert.SerializeObject(config.Backdrops[@"C:\b.jpg"]), atShow);
+        Assert.Equal(0.3f, config.Brightness);
+        Assert.Equal(1, saves);
+    }
+
+    [Fact] // [AC-per-backdrop-settings-3]
+    public void AddMore_NewImage_StartsFromCurrentSettings_ExistingImageKeepsItsOwn()
+    {
+        config.UserImages = [@"C:\a.jpg"];
+        config.Backdrops[@"C:\a.jpg"] = new BackdropSettings { Brightness = 0.2f };
+        config.Brightness = 1.4f;
+        vm.AddMore(@"C:\new.jpg");
+        RunPosted();
+        Assert.Equal(1.4f, config.Backdrops[@"C:\new.jpg"].Brightness);
+        vm.AddMore(@"C:\A.JPG");
+        RunPosted();
+        Assert.Equal(@"C:\a.jpg", config.ImagePath);
+        Assert.Equal(0.2f, config.Brightness);
+        Assert.Equal(2, config.UserImages.Count);
+    }
+
+    [Fact] // [AC-per-backdrop-settings-7]
+    public void Remove_ForgetsEntry_ReAddStartsFresh()
+    {
+        config.UserImages = [@"C:\a.jpg"];
+        config.Backdrops[@"C:\a.jpg"] = new BackdropSettings { Brightness = 0.2f };
+        vm.Remove(T(@"C:\a.jpg"));
+        RunPosted();
+        Assert.False(config.Backdrops.ContainsKey(@"C:\a.jpg"));
+        config.Brightness = 0.9f;
+        vm.AddMore(@"C:\a.jpg");
+        RunPosted();
+        Assert.Equal(0.9f, config.Backdrops[@"C:\a.jpg"].Brightness);
+    }
+
+    [Fact] // [AC-per-backdrop-settings-11]
+    public void ClickUndownloaded_PostsSelectSaveHideRequest()
+    {
+        config.Backdrops["bundled:forest"] = new BackdropSettings { Brightness = 0.4f };
+        vm.Click(T("bundled:forest"));
+        RunPosted();
+        Assert.Equal("bundled:forest", config.ImagePath);
+        Assert.Equal(0.4f, config.Brightness);
+        Assert.Equal(1, saves);
+        Assert.Equal(new[] { "Hide" }, controller.Calls);
+        Assert.Equal(new[] { "forest" }, downloads.Requests);
+    }
+
+    [Fact] // [AC-per-backdrop-settings-11] [EDGE-per-backdrop-settings-7]
+    public void ClickMissing_PostsSelectSaveHideReport()
+    {
+        config.UserImages = [@"C:\gone.jpg"];
+        config.Backdrops[@"C:\gone.jpg"] = new BackdropSettings { Brightness = 0.6f };
+        vm.Click(T(@"C:\gone.jpg"));
+        RunPosted();
+        Assert.Equal(0.6f, config.Brightness);   // its settings apply
+        Assert.Equal(new[] { "Hide", "Report" }, controller.Calls);
+        Assert.Equal(MessageKey.FileMissing, controller.Reported!.Key);
+    }
+
+    [Theory] // [AC-per-backdrop-settings-11]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ClickUnpublishedOrFailedBundled_HidesAndNeverShows(bool unpublished)
+    {
+        if (unpublished) downloads.Unpublished = true;
+        else downloads.Status["moon"] = new EntryStatus(EntryState.Failed, 0, "boom");
+        vm.Click(T("bundled:moon"));
+        RunPosted();
+        Assert.Equal(new[] { "Hide" }, controller.Calls);
+        for (var i = 0; i < 5; i++) { vm.OnDraw(); RunPosted(); }
+        Assert.DoesNotContain("Show", controller.Calls);
+    }
+
+    [Fact] // [EDGE-per-backdrop-settings-3]
+    public void ClickSelectedHiddenTile_SettingsAndGenerationUnchanged()
+    {
+        config.UserImages = [@"C:\a.jpg"];
+        existing.Add(@"C:\a.jpg");
+        vm.Click(T(@"C:\a.jpg"));
+        RunPosted();
+        var gen = config.SelectionGeneration;
+        config.Brightness = 1.3f;   // edited, not yet saved
+        vm.Click(T(@"C:\a.jpg"));   // hidden, so it re-shows
+        RunPosted();
+        Assert.Equal(gen, config.SelectionGeneration);
+        Assert.Equal(1.3f, config.Brightness);
+        Assert.Equal(new[] { "Show", "Show" }, controller.Calls);
+    }
+
+    [Fact] // [EDGE-per-backdrop-settings-4]
+    public void ClickNone_StoresPrevious_WorkingCopyKept_Hides()
+    {
+        config.UserImages = [@"C:\a.jpg"];
+        existing.Add(@"C:\a.jpg");
+        vm.Click(T(@"C:\a.jpg"));
+        RunPosted();
+        config.Brightness = 1.8f;
+        vm.Click(T(SceneGridViewModel.NoneId));
+        RunPosted();
+        Assert.Null(config.ImagePath);
+        Assert.Equal(1.8f, config.Backdrops[@"C:\a.jpg"].Brightness);
+        Assert.Equal(1.8f, config.Brightness);
+        Assert.Equal("Hide", controller.Calls[^1]);
+    }
+
+    [Fact] // [EDGE-per-backdrop-settings-6]
+    public void RemoveSelected_NoStore_ImagePathNull_Hide()
+    {
+        config.UserImages = [@"C:\a.jpg"];
+        existing.Add(@"C:\a.jpg");
+        vm.Click(T(@"C:\a.jpg"));
+        RunPosted();
+        config.Brightness = 0.1f;
+        vm.Remove(T(@"C:\a.jpg"));
+        RunPosted();
+        Assert.Null(config.ImagePath);
+        Assert.False(config.Backdrops.ContainsKey(@"C:\a.jpg"));
+        Assert.Equal("Hide", controller.Calls[^1]);
     }
 }

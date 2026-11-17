@@ -21,10 +21,12 @@ public sealed class KeyedPreparer(CacheStore cache) : IBackdropPreparer
     public IReadOnlyList<StatusMessage> Warnings = [];
     public readonly Queue<TaskCompletionSource<PreparedTexture>> Gates = new();
     public readonly List<CancellationToken> Tokens = [];
+    public readonly List<BackdropRequest> Requests = [];
 
     public Task<PreparedTexture> PrepareTextureAsync(BackdropRequest request, IProgress<float>? progress, CancellationToken ct)
     {
         Calls++;
+        Requests.Add(request);
         Tokens.Add(ct);
         if (Gates.Count > 0) return Gates.Dequeue().Task;
         return Task.FromResult(Make(Key));

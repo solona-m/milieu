@@ -36,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 55;
+    public const int BuildNumber = 56;
 
     private const string CommandName = "/milieu";
 
@@ -140,7 +140,20 @@ public sealed class Plugin : IDalamudPlugin
         else mainWindow.Toggle();
     }
 
-    private void Save() => PluginInterface.SavePluginConfig(config);
+    private void Save() => SaveConfig(config, c => PluginInterface.SavePluginConfig(c));
+
+    /// <summary>
+    /// Test seam: every save stores the working copy into the selected backdrop's entry first (docs/adr/0014), under the
+    /// config's lock, so serialization never sees the store mid-write.
+    /// </summary>
+    internal static void SaveConfig(Configuration c, Action<Configuration> persist)
+    {
+        lock (c.Gate)
+        {
+            c.StoreSelected();
+            persist(c);
+        }
+    }
 
     /// <summary>
     /// Synced delivery is offered on every build (the owner enabled it for stable on 2026-11-09, docs/adr/0006). This is the

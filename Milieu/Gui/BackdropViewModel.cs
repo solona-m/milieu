@@ -68,6 +68,12 @@ public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker,
 
     public bool HasImage => !string.IsNullOrEmpty(config.ImagePath);
 
+    public const string PerBackdropNote = "Each backdrop remembers its own settings, except Texture size and Visible to.";
+    public const string NoneSelectedNote = "No backdrop selected: images you add later start from these settings.";
+
+    /// <summary>The line under the Settings header (docs/adr/0014).</summary>
+    public string SettingsScopeNote => HasImage ? PerBackdropNote : NoneSelectedNote;
+
     public bool CanShow => blocker == MessageKey.None && HasImage;
 
 

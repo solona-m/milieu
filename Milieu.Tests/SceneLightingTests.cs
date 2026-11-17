@@ -1078,4 +1078,18 @@ public sealed class SceneLightingTests : IDisposable
         s.Tick();
         Assert.Empty(spawner.Live);
     }
+    [Fact] // [AC-per-backdrop-settings-8] [EDGE-per-backdrop-settings-21]
+    public void SelectionChangeOffToOn_IsNotARetry_CrashGuardStays_UserToggleStillRetries()
+    {
+        config.SceneLighting = false;
+        sentinel = new FakeSentinel(setAtStartup: true);
+        s = Make();
+        s.Tick();
+        BackdropSettingsTests.SwitchTo(config, @"C:\pics\b.hdr", e => e.SceneLighting = true);   // the switch ticks the flag
+        Ticks(5);
+        Assert.Equal(LightingStatus.CrashGuard, s.Status.Status);
+        config.SceneLighting = false; s.Tick();
+        config.SceneLighting = true; s.Tick();
+        Assert.NotEqual(LightingStatus.CrashGuard, s.Status.Status);
+    }
 }
