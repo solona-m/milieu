@@ -69,6 +69,18 @@ public sealed class DomeSettings
     public const string CameraHeightTooltip = "How high the image was taken above the floor: its horizon sits this far above your feet.";
     public const string CameraHeightDisabledTooltip = "Not used: with an open bottom the image's horizon is at your feet.";
 
+    /// <summary>The Bottom choice is offered while ground projection is on, unless the half dome's kill switch is off.</summary>
+    public bool ShowsBottomChoice(bool halfDomeAvailable) => GroundProjection && halfDomeAvailable;
+
+    /// <summary>The Ground projection checkbox's tooltip; with the kill switch off, today's text (the legacy floor).</summary>
+    public static string ProjectionTooltip(bool halfDomeAvailable) => halfDomeAvailable
+        ? "Stands the dome on the floor at your feet as a half dome."
+        : "Flattens the bottom of the dome into a floor, so the image's ground lies at your feet.";
+
+    /// <summary>The camera height slider's tooltip with projection on; with the kill switch off, today's text.</summary>
+    public static string HeightTooltip(bool halfDomeAvailable) =>
+        halfDomeAvailable ? CameraHeightTooltip : "Distance from the floor to the dome centre.";
+
     /// <summary>
     /// The ground-projection floor in unit-radius mesh space: height / (radius · vertical scale), so the floor lands at
     /// world y = −height below the centre. Null when projection is off, the camera height is below <see cref="MinCameraHeight"/>

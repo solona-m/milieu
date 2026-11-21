@@ -192,7 +192,7 @@ public sealed class MainWindow : Window, IDisposable
         Slider(d.GroundProjection ? "Camera height" : "Height", "Height", d.HeightOffset, hMin, hMax, v => d.HeightOffset = v);
         ImGui.EndDisabled();
         if (d.GroundProjection && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip(heightDisabled ? DomeSettings.CameraHeightDisabledTooltip : DomeSettings.CameraHeightTooltip);
+            ImGui.SetTooltip(heightDisabled ? DomeSettings.CameraHeightDisabledTooltip : DomeSettings.HeightTooltip(controller.HalfDomeAvailable));
         Slider("Yaw", "Yaw", d.YawDegrees, DomeSettings.YawRange.Min, DomeSettings.YawRange.Max, v => d.YawDegrees = v, "%.0f°");
         var projection = d.GroundProjection;
         if (ImGui.Checkbox("Ground projection", ref projection))
@@ -201,8 +201,8 @@ public sealed class MainWindow : Window, IDisposable
             save();
             controller.Post(controller.ApplyRebuild);
         }
-        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Stands the dome on the floor at your feet as a half dome.");
-        if (d.GroundProjection && controller.HalfDomeAvailable)
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip(DomeSettings.ProjectionTooltip(controller.HalfDomeAvailable));
+        if (d.ShowsBottomChoice(controller.HalfDomeAvailable))
         {
             ImGui.TextUnformatted(DomeSettings.BottomLabel);
             var bottom = (int)d.Bottom;

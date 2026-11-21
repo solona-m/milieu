@@ -920,5 +920,27 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         var vdrw = AvfxChunkReader.Parse(File.ReadAllBytes(pen.SyncSets[^1].Paths[RingPath])).Need("Modl").Need("VDrw").Data;
         Assert.Equal(SphereMesh.BuildLegacyFloor(0.16f).VertexBytes(), vdrw);
         Assert.False(c.Lit!.View.LowerHalfHidden);
+        // The legacy floor keeps today's unbounded lights (0.9 × R), byte for byte.
+        var today = VfxLightPlanner.Plan(rig!, new DomeView(0, config.FlipHorizontal, 1, config.HorizontalRepeat, config.VerticalRepeat),
+                                         10f, config.LightStrength, config.FillLightCount, false);
+        Assert.Equal(today.Lights, c.SyncedLights!.Lights);
+        Assert.Equal(9f, (c.SyncedLights.Lights[0].Position - LightAnchor).Length(), 3);
+    }
+
+    [Fact] // [AC-half-dome-4] [EDGE-half-dome-14]
+    public void RoomProjectionOff_LocalLightsUnbounded()
+    {
+        config.Mode = DomeMode.Room;
+        config.Room.GroundProjection = false;
+        config.Room.Bottom = DomeBottom.Open;   // a saved open entry with projection unticked: still the plain sphere
+        Show();
+        var today = VfxLightPlanner.PlanLocal(rig!, config.FlipHorizontal, 1, config.HorizontalRepeat, config.VerticalRepeat, 10f, 1.6f,
+                                              config.LightStrength, config.FillLightCount);
+        Assert.Equal(today.Lights, c.LocalLights!.Lights);
+        Assert.Equal(9f, (c.LocalLights.Lights[0].Position + new Vector3(0, 1.6f, 0) - LightAnchor).Length(), 3);
+        Assert.False(c.Lit!.View.LowerHalfHidden);
+        var tex = pen.Sets[^1].First(kv => !kv.Key.EndsWith(".avfx")).Key;
+        Assert.Equal(DomeAvfxBuilder.Build(new DomeAvfxParams(tex, 10f, 1f, config.HorizontalRepeat, config.VerticalRepeat, config.FlipHorizontal,
+                                                              config.Brightness, Lights: today.Lights)), AvfxBytes());
     }
 }

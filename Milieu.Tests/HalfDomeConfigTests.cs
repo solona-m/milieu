@@ -170,6 +170,31 @@ public sealed class HalfDomeConfigTests
         Assert.Equal("Not used: with an open bottom the image's horizon is at your feet.", DomeSettings.CameraHeightDisabledTooltip);
     }
 
+    [Fact] // [AC-half-dome-4]
+    public void ProjectionOff_IsSphereWhateverTheBottom()
+    {
+        foreach (var bottom in new[] { DomeBottom.ImageFloor, DomeBottom.Open })
+            foreach (var available in new[] { true, false })
+            {
+                var d = new DomeSettings { Radius = 10, VerticalScale = 1, HeightOffset = 1.6f, GroundProjection = false, Bottom = bottom };
+                Assert.Equal(new DomeShapeChoice(DomeMeshKind.Sphere, null, 1.6f), d.Shape(available));
+            }
+    }
+
+    [Fact] // [AC-half-dome-9] [EDGE-half-dome-19]
+    public void ShowsBottomChoice_Matrix()
+    {
+        var d = new DomeSettings { GroundProjection = true };
+        Assert.True(d.ShowsBottomChoice(halfDomeAvailable: true));
+        Assert.False(d.ShowsBottomChoice(halfDomeAvailable: false));
+        d.GroundProjection = false;
+        Assert.False(d.ShowsBottomChoice(true));
+        Assert.Equal("Stands the dome on the floor at your feet as a half dome.", DomeSettings.ProjectionTooltip(true));
+        Assert.Equal("Flattens the bottom of the dome into a floor, so the image's ground lies at your feet.", DomeSettings.ProjectionTooltip(false));
+        Assert.Equal("Distance from the floor to the dome centre.", DomeSettings.HeightTooltip(false));
+        Assert.Equal(DomeSettings.CameraHeightTooltip, DomeSettings.HeightTooltip(true));
+    }
+
     [Fact] // [EDGE-half-dome-19]
     public void CameraHeightDisabled_Matrix()
     {
