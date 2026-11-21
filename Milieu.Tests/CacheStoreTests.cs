@@ -125,4 +125,14 @@ public class CacheStoreTests
         Assert.NotEqual(key, CacheStore.EstimatedRigKey(path, 100, 6));
         Assert.NotEqual(key, CacheStore.EstimatedRigKey(t.File("other.jpg"), 100, 5));
     }
+
+    [Fact] // [EDGE-fast-bc7-11] [EDGE-fast-bc7-18]
+    public void TextureKey_EncoderIdChangesKey_EmptyThrows()
+    {
+        var r = new BackdropRequest(@"C:\p\sky.jpg", 8192, 0, ToneMapOperator.Aces);
+        Assert.NotEqual(CacheStore.TextureKey(r, ImageKind.Jpeg, 100, 5, "bcnenc-fast"), CacheStore.TextureKey(r, ImageKind.Jpeg, 100, 5, "opaque-bc7-1"));
+        Assert.Equal(CacheStore.TextureKey(r, ImageKind.Jpeg, 100, 5, "opaque-bc7-1"), CacheStore.TextureKey(r, ImageKind.Jpeg, 100, 5, "opaque-bc7-1"));
+        Assert.Throws<ArgumentException>(() => CacheStore.TextureKey(r, ImageKind.Jpeg, 100, 5, ""));
+        Assert.Throws<ArgumentException>(() => CacheStore.TextureKey(r, ImageKind.Jpeg, 100, 5, null!));
+    }
 }

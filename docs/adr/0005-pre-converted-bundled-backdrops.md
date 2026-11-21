@@ -39,6 +39,12 @@ workflow for the repository. The cause is unknown.
 - The mirror route `dl.solona.info/milieu/` exists (the Proteus repo's worker); downloads go through it once
   `MilieuAssets.MirrorBase` is set (the release feature), with GitHub as the fallback. Until then: GitHub only.
 
+Amendment (2026-11-21, ADR 0015): the plugin now encodes user images with the in-repo `OpaqueBc7` (about 6 s for an 8K
+image), so "takes minutes on the player's machine" above no longer holds for user images. `PrepareBackdrops atex` keeps
+the reference encoder (`new Bc7()`, BCnEncoder), so the published textures and pins are unchanged and need no re-publish.
+"Exactly what the plugin would produce" now means the same pipeline (resample, band fill, mips, writer) with the block
+encoder chosen by the caller (`BundledAtexTests.PrepareBackdropsAtex_UsesReferenceEncoder`).
+
 ## Consequences
 
 Easier: a bundled scene shows within a couple of seconds of downloading; players never wait for BC7.

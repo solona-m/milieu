@@ -44,4 +44,20 @@ public class BundledAtexTests
             Assert.Equal(pin.Sha256, Convert.ToHexString(SHA256.HashData(ms)).ToLowerInvariant());
         }
     }
+
+    /// <summary>
+    /// The bundled textures are pinned to the reference encoder's bytes (docs/adr/0005, 0015): the tool's <c>atex</c> must
+    /// keep building <c>new Bc7()</c> and never use the in-repo OpaqueBc7.
+    /// </summary>
+    [Fact] // [AC-fast-bc7-6]
+    public void PrepareBackdropsAtex_UsesReferenceEncoder()
+    {
+        var src = File.ReadAllText(Path.Combine(RepoPaths.Root(), "tools", "PrepareBackdrops", "Program.cs"));
+        var atex = src.IndexOf("private static async Task<int> Atex(", StringComparison.Ordinal);
+        Assert.True(atex >= 0, "Atex() not found in tools/PrepareBackdrops/Program.cs");
+        var body = src[atex..src.IndexOf("\n    }", atex, StringComparison.Ordinal)];
+        Assert.Contains("new Bc7()", body);
+        Assert.DoesNotContain("OpaqueBc7()", src);
+        Assert.DoesNotContain("OpaqueBc7.cs", File.ReadAllText(Path.Combine(RepoPaths.Root(), "tools", "PrepareBackdrops", "PrepareBackdrops.csproj")));
+    }
 }
