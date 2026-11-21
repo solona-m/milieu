@@ -1111,11 +1111,15 @@ public sealed class BackdropController : Gui.IGridController
 
     /// <summary>
     /// Where the dome of <paramref name="build"/> is spawned: its built centre height (docs/adr/0015), so a failed rebuild
-    /// after a shape change never respawns the old file at the new shape's height; a sphere (or no build) follows the live
-    /// height, since a height change respawns it without a rebuild.
+    /// after a shape change never respawns the old file at the new shape's height; a sphere follows the live height, since a
+    /// height change respawns it without a rebuild; no recorded build falls back to the live shape's centre.
     /// </summary>
-    private Vector3 SpawnPosition(DomeBuild? build) =>
-        centre + new Vector3(0, build is { } b && b.Kind != DomeMeshKind.Sphere ? b.CentreHeight : config.Current.HeightOffset, 0);
+    private Vector3 SpawnPosition(DomeBuild? build) => centre + new Vector3(0, build switch
+    {
+        { Kind: DomeMeshKind.Sphere } => config.Current.HeightOffset,
+        { } b => b.CentreHeight,
+        null => config.Current.Shape(HalfDomeAvailable).CentreHeight,
+    }, 0);
 
     private float YawRadians() => config.Current.YawDegrees * MathF.PI / 180f;
 

@@ -83,7 +83,7 @@ public sealed class DomeSettings
     }
 
     /// <summary>What ground projection is doing, in words, so a silently inactive floor is visible in the window.</summary>
-    public string ProjectionStatus(bool halfDomeAvailable = true)
+    public string ProjectionStatus(bool halfDomeAvailable)
     {
         var h = HeightOffset.ToString("0.##", CultureInfo.InvariantCulture);
         var extent = (Radius * VerticalScale).ToString("0.##", CultureInfo.InvariantCulture);
