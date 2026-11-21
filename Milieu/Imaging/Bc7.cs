@@ -11,15 +11,22 @@ namespace Milieu.Imaging;
 public interface IBlockEncoder
 {
     Task<byte[]> EncodeMipAsync(byte[] rgba, int width, int height, IProgress<float>? progress, CancellationToken ct);
+
+    /// <summary>Names the encoder and its output version in the texture cache key (non-empty; bump when the bytes change).</summary>
+    string CacheId { get; }
 }
 
 /// <summary>
-/// BC7 via managed BCnEncoder.Net: fast quality, half the cores. Each mip is encoded separately with a cancellation
+/// The reference BC7 encoder (docs/adr/0016): BCnEncoder.Net at fast quality, half the cores. It produced the pinned bundled
+/// textures and tools/PrepareBackdrops keeps using it (docs/adr/0005); the plugin uses it for user images only with
+/// <c>Plugin.FastConversionAvailable</c> off (otherwise <c>OpaqueBc7</c>). Each mip is encoded separately with a cancellation
 /// check between mips. Inside a mip, BCnEncoder's EncodeToRawBytesAsync observes the token itself (it checks per block
 /// batch; <c>Bc7Tests.CancelInsideMip0_ReturnsPromptly</c> holds it to that), so no strip fallback is needed.
 /// </summary>
 public sealed class Bc7 : IBlockEncoder
 {
+    public string CacheId => "bcnenc-fast";
+
     public async Task<byte[]> EncodeMipAsync(byte[] rgba, int width, int height, IProgress<float>? progress, CancellationToken ct)
     {
         if (rgba.Length != (long)width * height * 4) throw new ArgumentException("RGBA buffer size mismatch.", nameof(rgba));

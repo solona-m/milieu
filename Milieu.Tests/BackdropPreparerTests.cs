@@ -25,6 +25,7 @@ public sealed class BackdropPreparerTests : IDisposable
     /// <summary>Returns correctly sized zero blocks: the pipeline test does not need real BC7.</summary>
     private sealed class StubEncoder : IBlockEncoder
     {
+        public string CacheId { get; init; } = "stub";
         public int Calls;
         public Func<CancellationToken, Task>? Before;
 
@@ -191,10 +192,38 @@ public sealed class BackdropPreparerTests : IDisposable
         Assert.Equal((2048, 1024), (t.Width, t.Height));
     }
 
-    [Fact, Trait("Speed", "Slow")] // [AC-hdri-backdrop-6]
+    [Fact] // [AC-fast-bc7-7]
+    public async Task SecondShowSameEncoder_IsCacheHit()
+    {
+        var (p, e) = Make();
+        var png = SyntheticImages.WritePng(dir.Path, "same.png", 64, 32);
+        var a = await p.PrepareTextureAsync(Req(png), null, default);
+        var b = await p.PrepareTextureAsync(Req(png), null, default);
+        Assert.Equal(1, p.EncodeCount);
+        Assert.Equal(a.Key, b.Key);
+    }
+
+    [Fact] // [AC-fast-bc7-7] [EDGE-fast-bc7-11]
+    public async Task DifferentEncoders_DifferentKeysAndFiles()
+    {
+        var png = SyntheticImages.WritePng(dir.Path, "two.png", 64, 32);
+        var pa = new BackdropPreparer(cache, new StubEncoder { CacheId = "a" });
+        var pb = new BackdropPreparer(cache, new StubEncoder { CacheId = "b" });
+        var a = await pa.PrepareTextureAsync(Req(png), null, default);
+        var b = await pb.PrepareTextureAsync(Req(png), null, default);
+        Assert.Equal(1, pa.EncodeCount);
+        Assert.Equal(1, pb.EncodeCount);   // b never reads a's file
+        Assert.NotEqual(a.Key, b.Key);
+        Assert.NotEqual(a.DiskPath, b.DiskPath);
+        Assert.True(File.Exists(a.DiskPath) && File.Exists(b.DiskPath));
+        await pb.PrepareTextureAsync(Req(png), null, default);
+        Assert.Equal(1, pb.EncodeCount);   // b's own file is a hit
+    }
+
+    [Fact, Trait("Speed", "Slow")] // [AC-hdri-backdrop-6] [AC-fast-bc7-1]
     public async Task Full8k_EndToEnd()
     {
-        var p = new BackdropPreparer(cache, new Bc7());
+        var p = new BackdropPreparer(cache, new OpaqueBc7());
         var jpg = SyntheticImages.WriteJpg(dir.Path, "big.jpg", 8192, 4096, SyntheticImages.Gradient(8192, 4096), 90);
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var t = await p.PrepareTextureAsync(Req(jpg), null, default);

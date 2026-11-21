@@ -34,6 +34,8 @@ public class Bc7Tests
     {
         public int Calls;
 
+        public string CacheId => "counting";
+
         public Task<byte[]> EncodeMipAsync(byte[] rgba, int width, int height, IProgress<float>? progress, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();

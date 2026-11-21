@@ -331,6 +331,8 @@ public sealed class BackdropControllerTests : IDisposable
 
     private sealed class ZeroEncoder : Milieu.Imaging.IBlockEncoder
     {
+        public string CacheId => "zero";
+
         public Task<byte[]> EncodeMipAsync(byte[] rgba, int width, int height, IProgress<float>? progress, CancellationToken ct) =>
             Task.FromResult(new byte[AtexWriter.BlockBytes(width, height)]);
     }

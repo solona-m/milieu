@@ -38,6 +38,8 @@ Parity tests compare the structure with the reference when `MILIEU_REFERENCE_AVF
 
 BC7 encoding uses BCnEncoder.Net per mip; its `EncodeToRawBytesAsync` observes the cancellation token inside a mip
 (`Bc7Tests.CancelInsideMip0_ReturnsPromptly`), so no strip-encoding fallback was needed.
+Amendment (2026-11-21, ADR 0016): user images are now encoded by the in-repo `OpaqueBc7` (cancellation between block
+rows); BCnEncoder remains the reference encoder for the bundled textures and the kill-switch fallback.
 
 Experiment result (testing builds 3-5, 2026-11-09..16; the `/milieu vfxlight` command is removed, issue #1): VFX
 effector lights were tested in game. **Point lights (EfVT 0) linked from the dome emitter light the character and cast
