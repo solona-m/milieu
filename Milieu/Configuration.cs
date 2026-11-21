@@ -24,7 +24,7 @@ namespace Milieu;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     private readonly object gate = new();
 
@@ -212,7 +212,8 @@ public sealed class Configuration : IPluginConfiguration
 
     /// <summary>
     /// Upgrades older versions in place, as ordered steps (a later version adds its own step). Steps change only
-    /// untouched defaults, except v3/v4, which apply defaults chosen in game to configs written by unreleased dev builds.
+    /// untouched defaults, except v3/v4, which apply defaults chosen in game to configs written by unreleased dev builds, and
+    /// v6, which resets a camera height whose meaning changed (docs/adr/0015).
     /// </summary>
     public void Migrate(string configDirectory)
     {
@@ -256,6 +257,27 @@ public sealed class Configuration : IPluginConfiguration
             // Per-backdrop settings (docs/adr/0014): nothing to change here. Clamp seeds every known backdrop from the clamped
             // working copy when the store is empty, so seeds never carry the invalid values Migrate may still see.
             Version = 5;
+        }
+        if (Version < 6)
+        {
+            // Half dome on the floor (docs/adr/0015): the dome now always stands on the floor, and the height is only the
+            // camera height. A height in (0, 0.25) with projection on was the old way to lower the dome to the floor; under
+            // the new meaning it puts the camera a few centimetres off the floor and squashes the image's floor to a dot
+            // (the reported smear), so it goes back to eye height. A height <= 0 is inactive and draws the same full sphere
+            // before and after, so it stays; so do projection-off sets and every height >= 0.25.
+            static void Reset(DomeSettings? d)
+            {
+                if (d is { GroundProjection: true, HeightOffset: > 0f and < DomeSettings.MinCameraHeight }) d.HeightOffset = 1.6f;
+            }
+            Reset(Sky);
+            Reset(Room);
+            foreach (var entry in (Backdrops ?? []).Values)
+            {
+                if (entry == null) continue;
+                Reset(entry.Sky);
+                Reset(entry.Room);
+            }
+            Version = 6;
         }
         if (Version < CurrentVersion) Version = CurrentVersion;
     }

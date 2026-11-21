@@ -96,6 +96,7 @@ public sealed class BackdropControllerTests : IDisposable
     [Fact] // [AC-hdri-backdrop-3]
     public void ApplyPlacement_SpawnsNewBeforeRemovingOld_SameAvfx()
     {
+        config.Sky.GroundProjection = false;   // a sphere respawns at the live height; a half dome at its built one (EDGE-half-dome-22)
         var h = ShowAndSpawn();
         var sets = penumbra.Sets.Count;
         var avfx = spawner.Spawns[0].Path;
@@ -683,19 +684,20 @@ public sealed class BackdropControllerTests : IDisposable
         Assert.Equal(game.PlayerPosition!.Value.Y + 1.6f, spawner.Spawns[^1].Pos.Y, 4);
     }
 
-    [Fact] // [EDGE-hdri-backdrop-82]
+    [Fact] // [EDGE-hdri-backdrop-82] [EDGE-half-dome-3] [EDGE-half-dome-4]
     public void FloorYNull_WhenHeightNotBelowRadiusOrNonPositive()
     {
         var d = DomeSettings.RoomDefaults();
         Assert.Equal(0.16f, d.FloorY()!.Value, 4);
         d.HeightOffset = 0; Assert.Null(d.FloorY());
         d.HeightOffset = -1; Assert.Null(d.FloorY());
+        d.HeightOffset = 0.1f; Assert.Null(d.FloorY());   // below the minimum camera height (docs/adr/0015)
         d.HeightOffset = 10; Assert.Null(d.FloorY());     // = radius × vertical scale
         d.HeightOffset = 1.6f; d.GroundProjection = false; Assert.Null(d.FloorY());
         Assert.Equal(1.6f / 20000f, DomeSettings.SkyDefaults().FloorY()!.Value, 7);  // sky: eye height over the radius
     }
 
-    [Fact] // [AC-hdri-backdrop-3] [EDGE-hdri-backdrop-84]
+    [Fact] // [AC-hdri-backdrop-3] [EDGE-hdri-backdrop-84] [EDGE-half-dome-13]
     public void HeightRelease_ProjectionOn_FloorChanged_OneRebuildNoPlacement()
     {
         config.Mode = DomeMode.Room;
@@ -771,20 +773,205 @@ public sealed class BackdropControllerTests : IDisposable
         Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
     }
 
-    [Fact] // [AC-hdri-backdrop-15] [EDGE-hdri-backdrop-82]
-    public void ProjectionStatus_ExplainsInactiveFloor()
+    [Fact] // [AC-half-dome-9] [EDGE-half-dome-19] [EDGE-hdri-backdrop-82]
+    public void ProjectionStatus_DescribesShape()
     {
         var d = DomeSettings.RoomDefaults();
-        Assert.Equal("Floor at your feet; horizon 1.6 above it.", d.ProjectionStatus());
+        Assert.Equal("Half dome on the floor with the image's floor; its horizon 1.6 above your feet.", d.ProjectionStatus(true));
+        Assert.Equal("Floor at your feet; horizon 1.6 above it.", d.ProjectionStatus(halfDomeAvailable: false));
         Assert.False(d.ProjectionInactive);
+        d.HeightOffset = 0.25f;
+        Assert.False(d.ProjectionInactive);
+        d.HeightOffset = 0.1f;
+        Assert.True(d.ProjectionInactive);
+        Assert.Equal("Inactive: the camera height (0.1) must be at least 0.25.", d.ProjectionStatus(true));
         d.HeightOffset = 10;
         Assert.True(d.ProjectionInactive);
-        Assert.Equal("Inactive: the camera height (10) must be below the dome's height (10). Lower it or raise the radius.", d.ProjectionStatus());
-        d.HeightOffset = -1;
-        Assert.Equal("Inactive: the camera height (-1) must be above 0.", d.ProjectionStatus());
+        Assert.Equal("Inactive: the camera height (10) must be below the dome's height (10). Lower it or raise the radius.", d.ProjectionStatus(true));
+        d.Bottom = DomeBottom.Open;
+        Assert.False(d.ProjectionInactive);   // the camera height is unused
+        Assert.Equal("Half dome on the floor, the image's horizon at your feet; the game's ground shows below.", d.ProjectionStatus(true));
+        Assert.True(d.IsProjectionInactive(halfDomeAvailable: false));   // kill switch off: an open entry is the legacy floor
+        Assert.StartsWith("Inactive:", d.ProjectionStatus(halfDomeAvailable: false));
         d.GroundProjection = false;
         Assert.False(d.ProjectionInactive);
-        Assert.StartsWith("Off:", d.ProjectionStatus());
+        Assert.StartsWith("Off:", d.ProjectionStatus(true));
+    }
+
+    // ---------------------------------------------------------------- half dome (docs/adr/0015)
+
+    private (int Vertices, float MinY, float MaxV) SpawnedMesh()
+    {
+        var avfx = AvfxChunkReader.Parse(File.ReadAllBytes(penumbra.Current!.Values.Single(v => v.EndsWith(".avfx"))));
+        var vdrw = avfx.Need("Modl").Need("VDrw").Data;
+        float minY = float.MaxValue, maxV = float.MinValue;
+        for (var o = 0; o < vdrw.Length; o += 36)
+        {
+            minY = Math.Min(minY, (float)BitConverter.ToHalf(vdrw, o + 2));
+            maxV = Math.Max(maxV, (float)BitConverter.ToHalf(vdrw, o + 22));
+        }
+        return (vdrw.Length / 36, minY, maxV);
+    }
+
+    [Fact] // [AC-half-dome-1]
+    public void RoomDefaults_BuildImageFloorDome()
+    {
+        config.Mode = DomeMode.Room;
+        ShowAndSpawn();
+        var (vertices, minY, _) = SpawnedMesh();
+        Assert.Equal(9894, vertices);
+        Assert.Equal(-0.16f, minY, 2);
+        Assert.Equal(game.PlayerPosition!.Value.Y + 1.6f, spawner.Spawns[^1].Pos.Y, 4);
+    }
+
+    [Fact] // [AC-half-dome-2]
+    public void OpenBottom_SpawnsAtFeet()
+    {
+        config.Mode = DomeMode.Room;
+        config.Room.Bottom = DomeBottom.Open;
+        config.Room.HeightOffset = 3f;   // unused
+        ShowAndSpawn();
+        var (vertices, minY, maxV) = SpawnedMesh();
+        Assert.Equal(2425, vertices);
+        Assert.Equal(0f, minY);
+        Assert.Equal(0f, maxV);
+        Assert.Equal(game.PlayerPosition!.Value.Y, spawner.Spawns[^1].Pos.Y, 4);
+    }
+
+    [Fact] // [AC-half-dome-4] [EDGE-half-dome-19]
+    public void KillSwitchOff_LegacyBytes()
+    {
+        foreach (var bottom in new[] { DomeBottom.ImageFloor, DomeBottom.Open })
+        {
+            var p = new FakePenumbra();
+            var cfg = new Configuration { ImagePath = config.ImagePath, Mode = DomeMode.Room };
+            cfg.Room.Bottom = bottom;
+            var ctl = new BackdropController(new FakeSpawner(), p, new FakeGame(), new FakePreparer(cache), cache, cfg, log,
+                                             run: f => f(), utcNow: () => now, halfDomeAvailable: false);
+            Assert.False(ctl.HalfDomeAvailable);
+            ctl.Show();
+            ctl.Tick();
+            var set = p.Sets[^1];
+            var tex = set.Keys.First(k => !k.EndsWith(".avfx"));
+            var expected = DomeAvfxBuilder.Build(new DomeAvfxParams(tex, 10, 1, cfg.HorizontalRepeat, cfg.VerticalRepeat, cfg.FlipHorizontal,
+                                                                    cfg.Brightness, FloorY: 0.16f));
+            Assert.Equal(expected, File.ReadAllBytes(set.Values.Single(v => v.EndsWith(".avfx"))));
+        }
+    }
+
+    [Fact] // [EDGE-half-dome-19]
+    public void KillSwitchOff_HidesBottomChoice()
+    {
+        Assert.True(c.HalfDomeAvailable);
+        var off = new BackdropController(spawner, penumbra, game, preparer, cache, config, log, halfDomeAvailable: false);
+        Assert.False(off.HalfDomeAvailable);   // the window draws the Bottom radios only when this is true
+    }
+
+    [Fact] // [EDGE-half-dome-3]
+    public void Shape_HeightAboveDome()
+    {
+        var d = DomeSettings.RoomDefaults();
+        d.HeightOffset = 10;
+        Assert.Equal(new DomeShapeChoice(DomeMeshKind.Sphere, null, 10), d.Shape(true));
+        d.Bottom = DomeBottom.Open;
+        Assert.Equal(new DomeShapeChoice(DomeMeshKind.OpenBottom, null, 0), d.Shape(true));
+    }
+
+    [Fact] // [EDGE-half-dome-4]
+    public void Shape_LowHeight()
+    {
+        var d = DomeSettings.RoomDefaults();
+        foreach (var h in new[] { 0.1f, 0f, -0.15f })
+        {
+            d.HeightOffset = h;
+            Assert.Equal(new DomeShapeChoice(DomeMeshKind.Sphere, null, h), d.Shape(true));
+            Assert.StartsWith("Inactive: the camera height", d.ProjectionStatus(true));
+            Assert.EndsWith("must be at least 0.25.", d.ProjectionStatus(true));
+        }
+        d.HeightOffset = 0.25f;
+        Assert.Equal(DomeMeshKind.ImageFloor, d.Shape(true).Kind);
+        Assert.Equal(DomeMeshKind.LegacyFloor, d.Shape(false).Kind);
+    }
+
+    [Theory] // [EDGE-half-dome-5]
+    [InlineData(0.5f)]
+    [InlineData(2f)]
+    public void VerticalScale_FloorAtWorldHeight(float vs)
+    {
+        var d = DomeSettings.RoomDefaults();
+        d.VerticalScale = vs;
+        Assert.Equal(1.6f, d.FloorY()!.Value * d.Radius * vs, 4);
+    }
+
+    [Fact] // [EDGE-half-dome-13]
+    public void HeightRelease_OpenBottom_RespawnsWithoutRebuild()
+    {
+        config.Mode = DomeMode.Room;
+        config.Room.Bottom = DomeBottom.Open;
+        ShowAndSpawn();
+        var sets = penumbra.Sets.Count;
+        var avfx = spawner.Spawns[^1].Path;
+        spawner.Calls.Clear();
+        config.Room.HeightOffset = 2.5f;
+        c.ApplyHeight();
+        Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
+        Assert.Equal(avfx, spawner.Spawns[^1].Path);
+        Assert.Equal(sets, penumbra.Sets.Count);
+        Assert.Equal(game.PlayerPosition!.Value.Y, spawner.Spawns[^1].Pos.Y, 4);
+    }
+
+    [Fact] // [EDGE-half-dome-22]
+    public void FailedRebuildThenYaw_KeepsBuiltCentre()
+    {
+        config.Mode = DomeMode.Room;
+        ShowAndSpawn();
+        var avfx = spawner.Spawns[^1].Path;
+        config.Room.Bottom = DomeBottom.Open;
+        config.Room.HeightOffset = 3f;   // neither the live height nor the open bottom's 0 is the built centre
+        penumbra.SetSucceeds = false;
+        c.ApplyRebuild();   // refused: the image-floor dome stays shown
+        Assert.Equal(BackdropState.Shown, c.State);
+        config.Room.YawDegrees = 45;
+        c.ApplyPlacement();
+        Assert.Equal(avfx, spawner.Spawns[^1].Path);
+        Assert.Equal(game.PlayerPosition!.Value.Y + 1.6f, spawner.Spawns[^1].Pos.Y, 4);   // its built centre, not the open bottom's 0
+    }
+
+    [Fact] // [EDGE-half-dome-22]
+    public void FailedHeightRebuild_ImageFloorKeepsBuiltCentre()
+    {
+        config.Mode = DomeMode.Room;
+        ShowAndSpawn();
+        var avfx = spawner.Spawns[^1].Path;
+        config.Room.HeightOffset = 2.5f;
+        penumbra.SetSucceeds = false;
+        c.ApplyHeight();   // a new floor: rebuild, refused
+        config.Room.YawDegrees = 45;
+        c.ApplyPlacement();
+        Assert.Equal(avfx, spawner.Spawns[^1].Path);
+        Assert.Equal(game.PlayerPosition!.Value.Y + 1.6f, spawner.Spawns[^1].Pos.Y, 4);   // the file's floor is baked for 1.6
+    }
+
+    [Fact] // [EDGE-half-dome-22]
+    public void SphereYaw_UsesLiveHeight()
+    {
+        config.Sky.GroundProjection = false;
+        ShowAndSpawn();
+        config.Sky.HeightOffset = 7;
+        config.Sky.YawDegrees = 30;
+        c.ApplyPlacement();
+        Assert.Equal(game.PlayerPosition!.Value.Y + 7, spawner.Spawns[^1].Pos.Y, 4);
+    }
+
+    [Fact] // [EDGE-half-dome-21]
+    public void BuildFailure_ReportsWriteFailed()
+    {
+        config.Sky.Radius = float.NaN;   // past Clamp, as a corrupted value would be: the builder's guard throws
+        c.Show();
+        c.Tick();
+        Assert.Equal(MessageKey.WriteFailed, c.Status.Message.Key);
+        Assert.Empty(penumbra.Sets);
+        Assert.Empty(Directory.Exists(cache.Root) ? Directory.GetFiles(cache.Root, "*.avfx", SearchOption.AllDirectories) : []);
     }
 
     private BackdropController WithBundled(FakeBundled bundled) =>

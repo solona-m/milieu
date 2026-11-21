@@ -52,11 +52,11 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
 
     public void Dispose() => dir.Dispose();
 
-    private void Create(bool localLoader = true, bool fills = false) =>
+    private void Create(bool localLoader = true, bool fills = false, bool halfDome = true) =>
         c = new BackdropController(spawner, pen, game, preparer, cache, config, log, run: f => f(), utcNow: () => now,
                                    syncedAvailable: () => true, sync: pen, gameData: data,
                                    loadRig: (_, _) => Task.FromResult(rig), fillsOnOwnEmitters: fills,
-                                   loadLocalRig: localLoader ? LoadLocal : null);
+                                   loadLocalRig: localLoader ? LoadLocal : null, halfDomeAvailable: halfDome);
 
     private Task<LightRig?> LoadLocal(string path, CancellationToken ct)
     {
@@ -96,15 +96,22 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         c.Tick();
     }
 
+    // The shape the controller builds (docs/adr/0015): its centre height shifts local lights, and a half dome bounds them.
+    private DomeShapeChoice Shape => config.Current.Shape(true);
+
+    private DomeBounds? Bounds => Shape.Kind is DomeMeshKind.ImageFloor or DomeMeshKind.OpenBottom
+        ? new DomeBounds(config.Current.Radius, config.Current.VerticalScale) : null;
+
     private VfxLightPlan Expected() =>
         VfxLightPlanner.PlanLocal(rig!, config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat,
-                                  config.Current.Radius, config.Current.HeightOffset, config.LightStrength, config.FillLightCount);
+                                  config.Current.Radius, Shape.CentreHeight, config.LightStrength, config.FillLightCount,
+                                  bounds: Bounds, lowerHalfHidden: Shape.Kind == DomeMeshKind.OpenBottom);
 
     private byte[] BuildFor(IReadOnlyList<DomeLight>? lights)
     {
         var tex = pen.Sets[^1].First(kv => !kv.Key.EndsWith(".avfx")).Key;
         return DomeAvfxBuilder.Build(new DomeAvfxParams(tex, config.Current.Radius, config.Current.VerticalScale, config.HorizontalRepeat,
-            config.VerticalRepeat, config.FlipHorizontal, config.Brightness, config.Current.FloorY(), Lights: lights));
+            config.VerticalRepeat, config.FlipHorizontal, config.Brightness, Shape.FloorY, Lights: lights, Mesh: Shape.Kind));
     }
 
     // ---------------------------------------------------------------- AC
@@ -835,5 +842,105 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         config.SceneLighting = false; c.Tick();
         config.SceneLighting = true; c.Tick();
         Assert.True(c.LocalLightsActive);
+    }
+
+    // ---------------------------------------------------------------- half dome (docs/adr/0015), through the controller
+
+    private static readonly Vector3 LightAnchor = new(0, LightRigLayout.AnchorHeight, 0);
+
+    /// <summary>Asserts each light (in the feet frame) lies on its ray within 0.9 × the R-10 half dome's wall.</summary>
+    private static void InsideWall(IReadOnlyList<DomeLight> lights, float centre)
+    {
+        foreach (var l in lights)
+        {
+            var rel = l.Position + new Vector3(0, centre, 0) - LightAnchor;
+            var exit = DomeShape.ExitDistance(LightAnchor, Vector3.Normalize(rel), 10f, 1f);
+            Assert.True(rel.Length() <= 0.9f * exit + 1e-3f, $"light at {rel.Length()} beyond 0.9 × wall {exit}");
+        }
+    }
+
+    [Theory] // [AC-half-dome-5] [EDGE-half-dome-14]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoomHalfDome_LocalLightsBoundedAndShiftedByCentre(bool open)
+    {
+        config.Mode = DomeMode.Room;
+        config.Room.Bottom = open ? DomeBottom.Open : DomeBottom.ImageFloor;
+        Show();
+        var lights = c.LocalLights!.Lights;
+        Assert.Single(lights);
+        Assert.Equal(Expected().Lights, lights);
+        var centre = open ? 0f : 1.6f;
+        InsideWall(lights, centre);
+        // The key (45° up) sits closer than the old sphere rule (0.9 × R = 9): the half dome's wall is nearer.
+        var keyDistance = (lights[0].Position + new Vector3(0, centre, 0) - LightAnchor).Length();
+        Assert.InRange(keyDistance, 8f, 8.6f);
+        Assert.Equal(open, c.Lit!.View.LowerHalfHidden);
+    }
+
+    [Fact] // [EDGE-half-dome-18]
+    public void RoomOpenBottom_KeyBelowHorizonNotLit()
+    {
+        rig = new LightRig(LightExtractor.Version, new RigLight(0.5f, 0.75f, new Vector3(3, 2, 1)),
+                           [new(0.3f, 0.3f, new Vector3(0.5f, 0.6f, 1f))], new Vector3(10, 10, 10));
+        config.Mode = DomeMode.Room;
+        config.Room.Bottom = DomeBottom.Open;
+        Show();
+        Assert.False(c.LocalLights!.HasKey);   // the sun is in the undrawn lower half
+        config.Room.Bottom = DomeBottom.ImageFloor;
+        c.ApplyRebuild();
+        c.Tick();
+        Assert.True(c.LocalLights!.HasKey);    // drawn on the image floor
+    }
+
+    [Theory] // [AC-half-dome-5] [AC-half-dome-6] [EDGE-half-dome-14]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoomHalfDome_SyncedLightsBounded(bool open)
+    {
+        config.Delivery = DeliveryMode.MadBirdRing;
+        config.Mode = DomeMode.Room;
+        config.Room.Bottom = open ? DomeBottom.Open : DomeBottom.ImageFloor;
+        Show();
+        var expected = VfxLightPlanner.Plan(rig!, new DomeView(0, config.FlipHorizontal, 1, config.HorizontalRepeat, config.VerticalRepeat, open),
+                                            10f, config.LightStrength, config.FillLightCount, false, bounds: new DomeBounds(10f, 1f));
+        Assert.Equal(expected.Lights, c.SyncedLights!.Lights);
+        InsideWall(c.SyncedLights.Lights, 0f);   // synced lights are already in the feet frame (emitter-relative)
+        Assert.Equal(open, c.Lit!.View.LowerHalfHidden);
+    }
+
+    [Fact] // [AC-half-dome-4] [EDGE-half-dome-19]
+    public void KillSwitchOff_SyncedBuildsLegacyFloor()
+    {
+        Create(halfDome: false);
+        config.Delivery = DeliveryMode.MadBirdRing;
+        config.Mode = DomeMode.Room;
+        config.Room.Bottom = DomeBottom.Open;
+        Show();
+        var vdrw = AvfxChunkReader.Parse(File.ReadAllBytes(pen.SyncSets[^1].Paths[RingPath])).Need("Modl").Need("VDrw").Data;
+        Assert.Equal(SphereMesh.BuildLegacyFloor(0.16f).VertexBytes(), vdrw);
+        Assert.False(c.Lit!.View.LowerHalfHidden);
+        // The legacy floor keeps today's unbounded lights (0.9 × R), byte for byte.
+        var today = VfxLightPlanner.Plan(rig!, new DomeView(0, config.FlipHorizontal, 1, config.HorizontalRepeat, config.VerticalRepeat),
+                                         10f, config.LightStrength, config.FillLightCount, false);
+        Assert.Equal(today.Lights, c.SyncedLights!.Lights);
+        Assert.Equal(9f, (c.SyncedLights.Lights[0].Position - LightAnchor).Length(), 3);
+    }
+
+    [Fact] // [AC-half-dome-4] [EDGE-half-dome-14]
+    public void RoomProjectionOff_LocalLightsUnbounded()
+    {
+        config.Mode = DomeMode.Room;
+        config.Room.GroundProjection = false;
+        config.Room.Bottom = DomeBottom.Open;   // a saved open entry with projection unticked: still the plain sphere
+        Show();
+        var today = VfxLightPlanner.PlanLocal(rig!, config.FlipHorizontal, 1, config.HorizontalRepeat, config.VerticalRepeat, 10f, 1.6f,
+                                              config.LightStrength, config.FillLightCount);
+        Assert.Equal(today.Lights, c.LocalLights!.Lights);
+        Assert.Equal(9f, (c.LocalLights.Lights[0].Position + new Vector3(0, 1.6f, 0) - LightAnchor).Length(), 3);
+        Assert.False(c.Lit!.View.LowerHalfHidden);
+        var tex = pen.Sets[^1].First(kv => !kv.Key.EndsWith(".avfx")).Key;
+        Assert.Equal(DomeAvfxBuilder.Build(new DomeAvfxParams(tex, 10f, 1f, config.HorizontalRepeat, config.VerticalRepeat, config.FlipHorizontal,
+                                                              config.Brightness, Lights: today.Lights)), AvfxBytes());
     }
 }

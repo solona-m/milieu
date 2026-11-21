@@ -98,7 +98,7 @@ public class SphereMeshTests
     public void GroundProjection_FlattensBelowFloor_KeepsUvsNormalsIndices()
     {
         const float floor = 0.16f;
-        var flat = SphereMesh.Build(floorY: floor);
+        var flat = SphereMesh.BuildLegacyFloor(floor);
         Assert.Equal(Mesh.Indices, flat.Indices);
         var a = Mesh.VertexBytes();
         var b = flat.VertexBytes();
@@ -118,13 +118,13 @@ public class SphereMeshTests
                 if (r > 1e-3) Assert.InRange(Math.Abs((double)v.X / rf - (double)orig.X / r), 0, 0.01);   // …along its own ray
             }
         }
-        Assert.Throws<ArgumentOutOfRangeException>(() => SphereMesh.Build(floorY: 1.5f));
-        Assert.Throws<ArgumentOutOfRangeException>(() => SphereMesh.Build(floorY: 0f));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SphereMesh.BuildLegacyFloor(1.5f));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SphereMesh.BuildLegacyFloor(0f));
     }
 
     [Fact] // [AC-hdri-backdrop-15] [EDGE-hdri-backdrop-81]
     public void NoProjection_IdenticalToV5()
     {
-        Assert.Equal(Mesh.VertexBytes(), SphereMesh.Build(floorY: null).VertexBytes());
+        Assert.Equal(Mesh.VertexBytes(), SphereMesh.For(DomeMeshKind.Sphere, null).VertexBytes());
     }
 }
