@@ -9,8 +9,17 @@ namespace Milieu.Imaging;
 /// most <see cref="ToneMapper.Workers"/> threads. Cancellation lands between rows and surfaces as a bare
 /// <see cref="OperationCanceledException"/>; progress never goes backwards and ends at 1.
 /// </summary>
-public sealed class OpaqueBc7(int? workers = null) : IBlockEncoder
+public sealed class OpaqueBc7 : IBlockEncoder
 {
+    private readonly int? workers;
+
+    /// <param name="workers">Threads to use (at least 1); null for <see cref="ToneMapper.Workers"/> (half the cores).</param>
+    public OpaqueBc7(int? workers = null)
+    {
+        if (workers is <= 0) throw new ArgumentOutOfRangeException(nameof(workers), workers, "At least one worker.");
+        this.workers = workers;
+    }
+
     /// <summary>Bump whenever this encoder's output bytes change (it is part of the texture cache key).</summary>
     public string CacheId => "opaque-bc7-1";
 

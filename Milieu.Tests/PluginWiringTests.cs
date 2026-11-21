@@ -221,5 +221,8 @@ public sealed class PluginWiringTests : IDisposable
         var reference = Plugin.CreateBlockEncoder(false);
         Assert.IsType<Milieu.Imaging.Bc7>(reference);
         Assert.Equal("bcnenc-fast", reference.CacheId);
+        // The production wiring goes through the switch (a regression to a hard-coded encoder would bypass it).
+        var src = System.IO.File.ReadAllText(System.IO.Path.Combine(RepoPaths.Root(), "Milieu", "Plugin.cs"));
+        Assert.Contains("new BackdropPreparer(cache, CreateBlockEncoder(FastConversionAvailable()),", src);
     }
 }

@@ -330,6 +330,9 @@ public class OpaqueBc7Tests
         await Assert.ThrowsAsync<ArgumentException>(() => enc.EncodeMipAsync(new byte[6 * 4 * 4], 6, 4, null, default));
         await Assert.ThrowsAsync<ArgumentException>(() => enc.EncodeMipAsync(new byte[4 * 6 * 4], 4, 6, null, default));
         await Assert.ThrowsAsync<ArgumentException>(() => enc.EncodeMipAsync([], 0, 0, null, default));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new OpaqueBc7(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new OpaqueBc7(-1));
+        Assert.Throws<ArgumentException>(() => Bc7Block.Encode(new byte[64], new byte[16], Bc7Modes.Mode1, 0, 0));
     }
 
     // ------------------------------------------------------------ cancellation, progress, concurrency

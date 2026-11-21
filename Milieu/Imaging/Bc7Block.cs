@@ -143,6 +143,8 @@ internal static class Bc7Block
         if (rgba16.Length < 64) throw new ArgumentException("A block is 64 bytes.", nameof(rgba16));
         if (block16.Length < 16) throw new ArgumentException("A BC7 block is 16 bytes.", nameof(block16));
         if ((allowed & (Bc7Modes.Mode6 | Bc7Modes.Mode1)) == 0) throw new ArgumentException("Mode 6 or mode 1 must be allowed.", nameof(allowed));
+        if ((allowed & Bc7Modes.Mode6) == 0 && mode1Partitions <= 0)
+            throw new ArgumentException("Mode 1 alone needs at least one partition.", nameof(mode1Partitions));
 
         if ((allowed & Bc7Modes.Solid) != 0 && IsSolid(rgba16)) return EncodeSolid(rgba16[0], rgba16[1], rgba16[2], block16);
 
@@ -362,7 +364,7 @@ internal static class Bc7Block
     {
         var mask1 = Partitions2[partition];
         var mask0 = (ushort)(~mask1 & 0xFFFF);
-        Span<int> q = stackalloc int[12];   // [subset*2 + end] * 3 + ch → laid out as ch-major below
+        Span<int> q = stackalloc int[12];   // q[subset * 6 + ch * 2 + end]
         Span<int> pbits = stackalloc int[2];
         Span<byte> idx = stackalloc byte[16];
         long total = 0;
