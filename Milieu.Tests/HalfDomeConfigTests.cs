@@ -142,8 +142,20 @@ public sealed class HalfDomeConfigTests
         }
     }
 
-    [Fact] // [EDGE-half-dome-10]
+    [Fact] // [EDGE-half-dome-10] [AC-half-dome-11]
     public void Migrate_V6Config_NotReMigrated()
+    {
+        var c = V5Like();
+        c.Version = 6;
+        c.Room.Bottom = DomeBottom.ImageFloor;   // as v6 wrote it
+        c.Migrate(@"C:\cfg");
+        Assert.Equal(0.07f, c.Room.HeightOffset);   // the v6 height reset doesn't run again
+        Assert.Equal(DomeBottom.Open, c.Room.Bottom);   // v7: the room default
+        Assert.Equal(7, c.Version);
+    }
+
+    [Fact] // [EDGE-half-dome-10] [AC-half-dome-11]
+    public void Migrate_V7Config_Untouched()
     {
         var c = V5Like();
         c.Version = 7;
@@ -174,15 +186,22 @@ public sealed class HalfDomeConfigTests
 
     // ---------------------------------------------------------------- AC-9 and the panel's pure rules
 
-    [Fact] // [EDGE-half-dome-9]
-    public void Clamp_UndefinedBottom_BecomesImageFloor()
+    [Fact] // [EDGE-half-dome-9] [AC-half-dome-11]
+    public void Clamp_UndefinedBottom_BecomesTheModesDefault()
     {
         var c = new Configuration { UserImages = [A] };
         c.Room.Bottom = (DomeBottom)7;
-        c.Backdrops[A] = new BackdropSettings { Sky = new DomeSettings { Radius = 20000, Bottom = (DomeBottom)9 } };
+        c.Sky.Bottom = (DomeBottom)8;
+        c.Backdrops[A] = new BackdropSettings
+        {
+            Sky = new DomeSettings { Radius = 20000, Bottom = (DomeBottom)9 },
+            Room = new DomeSettings { Radius = 10, Bottom = (DomeBottom)9 },
+        };
         c.Clamp();
-        Assert.Equal(DomeBottom.ImageFloor, c.Room.Bottom);
+        Assert.Equal(DomeBottom.Open, c.Room.Bottom);
+        Assert.Equal(DomeBottom.ImageFloor, c.Sky.Bottom);
         Assert.Equal(DomeBottom.ImageFloor, c.Backdrops[A].Sky.Bottom);
+        Assert.Equal(DomeBottom.Open, c.Backdrops[A].Room.Bottom);
     }
 
     [Fact] // [AC-half-dome-9]
@@ -198,7 +217,7 @@ public sealed class HalfDomeConfigTests
         Assert.Equal(["Image floor", "Open (horizon at your feet)"], DomeSettings.BottomLabels);
         Assert.Equal("The image's lower half lies on a flat floor at your feet; its horizon sits at camera height.",
                      DomeSettings.BottomTooltip(DomeBottom.ImageFloor));
-        Assert.Equal("Only the image's upper half is drawn, its horizon at your feet, and the game's own ground shows below. Best for skies and open scenes: in a room the horizon sits below eye level and the image's floor is gone.",
+        Assert.Equal("Only the image's upper half is drawn, its horizon at your feet, and the game's own floor stays. The room default; in a room the horizon sits below eye level and the image's floor isn't drawn.",
                      DomeSettings.BottomTooltip(DomeBottom.Open));
         Assert.Equal("How high the image was taken above the floor: its horizon sits this far above your feet.", DomeSettings.CameraHeightTooltip);
         Assert.Equal("Not used: with an open bottom the image's horizon is at your feet.", DomeSettings.CameraHeightDisabledTooltip);
