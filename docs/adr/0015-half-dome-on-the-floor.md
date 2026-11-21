@@ -98,6 +98,9 @@ before tagging.
 
 - Room backdrops read as a room with a flat floor at the feet; the lodge config migrates to camera height 1.6.
 - The −0.15 entries stay full spheres until the owner picks Open; nothing converts them automatically.
+- Building the dome stays on the framework thread, as before, but is up to about 2.5× the work: measured at about 4 ms a
+  build on average and about 12 ms for the largest half dome (including the tests' own parse-back), so at most a one-frame
+  hitch when a slider is released. Moving `DomeAvfxBuilder.Build` off the framework thread is the lever if it shows.
 - An older build reading a v6 config ignores `Bottom` (it reads as the image floor) and keeps the migrated heights.
 
 ## UNVERIFIED in game

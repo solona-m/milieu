@@ -1118,7 +1118,7 @@ public sealed class BackdropController : Gui.IGridController
     {
         { Kind: DomeMeshKind.Sphere } => config.Current.HeightOffset,
         { } b => b.CentreHeight,
-        null => config.Current.Shape(HalfDomeAvailable).CentreHeight,
+        null => config.Current.Shape(HalfDomeAvailable).CentreHeight,   // defensive: believed unreachable (every spawn path has a build)
     }, 0);
 
     private float YawRadians() => config.Current.YawDegrees * MathF.PI / 180f;
