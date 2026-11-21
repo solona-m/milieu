@@ -23,10 +23,12 @@ internal readonly record struct DomeVertex(
 }
 
 /// <summary>
-/// The dome mesh: a lat-long unit sphere seen from inside, laid out exactly as model 7 of the reference VFX
-/// ("Pickles Venue" ve0002.avfx) so the projection (seam position, U direction, poles, winding) is the proven one.
-/// Vertex <c>r·(segments+1)+c</c>: elevation 90° − 180°·r/rings, azimuth 90° + 360°·c/segments,
-/// u = −0.5 + c/segments, v = −0.5 + r/rings; normals point inward.
+/// The dome meshes. <see cref="Build"/> is a lat-long unit sphere seen from inside, laid out exactly as model 7 of the
+/// reference VFX ("Pickles Venue" ve0002.avfx) so the projection (seam position, U direction, poles, winding) is the proven
+/// one. Vertex <c>r·(segments+1)+c</c>: elevation 90° − 180°·r/rings, azimuth 90° + 360°·c/segments,
+/// u = −0.5 + c/segments, v = −0.5 + r/rings; normals point inward. The half-dome meshes (docs/adr/0015) keep those column,
+/// U, normal, tangent and winding formulas: <see cref="BuildProjected"/> has its own ring elevations (v follows them) and
+/// <see cref="BuildOpenBottom"/> is the reference's upper half, a byte prefix of it.
 /// </summary>
 internal sealed class SphereMesh
 {
@@ -43,21 +45,95 @@ internal sealed class SphereMesh
     /// <summary>The reference stores 127 in the unused 4th byte of normals and tangents.</summary>
     public const byte UnusedW = 127;
 
-    /// <param name="floorY">
-    /// Ground projection: when set (0 &lt; floorY &lt; 1, in unit-radius space), every vertex below the floor plane
-    /// y = −floorY is pulled in along its own ray onto that plane (position = d · min(1, floorY / −d.y)), so the
-    /// panorama's ground lies flat. UVs, normals, tangents and indices are unchanged; null gives the reference mesh.
-    /// </param>
-    public static SphereMesh Build(int segments = 96, int rings = 48, float? floorY = null)
+    /// <summary>The reference mesh (model 7's layout).</summary>
+    public static SphereMesh Build(int segments = 96, int rings = 48) => BuildReference(segments, rings, null, rings);
+
+    /// <summary>
+    /// The pre-0015 ground projection, kept byte-for-byte for the kill switch (<c>Plugin.HalfDomeAvailable</c>): every vertex
+    /// below the floor plane y = −floorY (0 &lt; floorY &lt; 1, unit-radius space) is pulled in along its own ray onto that
+    /// plane (position = d · min(1, floorY / −d.y)). UVs, normals, tangents and indices are the reference's.
+    /// </summary>
+    public static SphereMesh BuildLegacyFloor(float floorY) => BuildReference(96, 48, floorY, 48);
+
+    /// <summary>The reference sphere's upper half (rows 0..24, elevation 90°..0°): its buffers are prefixes of <see cref="Build"/>'s.</summary>
+    public static SphereMesh BuildOpenBottom() => BuildReference(96, 48, null, 24);
+
+    /// <summary>The mesh for <paramref name="kind"/>; the floor kinds need <paramref name="floorY"/>, the others ignore it.</summary>
+    public static SphereMesh For(DomeMeshKind kind, float? floorY) => kind switch
+    {
+        DomeMeshKind.Sphere => Build(),
+        DomeMeshKind.LegacyFloor => BuildLegacyFloor(floorY ?? throw new ArgumentOutOfRangeException(nameof(floorY), "The legacy floor needs floorY.")),
+        DomeMeshKind.ImageFloor => BuildProjected(floorY ?? throw new ArgumentOutOfRangeException(nameof(floorY), "The image floor needs floorY.")),
+        DomeMeshKind.OpenBottom => BuildOpenBottom(),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), $"Unknown dome mesh kind {(int)kind}."),
+    };
+
+    /// <summary>
+    /// The image-floor half dome (docs/adr/0015): rows at <see cref="DomeShape.RingElevations"/>, each vertex cast from the
+    /// capture point onto the hemisphere-on-the-floor (<see cref="DomeShape.CastImageFloor"/>); v = −0.5 + (90° − el)/180°.
+    /// Throws <see cref="InvalidDataException"/> when the rows or their Half v are not strictly monotonic.
+    /// </summary>
+    public static SphereMesh BuildProjected(float floorY, int segments = 96)
+    {
+        if (segments < 3) throw new ArgumentOutOfRangeException(nameof(segments));
+        var els = DomeShape.RingElevations(floorY);
+        var cols = segments + 1;
+        var count = cols * els.Length;
+        if (count > ushort.MaxValue) throw new ArgumentOutOfRangeException(nameof(segments), "Too many vertices for 16-bit indices.");
+        var vs = new Half[els.Length];
+        for (var r = 0; r < els.Length; r++)
+        {
+            vs[r] = (Half)(-0.5 + (Math.PI / 2 - els[r]) / Math.PI);
+            if (r > 0 && (!(els[r] < els[r - 1]) || !(vs[r] > vs[r - 1])))
+                throw new InvalidDataException($"Dome rows must be strictly monotonic (row {r}).");
+        }
+
+        var verts = new DomeVertex[count];
+        for (var r = 0; r < els.Length; r++)
+        {
+            var el = els[r];
+            for (var c = 0; c <= segments; c++)
+            {
+                var az = (90.0 + 360.0 * c / segments) * Math.PI / 180.0;
+                var dx = Clean(Math.Cos(el) * Math.Cos(az));
+                var dy = Clean(Math.Sin(el));
+                var dz = Clean(Math.Cos(el) * Math.Sin(az));
+                var (px, py, pz) = DomeShape.CastImageFloor(dx, dy, dz, floorY);
+                verts[r * cols + c] = new DomeVertex(
+                    (Half)Clean(px), (Half)Clean(py), (Half)Clean(pz), (Half)1.0,
+                    EncodeBiased(-dx), EncodeBiased(-dy), EncodeBiased(-dz), UnusedW,
+                    EncodeBiased(Clean(-Math.Sin(az))), EncodeBiased(0), EncodeBiased(Clean(Math.Cos(az))), UnusedW,
+                    (Half)(-0.5 + (double)c / segments), vs[r]);
+            }
+        }
+        return new SphereMesh { Vertices = verts, Indices = BandIndices(segments, els.Length - 1) };
+    }
+
+    private static ushort[] BandIndices(int segments, int bands)
+    {
+        var cols = segments + 1;
+        var idx = new ushort[segments * bands * 6];
+        var k = 0;
+        for (var r = 0; r < bands; r++)
+        for (var c = 0; c < segments; c++)
+        {
+            var a = r * cols + c;
+            idx[k++] = (ushort)a; idx[k++] = (ushort)(a + 1); idx[k++] = (ushort)(a + cols + 1);
+            idx[k++] = (ushort)(a + cols + 1); idx[k++] = (ushort)(a + cols); idx[k++] = (ushort)a;
+        }
+        return idx;
+    }
+
+    private static SphereMesh BuildReference(int segments, int rings, float? floorY, int bands)
     {
         if (segments < 3 || rings < 2) throw new ArgumentOutOfRangeException(nameof(segments));
         if (floorY is { } f && !(f > 0 && f < 1)) throw new ArgumentOutOfRangeException(nameof(floorY), "floorY must be in (0, 1).");
         var cols = segments + 1;
-        var count = cols * (rings + 1);
+        var count = cols * (bands + 1);
         if (count > ushort.MaxValue) throw new ArgumentOutOfRangeException(nameof(segments), "Too many vertices for 16-bit indices.");
 
         var verts = new DomeVertex[count];
-        for (var r = 0; r <= rings; r++)
+        for (var r = 0; r <= bands; r++)
         {
             var el = (90.0 - 180.0 * r / rings) * Math.PI / 180.0;
             for (var c = 0; c <= segments; c++)
@@ -85,16 +161,7 @@ internal sealed class SphereMesh
             }
         }
 
-        var idx = new ushort[segments * rings * 6];
-        var k = 0;
-        for (var r = 0; r < rings; r++)
-        for (var c = 0; c < segments; c++)
-        {
-            var a = r * cols + c;
-            idx[k++] = (ushort)a; idx[k++] = (ushort)(a + 1); idx[k++] = (ushort)(a + cols + 1);
-            idx[k++] = (ushort)(a + cols + 1); idx[k++] = (ushort)(a + cols); idx[k++] = (ushort)a;
-        }
-        return new SphereMesh { Vertices = verts, Indices = idx };
+        return new SphereMesh { Vertices = verts, Indices = BandIndices(segments, bands) };
     }
 
     private static double Clean(double v) => Math.Abs(v) < 1e-9 ? 0.0 : v;

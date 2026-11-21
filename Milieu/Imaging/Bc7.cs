@@ -17,7 +17,7 @@ public interface IBlockEncoder
 }
 
 /// <summary>
-/// The reference BC7 encoder (docs/adr/0015): BCnEncoder.Net at fast quality, half the cores. It produced the pinned bundled
+/// The reference BC7 encoder (docs/adr/0016): BCnEncoder.Net at fast quality, half the cores. It produced the pinned bundled
 /// textures and tools/PrepareBackdrops keeps using it (docs/adr/0005); the plugin uses it for user images only with
 /// <c>Plugin.FastConversionAvailable</c> off (otherwise <c>OpaqueBc7</c>). Each mip is encoded separately with a cancellation
 /// check between mips. Inside a mip, BCnEncoder's EncodeToRawBytesAsync observes the token itself (it checks per block

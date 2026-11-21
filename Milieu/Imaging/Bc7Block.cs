@@ -17,7 +17,7 @@ internal enum Bc7Modes
 }
 
 /// <summary>
-/// One 4x4 block of an opaque image → 16 bytes of BC7 (docs/adr/0015). Written from the BC7 format specification
+/// One 4x4 block of an opaque image → 16 bytes of BC7 (docs/adr/0016). Written from the BC7 format specification
 /// (Khronos Data Format Specification, BC7 section): mode 6 for every block, mode 1 on the best-ranked two-subset
 /// partitions when mode 6's error is high, and exact solid colours through mode-6 / mode-5 tables. Input alpha is ignored;
 /// every block decodes with alpha 255. Pure, allocation-free, no <c>unsafe</c>; fixed iteration counts, so the same input

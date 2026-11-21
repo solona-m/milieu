@@ -26,9 +26,11 @@ every value mirrors the reference element chain (`Schd`, `TmLn#2`, `Emit#5`, `Pt
 - Brightness defaults to 1.0 (reference 0.798).
 - UV set 0 scale X = ±horizontal repeat (default 2.0, negative when flipped), Y = vertical repeat (default 1.0).
 - Unused texture slots point nowhere (`TxNo -1`); the colour slot uses `TLst` (a byte list) as the reference does.
-- Ground projection (on by default for both domes): vertices below the floor plane are pulled along their own ray onto
-  it (`SphereMesh.Build(floorY)`), so the default mesh positions differ from model 7; UVs, normals, tangents, indices
-  and winding stay the reference's. With projection off the mesh is the reference layout exactly.
+- Ground projection (on by default for both domes) builds a half dome standing on the floor (ADR 0015): with an image
+  floor its rows, V values, indices and positions differ from model 7 (columns, U, normals, tangents and winding keep its
+  formulas); an open bottom is a byte prefix of model 7. The pre-0015 floor (vertices pulled along their rays onto the
+  floor plane, `SphereMesh.BuildLegacyFloor`) remains as the kill-switch path. With projection off the mesh is the
+  reference layout exactly.
 
 The sphere is generated to the reference layout exactly (tested against model 7: positions and UVs to half precision, normal and tangent bytes within 1), so the seam,
 U direction, poles and winding are the proven ones. Every generated file is parsed back before it is written.
@@ -36,7 +38,7 @@ Parity tests compare the structure with the reference when `MILIEU_REFERENCE_AVF
 
 BC7 encoding uses BCnEncoder.Net per mip; its `EncodeToRawBytesAsync` observes the cancellation token inside a mip
 (`Bc7Tests.CancelInsideMip0_ReturnsPromptly`), so no strip-encoding fallback was needed.
-Amendment (2026-11-21, ADR 0015): user images are now encoded by the in-repo `OpaqueBc7` (cancellation between block
+Amendment (2026-11-21, ADR 0016): user images are now encoded by the in-repo `OpaqueBc7` (cancellation between block
 rows); BCnEncoder remains the reference encoder for the bundled textures and the kill-switch fallback.
 
 Experiment result (testing builds 3-5, 2026-11-09..16; the `/milieu vfxlight` command is removed, issue #1): VFX

@@ -138,7 +138,7 @@ internal static class Program
     private static async Task<int> Atex(string src, string dst)
     {
         Directory.CreateDirectory(dst);
-        // The reference encoder on purpose: it produced the pinned published textures (docs/adr/0005, 0015). The plugin
+        // The reference encoder on purpose: it produced the pinned published textures (docs/adr/0005, 0016). The plugin
         // encodes user images with the in-repo OpaqueBc7; switching here would change the pins and need a re-publish.
         var encoder = new Bc7();
         foreach (var plan in Plans)

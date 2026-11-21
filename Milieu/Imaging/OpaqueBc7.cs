@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 namespace Milieu.Imaging;
 
 /// <summary>
-/// The in-repo BC7 encoder for user images (docs/adr/0015): <see cref="Bc7Block"/> over a mip, block rows in parallel on at
+/// The in-repo BC7 encoder for user images (docs/adr/0016): <see cref="Bc7Block"/> over a mip, block rows in parallel on at
 /// most <see cref="ToneMapper.Workers"/> threads. Cancellation lands between rows and surfaces as a bare
 /// <see cref="OperationCanceledException"/>; progress never goes backwards and ends at 1.
 /// </summary>
@@ -23,7 +23,7 @@ public sealed class OpaqueBc7 : IBlockEncoder
     /// <summary>Bump whenever this encoder's output bytes change (it is part of the texture cache key).</summary>
     public string CacheId => "opaque-bc7-1";
 
-    /// <summary>Mode 6's block SSE above which mode 1 is tried (tuned by Bc7QualityTests, docs/adr/0015).</summary>
+    /// <summary>Mode 6's block SSE above which mode 1 is tried (tuned by Bc7QualityTests, docs/adr/0016).</summary>
     internal int Mode1Threshold { get; init; } = DefaultMode1Threshold;
 
     /// <summary>How many of the best-ranked two-subset partitions mode 1 tries.</summary>

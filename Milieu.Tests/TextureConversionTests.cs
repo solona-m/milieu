@@ -11,7 +11,7 @@ namespace Milieu.Tests;
 
 public class TextureConversionTests
 {
-    /// <summary>Both block encoders: the reference (BCnEncoder) and the in-repo one (docs/adr/0015).</summary>
+    /// <summary>Both block encoders: the reference (BCnEncoder) and the in-repo one (docs/adr/0016).</summary>
     private static IBlockEncoder Encoder(string name) => name == "reference" ? new Bc7() : new OpaqueBc7();
 
     private static byte[] Source() => SyntheticImages.Rgb(256, 128, (x, y) => ((byte)(x * 3), (byte)(y * 2), (byte)((x ^ y) & 255)));

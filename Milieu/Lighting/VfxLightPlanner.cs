@@ -19,6 +19,9 @@ internal sealed record VfxLightPlan(IReadOnlyList<DomeLight> Lights, bool HasKey
     public static bool SameLights(IReadOnlyList<DomeLight>? a, IReadOnlyList<DomeLight>? b) => (a ?? []).SequenceEqual(b ?? []);
 }
 
+/// <summary>The half dome's wall in the feet frame (docs/adr/0015): an ellipsoid with semi-axes (R, R·vs, R) centred at the feet.</summary>
+internal readonly record struct DomeBounds(float Radius, float VerticalScale);
+
 /// <summary>
 /// Turns a <see cref="LightRig"/> into VFX point lights for a synced dome, or a local one outside GPose (pure; docs/adr/0011). The selection is the native
 /// planner's (<see cref="LightRigPlanner.Select"/>). Positions are emitter-relative: (0, LightRigLayout.AnchorHeight, 0) +
@@ -31,7 +34,7 @@ internal static class VfxLightPlanner
     public static VfxLightPlan Plan(LightRig rig, DomeView view, float radius, float strength, int fillCount,
                                     bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters,
                                     float distanceExponent = VfxLightLayout.DistanceCompensationExponent,
-                                    float standInKeyScale = VfxLightLayout.StandInKeyScale)
+                                    float standInKeyScale = VfxLightLayout.StandInKeyScale, DomeBounds? bounds = null)
     {
         var estimated = rig.IsEstimated;
         rig = LightRigPlanner.Resolve(rig);
@@ -61,7 +64,7 @@ internal static class VfxLightPlanner
 
         if (key is { } k && Hue(k.Light.Energy) is { } keyHue)
         {
-            var d = Distance(VfxLightLayout.KeyDistance, radius);
+            var d = Distance(VfxLightLayout.KeyDistance, radius, anchor, k.Dir, bounds);
             var bri = VfxLightLayout.KeyBrightness * (standIn ? standInKeyScale : 1f) * strength
                       * Compensation(d, VfxLightLayout.KeyDistance, distanceExponent);
             lights.Add(new DomeLight(anchor + k.Dir * d, keyHue, bri, VfxLightLayout.KeyRange, true,
@@ -75,7 +78,7 @@ internal static class VfxLightPlanner
         for (var i = 0; i < fills.Count && strongest > 0 && float.IsFinite(strongest); i++)
         {
             if (Hue(fills[i].Light.Energy) is not { } hue || !(weights[i] > 0)) continue;
-            var d = Distance(VfxLightLayout.FillDistance, radius);
+            var d = Distance(VfxLightLayout.FillDistance, radius, anchor, fills[i].Dir, bounds);
             var bri = VfxLightLayout.FillBrightness * strength * (weights[i] / strongest)
                       * Compensation(d, VfxLightLayout.FillDistance, distanceExponent);
             lights.Add(new DomeLight(anchor + fills[i].Dir * d, hue, bri, VfxLightLayout.FillRange, false,
@@ -88,14 +91,16 @@ internal static class VfxLightPlanner
     /// <summary>
     /// The lights for a local ("Only me") dome outside GPose (docs/adr/0011, local amendment): the static VFX root carries
     /// the dome's yaw and height, so the plan is made at yaw 0 and every light is shifted down by the height offset (the
-    /// anchor then lands at the player's chest, as in synced). Empty (keeping <see cref="VfxLightPlan.Estimated"/>) when any
+    /// anchor then lands at the player's chest, as in synced; an open bottom's dome centre is at the feet, so its shift is 0). Empty (keeping <see cref="VfxLightPlan.Estimated"/>) when any
     /// shifted position is beyond <see cref="DomeAvfxBuilder.MaxLightPosition"/>, so the plan always equals what is built.
     /// </summary>
     public static VfxLightPlan PlanLocal(LightRig rig, bool flip, float verticalScale, float uRepeat, float vRepeat, float radius,
                                          float heightOffset, float strength, int fillCount,
-                                         bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters)
+                                         bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters, DomeBounds? bounds = null,
+                                         bool lowerHalfHidden = false)
     {
-        var plan = Plan(rig, new DomeView(0f, flip, verticalScale, uRepeat, vRepeat), radius, strength, fillCount, fillsOnOwnEmitters);
+        var plan = Plan(rig, new DomeView(0f, flip, verticalScale, uRepeat, vRepeat, lowerHalfHidden), radius, strength, fillCount,
+                        fillsOnOwnEmitters, bounds: bounds);
         if (plan.Lights.Count == 0) return plan;
         var shift = new Vector3(0, heightOffset, 0);
         var lights = plan.Lights.Select(l => l with { Position = l.Position - shift }).ToList();
@@ -114,6 +119,18 @@ internal static class VfxLightPlanner
     {
         var inside = float.IsFinite(radius) && radius > 0 ? MathF.Min(nominal, VfxLightLayout.RoomDistanceFraction * radius) : nominal;
         return Math.Clamp(inside, VfxLightLayout.MinDistance, nominal);
+    }
+
+    /// <summary>
+    /// The distance for a light from <paramref name="anchor"/> along <paramref name="dir"/>: with <paramref name="bounds"/> (a half
+    /// dome, docs/adr/0015) clamp(min(nominal, RoomDistanceFraction × the wall exit along dir), MinDistance, nominal), so the
+    /// light stays inside the dome's actual wall; without, <see cref="Distance(float, float)"/>.
+    /// </summary>
+    public static float Distance(float nominal, float radius, Vector3 anchor, Vector3 dir, DomeBounds? bounds)
+    {
+        if (bounds is not { } b) return Distance(nominal, radius);
+        var exit = DomeShape.ExitDistance(anchor, dir, b.Radius, b.VerticalScale);
+        return Math.Clamp(MathF.Min(nominal, VfxLightLayout.RoomDistanceFraction * exit), VfxLightLayout.MinDistance, nominal);
     }
 
     /// <summary>(d / nominal)^exponent; 1 at exponent 0.</summary>

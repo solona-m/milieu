@@ -44,4 +44,4 @@ real decision.]
 - [0012](0012-night-while-shown.md) Night while the backdrop is shown
 - [0013](0013-sun-off-while-shown.md) Sun off while the backdrop is shown to you only
 - [0014](0014-per-backdrop-settings.md) Settings remembered per backdrop
-- [0015](0015-in-repo-bc7-encoder.md) User images are BC7-encoded by an in-repo opaque encoder
+- [0016](0016-in-repo-bc7-encoder.md) User images are BC7-encoded by an in-repo opaque encoder

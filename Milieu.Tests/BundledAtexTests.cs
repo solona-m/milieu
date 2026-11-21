@@ -46,7 +46,7 @@ public class BundledAtexTests
     }
 
     /// <summary>
-    /// The bundled textures are pinned to the reference encoder's bytes (docs/adr/0005, 0015): the tool's <c>atex</c> must
+    /// The bundled textures are pinned to the reference encoder's bytes (docs/adr/0005, 0016): the tool's <c>atex</c> must
     /// keep building <c>new Bc7()</c> and never use the in-repo OpaqueBc7.
     /// </summary>
     [Fact] // [AC-fast-bc7-6]

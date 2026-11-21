@@ -1,4 +1,4 @@
-# Independent BC7 writer + reader for modes 1, 5, 6, written from the Khronos DFS BC7 tables (fast-bc7, ADR 0015).
+# Independent BC7 writer + reader for modes 1, 5, 6, written from the Khronos DFS BC7 tables (fast-bc7, ADR 0016).
 # Produced the literals in Milieu.Tests/Support/Bc7GoldenBlocks.cs (python golden.py); shares no code with Bc7Block.cs.
 W4=[0,4,9,13,17,21,26,30,34,38,43,47,51,55,60,64]; W3=[0,9,18,27,37,46,55,64]; W2=[0,21,43,64]
 ROWS={0:[0,0,1,1,0,0,1,1,0,0,1,1,0,0,1,1],

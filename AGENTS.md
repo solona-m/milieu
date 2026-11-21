@@ -67,7 +67,7 @@ Architecture decision records are in `docs/adr/`.
 Milieu/            the Dalamud plugin (Plugin.cs: services, events, /milieu, dispose order)
   Backdrop/        lifecycle controller, background converter, cache, config types, messages
   GameFiles/       AVFX chunk I/O, dome sphere mesh, dome .avfx builder, BC7 .atex writer
-  Imaging/         header probes, decode budget, tone mapping, resampling, band fill, seam check, mips, BC7 (in-repo OpaqueBc7 for user images, ADR 0015; BCnEncoder reference)
+  Imaging/         header probes, decode budget, tone mapping, resampling, band fill, seam check, mips, BC7 (in-repo OpaqueBc7 for user images, ADR 0016; BCnEncoder reference)
     Exr/           in-repo OpenEXR decoder (header, channel selection, RLE/ZIP, PIZ), bounded by ExrLimits (ADR 0008)
   Interop/         native signatures, static VFX spawner + remove hook, game lights (LightInterop), environment-update hook (SunOffInterop), Penumbra IPC, game state, game data
   Lighting/        scene lighting (ADR 0009, 0010, 0011): radiance probe, light extraction, LDR light estimate, dome projection, rig planner/cache, dome VFX light planner, sentinel, lifecycle; night (0012); sun off (0013)
@@ -78,9 +78,10 @@ Milieu/            the Dalamud plugin (Plugin.cs: services, events, /milieu, dis
   Resources/Thumbs/  embedded 256x128 previews of the bundled scenes
 Milieu.Tests/      xunit tests (Support/: fakes, synthetic images, reference-file facts)
 tools/PrepareBackdrops/  offline tool that produces Milieu/DefaultBackdrops
+tools/Bc7Golden/  standalone generator of the BC7 golden-block test literals (ADR 0016)
 tools/check-package.ps1  the release workflows' package guards (size, root manifest, version, changelog)
 .github/workflows/ test.yml (quick suite, read-only), testing-release.yml (testing-<n>), release.yml (v<version>)
-docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery, 0007 releases and listing, 0008 OpenEXR decoder, 0009 scene lighting, 0010 estimated lighting, 0011 synced VFX lights, 0012 night while shown, 0013 sun off while shown, 0014 per-backdrop settings, 0015 in-repo BC7 encoder), agent guidance
+docs/              ADRs (0002 Penumbra delivery, 0003 dome AVFX, 0004 bundled backdrops, 0005 pre-converted backdrops, 0006 synced delivery, 0007 releases and listing, 0008 OpenEXR decoder, 0009 scene lighting, 0010 estimated lighting, 0011 synced VFX lights, 0012 night while shown, 0013 sun off while shown, 0014 per-backdrop settings, 0015 half dome on the floor, 0016 in-repo BC7 encoder), agent guidance
 ```
 
 ## Testing
@@ -92,7 +93,7 @@ tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 
 ## Sensitive Areas — the security surface
 
-- Binary game-file writers (`.avfx`, `.atex`/`.tex` output) — a malformed VFX or texture can crash the game; the in-repo BC7 encoder (`Milieu/Imaging/Bc7Block.cs`, `OpaqueBc7.cs`, ADR 0015) writes the block content of every user texture (and synced partners receive it); `Plugin.FastConversionAvailable` is the kill switch; release gate: flip `FastConversionAvailable` off before a tag if the in-game visual check of converted user images fails
+- Binary game-file writers (`.avfx`, `.atex`/`.tex` output) — a malformed VFX or texture can crash the game; the in-repo BC7 encoder (`Milieu/Imaging/Bc7Block.cs`, `OpaqueBc7.cs`, ADR 0016) writes the block content of every user texture (and synced partners receive it); `Plugin.FastConversionAvailable` is the kill switch; release gate: flip `FastConversionAvailable` off before a tag if the in-game visual check of converted user images fails
 - Native interop: function signatures, hooks, unsafe struct access, VFX spawn/remove — a wrong signature or a dangling VFX pointer crashes the game
 - Penumbra IPC: temporary mods/redirects (local), and mod-management calls on Milieu's own "Milieu Sync" mod only (synced; ReloadMod/AddMod, priority, enable, which write the user's collection settings) — removed or emptied on dispose, never touch the user's own mods (ADR 0006 amendment)
 - Synced delivery (`Milieu/Sync/`, ADR 0006): writes the real "Milieu Sync" mod into Penumbra's mod directory (`_milieu_sync`: meta.json, default_mod.json, staged files), an IMC manipulation enabled in the player's collection (emptied at rest), and the user's image leaving the machine via PSync (notice first); offered on every build (`Plugin.SyncedAvailable` is the kill switch)
@@ -101,6 +102,7 @@ tests. A test that takes 5 s or more gets `[Trait("Speed", "Slow")]`.
 - Dome VFX lights, synced and local outside GPose (`Milieu/Lighting/VfxLightPlanner.cs`, the light chain in `DomeAvfxBuilder`, the local light lifecycle in `BackdropController`): effectors written into the synced dome that PSync pairs load, and into the "Only me" static dome outside GPose; `Plugin.SyncedLightsAvailable` and `Plugin.LocalLightsAvailable` are the kill switches (ADR 0011 and its local amendment); release gate: flip `LocalLightsAvailable` off before a tag if the in-game positive control fails
 - Night while shown (`Milieu/Lighting/NightWhileShown.cs`, `Milieu/Interop/EnvTimeInterop.cs`): writes the game's local time of day (game memory) through ClientStructs static pointers; plausibility + clock cross-check before the first write, restore only if still ours, crash sentinel; `Plugin.NightAvailable` is the kill switch (ADR 0012)
 - Sun off (`Milieu/Lighting/SunOff*.cs`, `Milieu/Interop/SunOffInterop.cs`, `Milieu/Interop/SunOffLayout.cs`, ADR 0013): a hook on the game's `UpdateEnvironment` (Brio's signature, exactly one match) that zeroes 24 bytes (sun and moon colour) of EnvManager's own state after the original, only once a plausibility sample passed; detour closure- and allocation-free on a volatile flag; crash sentinel; `Plugin.SunOffAvailable` is the kill switch; release gate: no tag ships it live and on by default until ADR 0013's UNVERIFIED 1, 2, 3 and 5 pass in game
+- The half dome (`Milieu/GameFiles/DomeShape.cs`, `SphereMesh.BuildProjected`/`BuildOpenBottom`, ADR 0015): a mesh up to 12,610 vertices written into every dome, local and synced; `Plugin.HalfDomeAvailable` is the kill switch (false = the pre-0015 floor, byte-identical); release gate: no tag ships it true until the worst-case mesh has loaded in VFXEditor and shown in game, locally and for a PSync pair
 - `Milieu/Configuration.cs` migrations — a mistake loses user settings; and the per-backdrop store (`Backdrops`, ADR 0014): `ImagePath` changes only inside `Configuration`, and a save stores the working copy into the selected entry
 - Downloads (`Milieu/Assets/`) and `tools/publish-backdrops.ps1` — outbound GETs that write into the config directory, downloaded textures handed to the game; pinned size + header + SHA-256 before use; the publish script's guards keep pins and release assets identical
 - `.github/workflows/` and `tools/check-package.ps1` — publish to every user and hold the plugins-repo dispatch secret; SHA-pinned actions, no disabled guards (ADR 0007, `WorkflowTests`)

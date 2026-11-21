@@ -8,8 +8,10 @@ namespace Milieu.Lighting;
 /// <see cref="GameFiles.SphereMesh"/>: vertex (c, r) has azimuth 90° + 360°·c/seg and elevation 90° − 180°·r/rings, with
 /// u = −0.5 + c/seg and v = −0.5 + r/rings. The VFX scales the model UV by (±URepeat, VRepeat) (flip negates U) and the
 /// game samples the texture at s = frac(u·Ux·Ku + 0.5), t = v·Vy·Kv + 0.5, with (Ku, Kv) = <see cref="GameUvScale"/>.
-/// The dome's vertical scale stretches the mesh's Y; the yaw turns it about Y (as <c>VfxInterop.Place</c>). Ground
-/// projection moves vertices along their own rays, so it doesn't change any direction.
+/// The dome's vertical scale stretches the mesh's Y; the yaw turns it about Y (as <c>VfxInterop.Place</c>). Every dome
+/// mesh keeps each vertex on its own ray from the dome centre (the legacy floor, the image-floor half dome cast from the
+/// capture point, and the open bottom centred at the feet; docs/adr/0015), so no shape changes any direction; the image-floor
+/// rows have their own elevations but v still follows elevation linearly. An open bottom draws no v &gt; 0.
 /// </summary>
 public static class DomeProjection
 {
@@ -47,6 +49,7 @@ public static class DomeProjection
         var u = Math.Clamp(w / ux, -0.5f, 0.5f);
         var v = (t - 0.5f) / vy;
         if (MathF.Abs(v) > 0.5f + Eps) return null;
+        if (view.LowerHalfHidden && v > Eps) return null;   // an open bottom draws only the upper half
         v = Math.Clamp(v, -0.5f, 0.5f);
         return MeshToWorld(MeshDirection(u, v), view);
     }

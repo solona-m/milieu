@@ -17,7 +17,7 @@ internal sealed record DomeLight(Vector3 Position, Vector3 Rgb, float Brightness
 
 /// <summary>
 /// What gets baked into the dome VFX. In local mode yaw and height are applied at spawn, not here. <see cref="FloorY"/> is
-/// the ground-projection floor in unit-radius space (null = plain sphere). Synced delivery (the game places an item's VFX,
+/// the ground-projection floor in unit-radius space; <see cref="Mesh"/> picks the mesh (docs/adr/0015; null = the pre-0015 rule). Synced delivery (the game places an item's VFX,
 /// not Milieu) bakes height and yaw into the particle's Pos/Rot Y curves and binds the emitter to its owner
 /// (<see cref="AttachToOwner"/>). <see cref="EmitterBaseHeight"/> is the player's world Y, written into the emitter's Pos Y:
 /// item VFX are anchored at world height 0, not at the item (seen in game, 2026-11-16), so a synced dome built without it
@@ -37,7 +37,12 @@ internal sealed record DomeAvfxParams(
     float BakedYawRadians = 0f,
     bool AttachToOwner = false,
     float EmitterBaseHeight = 0f,
-    IReadOnlyList<DomeLight>? Lights = null);
+    IReadOnlyList<DomeLight>? Lights = null,
+    DomeMeshKind? Mesh = null)
+{
+    /// <summary>The mesh actually built: <see cref="Mesh"/>, or when null the pre-0015 rule (no floor = sphere, else the legacy floor).</summary>
+    public DomeMeshKind MeshKind => Mesh ?? (FloorY == null ? DomeMeshKind.Sphere : DomeMeshKind.LegacyFloor);
+}
 
 /// <summary>
 /// Authors the dome <c>.avfx</c> in code: one scheduler item → one timeline → one emitter → one model particle →
@@ -63,6 +68,9 @@ internal static class DomeAvfxBuilder
     /// <summary>The largest light range (DstS) accepted.</summary>
     public const float MaxLightRange = 1000f;
 
+    /// <summary>The most dome vertices accepted (the largest half dome has 12,610; 16-bit indices allow 65,535).</summary>
+    public const int MaxVertices = 15000;
+
     /// <summary>
     /// Synced delivery's emitter parent influence: InitialPosition_WithOptions (PICd 1) with position on and rotation and
     /// scale off, so the dome follows its carrier's position but not its rotation (VFXEditor's own child-emitter default).
@@ -78,7 +86,7 @@ internal static class DomeAvfxBuilder
     {
         Validate(p);
         var lights = p.Lights ?? [];
-        var mesh = SphereMesh.Build(floorY: p.FloorY);
+        var mesh = SphereMesh.For(p.MeshKind, p.FloorY);
         var w = new AvfxChunkWriter();
         w.Begin("AVFX");
         Root(w, lights.Count);
@@ -108,6 +116,13 @@ internal static class DomeAvfxBuilder
                                           ("VRepeat", p.VRepeat), ("Brightness", p.Brightness) })
             if (!float.IsFinite(v) || v < 0 || (v == 0 && name != "Brightness"))
                 throw new ArgumentOutOfRangeException(nameof(p), $"{name} must be finite and positive (got {v}).");
+        var kind = p.MeshKind;
+        if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(p), $"Unknown dome mesh kind {(int)kind}.");
+        var floorKind = kind is DomeMeshKind.LegacyFloor or DomeMeshKind.ImageFloor;
+        if (floorKind && p.FloorY is not (> 0f and < 1f))
+            throw new ArgumentOutOfRangeException(nameof(p), $"The {kind} mesh needs a finite floor in (0, 1) (got {p.FloorY}).");
+        if (!floorKind && p.FloorY != null)
+            throw new ArgumentOutOfRangeException(nameof(p), $"The {kind} mesh takes no floor (got {p.FloorY}).");
         if (p.Lights is not { Count: > 0 } lights) return;
         if (lights.Count > MaxLights) throw new ArgumentOutOfRangeException(nameof(p), $"At most {MaxLights} VFX lights (got {lights.Count}).");
         foreach (var l in lights)
@@ -427,6 +442,11 @@ internal static class DomeAvfxBuilder
         Expect(modl.Need("VDrw").Size == mesh.Vertices.Length * DomeVertex.Stride, "vertex buffer size");
         Expect(modl.Need("VIdx").Size == mesh.Indices.Length * 2, "index buffer size");
         Expect(mesh.Indices.All(i => i < mesh.Vertices.Length), "indices in range");
+        Expect(mesh.Vertices.Length <= MaxVertices, "vertex count within the cap");
+        Expect(mesh.Vertices.All(v => Half.IsFinite(v.X) && Half.IsFinite(v.Y) && Half.IsFinite(v.Z)), "finite positions");
+        const int cols = 97;
+        Expect(mesh.Vertices.Length % cols == 0 && mesh.Indices.Length == 6 * (cols - 1) * (mesh.Vertices.Length / cols - 1),
+               "index count matches the rows");
     }
 
     /// <summary>The value of an axis curve's one-key Y curve, or 0 when it has none.</summary>

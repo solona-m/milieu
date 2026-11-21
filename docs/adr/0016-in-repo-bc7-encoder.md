@@ -1,4 +1,4 @@
-# ADR 0015: User images are BC7-encoded by an in-repo opaque encoder
+# ADR 0016: User images are BC7-encoded by an in-repo opaque encoder
 
 ## Status
 

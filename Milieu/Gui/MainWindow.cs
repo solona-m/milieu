@@ -183,22 +183,46 @@ public sealed class MainWindow : Window, IDisposable
 
         var d = config.Current;
         var (rMin, rMax) = DomeSettings.RadiusRange(config.Mode);
-        var (hMin, hMax) = DomeSettings.HeightRange(config.Mode);
+        var (_, hMax) = DomeSettings.HeightRange(config.Mode);
+        var hMin = d.HeightMin(config.Mode);
         Slider("Radius", "Radius", d.Radius, rMin, rMax, v => d.Radius = v, "%.1f");
         Slider("Vertical scale", "VerticalScale", d.VerticalScale, DomeSettings.VerticalScaleRange.Min, DomeSettings.VerticalScaleRange.Max, v => d.VerticalScale = v);
+        var heightDisabled = d.CameraHeightDisabled(controller.HalfDomeAvailable);
+        ImGui.BeginDisabled(heightDisabled);
         Slider(d.GroundProjection ? "Camera height" : "Height", "Height", d.HeightOffset, hMin, hMax, v => d.HeightOffset = v);
-        if (d.GroundProjection && ImGui.IsItemHovered()) ImGui.SetTooltip("Distance from the floor to the dome centre.");
+        ImGui.EndDisabled();
+        if (d.GroundProjection && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip(heightDisabled ? DomeSettings.CameraHeightDisabledTooltip : DomeSettings.HeightTooltip(controller.HalfDomeAvailable));
         Slider("Yaw", "Yaw", d.YawDegrees, DomeSettings.YawRange.Min, DomeSettings.YawRange.Max, v => d.YawDegrees = v, "%.0f°");
         var projection = d.GroundProjection;
         if (ImGui.Checkbox("Ground projection", ref projection))
         {
-            d.GroundProjection = projection;
+            BackdropViewModel.ProjectionToggle(d, config.Mode, projection);
             save();
             controller.Post(controller.ApplyRebuild);
         }
-        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Flattens the bottom of the dome into a floor, so the image's ground lies at your feet.");
-        if (d.ProjectionInactive) ImGui.TextColored(Yellow, d.ProjectionStatus());
-        else ImGui.TextDisabled(d.ProjectionStatus());
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip(DomeSettings.ProjectionTooltip(controller.HalfDomeAvailable));
+        if (d.ShowsBottomChoice(controller.HalfDomeAvailable))
+        {
+            ImGui.TextUnformatted(DomeSettings.BottomLabel);
+            var bottom = (int)d.Bottom;
+            var bottomChanged = false;
+            for (var i = 0; i < DomeSettings.BottomLabels.Length; i++)
+            {
+                ImGui.SameLine();
+                bottomChanged |= ImGui.RadioButton(DomeSettings.BottomLabels[i], ref bottom, i);
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip(DomeSettings.BottomTooltip((GameFiles.DomeBottom)i));
+            }
+            if (bottomChanged)
+            {
+                d.Bottom = (GameFiles.DomeBottom)bottom;
+                save();
+                controller.Post(controller.ApplyRebuild);
+            }
+        }
+        var status = d.ProjectionStatus(controller.HalfDomeAvailable);
+        if (d.IsProjectionInactive(controller.HalfDomeAvailable)) ImGui.TextColored(Yellow, status);
+        else ImGui.TextDisabled(status);
 
         ImGui.Separator();
         Slider("Horizontal repeat", "HorizontalRepeat", config.HorizontalRepeat, Configuration.RepeatRange.Min, Configuration.RepeatRange.Max, v => config.HorizontalRepeat = BackdropViewModel.SnapRepeat(v));

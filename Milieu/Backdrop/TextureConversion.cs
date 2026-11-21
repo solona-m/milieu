@@ -12,7 +12,7 @@ namespace Milieu.Backdrop;
 /// 8-bit RGB panorama → BC7 <c>.atex</c>: layout + resample (with band fill), mip chain, BC7 per mip, AtexWriter.
 /// Pure and shared: the plugin converts user images with it and tools/PrepareBackdrops builds the pre-converted
 /// bundled textures with it, so both run the same pipeline (docs/adr/0005). The caller picks the block encoder: the plugin
-/// the in-repo OpaqueBc7, the tool the reference Bc7 that produced the pinned bytes (docs/adr/0015).
+/// the in-repo OpaqueBc7, the tool the reference Bc7 that produced the pinned bytes (docs/adr/0016).
 /// </summary>
 public static class TextureConversion
 {

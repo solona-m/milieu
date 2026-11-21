@@ -55,7 +55,8 @@ Under a synced delivery with scene lighting on, the synced dome carries Milieu's
   - **Fills:** soft coloured point lights without shadows, the strongest at `FillBrightness × strength`, the others by
     their share of luminance × type power.
   - **Distance:** `clamp(min(nominal, 0.9 × radius), 1.5, nominal)` (nominal 30 for the key, 8 for fills), so room-mode
-    lights stay inside the dome. Brightness against distance is a constant (`DistanceCompensationExponent`, 0 = none; 0.72 since the room-dome tuning).
+    lights stay inside the dome. For the half dome (ADR 0015 D7) the radius term is 0.9 × the exit distance through the
+    dome's wall along the light's direction (an ellipsoid centred at the feet, no floor plane); Sky domes are unchanged. Brightness against distance is a constant (`DistanceCompensationExponent`, 0 = none; 0.72 since the room-dome tuning).
   - Colour is the energy's hue with the largest channel at 1.
 - **Positions are emitter-relative** and independent of the player's world height: the emitters carry that
   (`DomeAvfxParams.EmitterBaseHeight`).
@@ -180,6 +181,7 @@ UNVERIFIED in game (local domes):
 14. The GPose enter/exit swap, also with GPose motion paused: no flicker, poses undisturbed, native lights after the
     settle, no doubled light.
 15. The game doesn't end a lit static dome early; no crash across show/hide, zone change, GPose, plugin reload, game exit.
-16. Room-dome brightness, and the light staying inside the dome (items 2 and 7).
+16. Room-dome brightness, and the light staying inside the dome (items 2 and 7); since ADR 0015 the containment follows
+    the half dome's actual wall.
 17. Walking away from the dome centre: the light stays with the dome (Recenter restores both).
 18. With sun off unticked, the dome key plus the game's sun read acceptably.

@@ -88,7 +88,7 @@ public sealed class ConfigurationPerBackdropTests
                    + "\"Brightness\":0.6,\"ExposureEv\":-2,\"LightStrength\":0.4,\"NightWhileShown\":true}";
         var c = JsonConvert.DeserializeObject<Configuration>(json)!;
         c.Migrate("config");
-        Assert.Equal(5, c.Version);
+        Assert.Equal(6, c.Version);
         Assert.Empty(c.Backdrops);   // Migrate never seeds
         c.Clamp();
         var expected = Json(c.CaptureLive());

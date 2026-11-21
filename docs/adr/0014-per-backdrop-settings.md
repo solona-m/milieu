@@ -27,7 +27,8 @@ scene lighting, and sun and night.
 - **D4, global settings:** texture size and "Visible to" (a tile click must never start a PSync upload, ADR 0006), plus
   bookkeeping (`SyncUploadNoticeShown`, `UserImages`, `ImagePath`, `Version`).
 - **D5, the stored set** is those fourteen fields; both dome sets are kept per backdrop (a Sky/Room flip keeps the other),
-  with ground projection inside each.
+  with ground projection and the half dome's bottom (ADR 0015) inside each. An older build ignores the bottom (it reads as
+  the image floor) and keeps the heights ADR 0015's migration set.
 - **D6, first use** copies the current working copy, so preferences carry over to a new image.
 - **D7, migration v4 → v5.** The step only bumps the version. `Clamp` seeds every known backdrop (the selection, the user's
   images, the bundled scenes) from the clamped working copy whenever the store is empty, so each starts exactly as it

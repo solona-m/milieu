@@ -76,7 +76,8 @@ public sealed class Plugin : IDalamudPlugin
                                             bundled: downloads, save: Save, syncedAvailable: SyncedAvailable,
                                             sync: penumbra, gameData: new GameData(DataManager),
                                             loadRig: SyncedRigLoader(LightingAvailable(), SyncedLightsAvailable(), preparer.PrepareLightsAsync),
-                                            loadLocalRig: LocalRigLoader(LightingAvailable(), LocalLightsAvailable(), preparer.PrepareLightsAsync));
+                                            loadLocalRig: LocalRigLoader(LightingAvailable(), LocalLightsAvailable(), preparer.PrepareLightsAsync),
+                                            halfDomeAvailable: HalfDomeAvailable());
         lighting = CreateLighting(LightingAvailable(), () => new LightInterop(SigScanner, Framework, log), gameState, () => controller.Lit,
                                   config, preparer.PrepareLightsAsync,
                                   () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.FileName), log), log,
@@ -197,7 +198,15 @@ public sealed class Plugin : IDalamudPlugin
     private static bool SunOffAvailable() => true;
 
     /// <summary>
-    /// Fast conversion's kill switch (docs/adr/0015): return false and user images are BC7-encoded by the reference encoder
+    /// The half dome's kill switch (docs/adr/0015): return false and ground projection builds the pre-0015 floor again
+    /// (byte-identical, local and synced), the "Bottom" choice is hidden and an open entry draws that floor. Release gate: no
+    /// tag ships with this true until the worst-case half dome (Sky, vertical scale 2, camera height 0.25) has loaded offline
+    /// in VFXEditor and then shown in game, locally and for a PSync pair; otherwise flip this to false before tagging.
+    /// </summary>
+    private static bool HalfDomeAvailable() => true;
+
+    /// <summary>
+    /// Fast conversion's kill switch (docs/adr/0016): return false and user images are BC7-encoded by the reference encoder
     /// (BCnEncoder, about ten times slower) as before, instead of the in-repo <see cref="OpaqueBc7"/>. Release gate: flip
     /// this to false before tagging if the in-game visual check of converted user images fails.
     /// </summary>
