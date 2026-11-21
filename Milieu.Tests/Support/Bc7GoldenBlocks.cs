@@ -8,7 +8,7 @@ public sealed record GoldenBlock(int Mode, int Partition, int[] Endpoints, int[]
 /// Specification's BC7 bit layout (fields packed least significant bit first: mode bits, partition, endpoints in
 /// R0.. G0.. B0.. order, p-bits, then indices with each anchor's MSB dropped) and decoded with the spec's endpoint expansion
 /// and <c>(e0*(64-w) + e1*w + 32) &gt;&gt; 6</c> interpolation, by a standalone script that shares nothing with
-/// <c>Bc7Block</c>. Three independent readings must agree: these literals, BcDecoder, and Bc7Block.PackFields.
+/// <c>Bc7Block</c> (tools/Bc7Golden/golden.py). Three independent readings must agree: these literals, BcDecoder, and Bc7Block.PackFields.
 /// Endpoints are in bit order (mode 6/5: R0 R1 G0 G1 B0 B1, 7 bits; mode 1: R0..R3 G0..G3 B0..B3, 6 bits).
 /// </summary>
 public static class Bc7GoldenBlocks

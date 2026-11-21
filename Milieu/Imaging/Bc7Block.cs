@@ -26,7 +26,7 @@ internal enum Bc7Modes
 internal static class Bc7Block
 {
     /// <summary>The 64 two-subset partitions: bit i set = pixel i (row-major) is in subset 1. Format data.</summary>
-    internal static readonly ushort[] Partitions2 =
+    private static readonly ushort[] partitions2 =
     [
         0xCCCC, 0x8888, 0xEEEE, 0xECC8, 0xC880, 0xFEEC, 0xFEC8, 0xEC80,
         0xC800, 0xFFEC, 0xFE80, 0xE800, 0xFFE8, 0xFF00, 0xFFF0, 0xF000,
@@ -39,7 +39,7 @@ internal static class Bc7Block
     ];
 
     /// <summary>The anchor pixel of subset 1 for each two-subset partition. Format data.</summary>
-    internal static readonly byte[] Anchor2 =
+    private static readonly byte[] anchor2 =
     [
         15, 15, 15, 15, 15, 15, 15, 15,
         15, 15, 15, 15, 15, 15, 15, 15,
@@ -51,9 +51,14 @@ internal static class Bc7Block
         15, 15, 15, 15, 15, 2, 2, 15,
     ];
 
-    internal static readonly int[] W4 = [0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64];
-    internal static readonly int[] W3 = [0, 9, 18, 27, 37, 46, 55, 64];
-    internal static readonly int[] W2 = [0, 21, 43, 64];
+    /// <summary>Read-only views of the format tables (tests); the arrays themselves are private so nothing can change them.</summary>
+    internal static ReadOnlySpan<ushort> Partitions2 => partitions2;
+
+    internal static ReadOnlySpan<byte> Anchor2 => anchor2;
+
+    private static readonly int[] W4 = [0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64];
+    private static readonly int[] W3 = [0, 9, 18, 27, 37, 46, 55, 64];
+    private static readonly int[] W2 = [0, 21, 43, 64];
 
     private const int PowerSteps = 8;
     private const int RefinePasses = 2;
@@ -66,22 +71,22 @@ internal static class Bc7Block
     private static readonly byte[] Q1 = BuildQ1();
 
     /// <summary>Mode 5 solid: [i * 256 + v] for shared colour index i ∈ 0..3: endpoints a (bits 0-7), b (8-15), error (16+).</summary>
-    private static readonly int[] Solid5 = BuildSolid(W2, Expand7);
+    private static readonly int[] Solid5 = BuildSolid(W2, Expand7Bit);
 
     /// <summary>Mode 6 solid (p = 1): [i * 256 + v] for shared index i ∈ 0..15: 7-bit endpoints a, b and the error, packed as above.</summary>
-    private static readonly int[] Solid6 = BuildSolid(W4, Expand6);
+    private static readonly int[] Solid6 = BuildSolid(W4, ExpandMode6);
 
     internal static int Interp(int e0, int e1, int w) => (e0 * (64 - w) + e1 * w + 32) >> 6;
 
-    internal static int Expand6(int q) => 2 * q + 1;
+    internal static int ExpandMode6(int q) => 2 * q + 1;
 
-    internal static int Expand1(int q, int p)
+    internal static int ExpandMode1(int q, int p)
     {
         var v7 = (q << 1) | p;
         return (v7 << 1) | (v7 >> 6);
     }
 
-    internal static int Expand7(int v7) => (v7 << 1) | (v7 >> 6);
+    internal static int Expand7Bit(int v7) => (v7 << 1) | (v7 >> 6);
 
     private static byte[] BuildQ6()
     {
@@ -99,7 +104,7 @@ internal static class Bc7Block
                 int best = 0, bestErr = int.MaxValue;
                 for (var q = 0; q < 64; q++)
                 {
-                    var err = Math.Abs(Expand1(q, p) - v);
+                    var err = Math.Abs(ExpandMode1(q, p) - v);
                     if (err < bestErr) { bestErr = err; best = q; }
                 }
                 t[p * 256 + v] = (byte)best;
@@ -299,7 +304,7 @@ internal static class Bc7Block
 
     private static long Pick6(ReadOnlySpan<byte> px, ReadOnlySpan<int> q, Span<byte> idx, Span<int> e0, Span<int> e1)
     {
-        for (var ch = 0; ch < 3; ch++) { e0[ch] = Expand6(q[ch * 2]); e1[ch] = Expand6(q[ch * 2 + 1]); }
+        for (var ch = 0; ch < 3; ch++) { e0[ch] = ExpandMode6(q[ch * 2]); e1[ch] = ExpandMode6(q[ch * 2 + 1]); }
         return PickIndices(px, 0xFFFF, e0, e1, W4, idx);
     }
 
@@ -340,7 +345,7 @@ internal static class Bc7Block
         var filled = 0;
         for (var p = 0; p < 64; p++)
         {
-            var mask = Partitions2[p];
+            var mask = partitions2[p];
             long r1 = 0, g1 = 0, b1 = 0;
             var n1 = 0;
             for (var i = 0; i < 16; i++)
@@ -362,7 +367,7 @@ internal static class Bc7Block
 
     private static long EncodeMode1Core(ReadOnlySpan<byte> px, int partition, Span<byte> block16)
     {
-        var mask1 = Partitions2[partition];
+        var mask1 = partitions2[partition];
         var mask0 = (ushort)(~mask1 & 0xFFFF);
         Span<int> q = stackalloc int[12];   // q[subset * 6 + ch * 2 + end]
         Span<int> pbits = stackalloc int[2];
@@ -372,7 +377,7 @@ internal static class Bc7Block
             total += FitSubset1(px, s == 0 ? mask0 : mask1, q.Slice(s * 6, 6), out pbits[s], idx);
 
         // Anchor fixes: pixel 0 for subset 0, the table anchor for subset 1.
-        int anchor1 = Anchor2[partition];
+        int anchor1 = anchor2[partition];
         for (var s = 0; s < 2; s++)
         {
             var anchor = s == 0 ? 0 : anchor1;
@@ -420,8 +425,8 @@ internal static class Bc7Block
                 {
                     tq[ch * 2] = Q1[p * 256 + ToByte(lo[ch])];
                     tq[ch * 2 + 1] = Q1[p * 256 + ToByte(hi[ch])];
-                    e0[ch] = Expand1(tq[ch * 2], p);
-                    e1[ch] = Expand1(tq[ch * 2 + 1], p);
+                    e0[ch] = ExpandMode1(tq[ch * 2], p);
+                    e1[ch] = ExpandMode1(tq[ch * 2 + 1], p);
                 }
                 var sse = PickIndices(px, set, e0, e1, W3, tidx);
                 if (sse < best)
@@ -437,7 +442,7 @@ internal static class Bc7Block
     /// <summary>Mode 1 fields in bit order: endpoints R0..R3 G0..G3 B0..B3 (6 bits; 0-1 subset 0, 2-3 subset 1), p-bits, indices.</summary>
     private static void PackMode1(int partition, ReadOnlySpan<int> e, int p0, int p1, ReadOnlySpan<byte> idx, Span<byte> block16)
     {
-        var anchor1 = Anchor2[partition];
+        var anchor1 = anchor2[partition];
         var bw = new BitWriter();
         bw.Write(2, 2);                                        // mode 1
         bw.Write((uint)partition, 6);

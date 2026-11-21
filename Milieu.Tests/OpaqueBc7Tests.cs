@@ -333,6 +333,13 @@ public class OpaqueBc7Tests
         Assert.Throws<ArgumentOutOfRangeException>(() => new OpaqueBc7(0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new OpaqueBc7(-1));
         Assert.Throws<ArgumentException>(() => Bc7Block.Encode(new byte[64], new byte[16], Bc7Modes.Mode1, 0, 0));
+        // Neither mode 6 nor mode 1 allowed: a non-solid block would otherwise be left unwritten (the reserved mode 0).
+        Assert.Throws<ArgumentException>(() => Bc7Block.Encode(Bc7Metrics.RandomBlock(new Random(1)), new byte[16], Bc7Modes.Solid, 0, 2));
+        Assert.Throws<ArgumentException>(() => Bc7Block.Encode(new byte[64], new byte[16], 0, 0, 2));
+        Assert.Throws<ArgumentException>(() => Bc7Block.Encode(new byte[63], new byte[16], Bc7Modes.All, 0, 2));
+        Assert.Throws<ArgumentException>(() => Bc7Block.Encode(new byte[64], new byte[15], Bc7Modes.All, 0, 2));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => enc.EncodeMipAsync(null!, 8, 4, null, default));
+        Assert.Throws<ArgumentException>(() => Bc7Block.PackFields(new Bc7BlockFields(7, 0, new int[6], [1, 1], new byte[16]), new byte[16]));
     }
 
     // ------------------------------------------------------------ cancellation, progress, concurrency
@@ -404,6 +411,18 @@ public class OpaqueBc7Tests
         Assert.True(reports.Count >= 20, $"{reports.Count} reports");
         for (var i = 1; i < reports.Count; i++) Assert.True(reports[i] >= reports[i - 1], $"report {i}: {reports[i]} < {reports[i - 1]}");
         Assert.Equal(1f, reports[^1]);
+    }
+
+    [Fact] // [AC-fast-bc7-4] [EDGE-fast-bc7-8]
+    public async Task Progress_RowsNotAMultipleOfTheStep_StillEndsAtOne()
+    {
+        // 257 block rows, a report every 2: the last row's count is odd, so the closing report is what reaches 1.
+        var px = Bc7Metrics.Synthetic("sky", 4, 1028);
+        var reports = new List<float>();
+        await new OpaqueBc7().EncodeMipAsync(px, 4, 1028, new Bc7.SyncProgress(f => { lock (reports) reports.Add(f); }), default);
+        for (var i = 1; i < reports.Count; i++) Assert.True(reports[i] >= reports[i - 1]);
+        Assert.Equal(1f, reports[^1]);
+        Assert.True(reports[^2] < 1f, "the step reports alone must not have reached 1");
     }
 
     [Fact] // [AC-fast-bc7-5] [EDGE-fast-bc7-15]
