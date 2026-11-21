@@ -71,7 +71,7 @@ public sealed class Plugin : IDalamudPlugin
         penumbra = new PenumbraIpc(PluginInterface, log, configDir);
         downloads = new DefaultBackdropsDownloadService(log, configDir);
         var gameState = new GameState(ClientState, Condition, ObjectTable);
-        var preparer = new BackdropPreparer(cache, new Bc7(), downloads, thumbStore, log, storeRigs: LightingAvailable());
+        var preparer = new BackdropPreparer(cache, CreateBlockEncoder(FastConversionAvailable()), downloads, thumbStore, log, storeRigs: LightingAvailable());
         controller = new BackdropController(vfx, penumbra, gameState, preparer, cache, config, log,
                                             bundled: downloads, save: Save, syncedAvailable: SyncedAvailable,
                                             sync: penumbra, gameData: new GameData(DataManager),
@@ -195,6 +195,16 @@ public sealed class Plugin : IDalamudPlugin
     /// UNVERIFIED items 1, 2, 3 and 5 have passed in game; otherwise flip this to false, or the default to off, before tagging.
     /// </summary>
     private static bool SunOffAvailable() => true;
+
+    /// <summary>
+    /// Fast conversion's kill switch (docs/adr/0015): return false and user images are BC7-encoded by the reference encoder
+    /// (BCnEncoder, about ten times slower) as before, instead of the in-repo <see cref="OpaqueBc7"/>. Release gate: flip
+    /// this to false before tagging if the in-game visual check of converted user images fails.
+    /// </summary>
+    private static bool FastConversionAvailable() => true;
+
+    /// <summary>The block encoder for user images: the in-repo encoder, or the reference encoder with the kill switch off.</summary>
+    internal static IBlockEncoder CreateBlockEncoder(bool fast) => fast ? new OpaqueBc7() : new Bc7();
 
     /// <summary>
     /// Test seam: builds sun off and its switch, or nothing at all (the factories are never called) when the kill switch is

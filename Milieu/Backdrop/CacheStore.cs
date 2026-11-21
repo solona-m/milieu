@@ -16,21 +16,26 @@ namespace Milieu.Backdrop;
 /// </summary>
 public sealed class CacheStore(string root)
 {
-    /// <summary>Bump when the conversion changes, so old cached textures are not reused.</summary>
+    /// <summary>
+    /// Bump when the shared conversion pipeline changes, so old cached textures are not reused. A change in one block
+    /// encoder's output bumps that encoder's <see cref="Imaging.IBlockEncoder.CacheId"/> instead (it is part of the key).
+    /// </summary>
     public const int ConverterVersion = 1;
 
     public string Root { get; } = root;
 
     public static string Hash16(byte[] data) => Convert.ToHexString(SHA256.HashData(data))[..16].ToLowerInvariant();
 
-    public static string TextureKey(BackdropRequest r, ImageKind kind, long length, long lastWriteUtcTicks)
+    public static string TextureKey(BackdropRequest r, ImageKind kind, long length, long lastWriteUtcTicks, string encoderId)
     {
+        if (string.IsNullOrEmpty(encoderId)) throw new ArgumentException("The encoder id is required.", nameof(encoderId));
         var sb = new StringBuilder();
         sb.Append(ConverterVersion).Append('|')
           .Append(Path.GetFullPath(r.ImagePath).ToLowerInvariant().Replace('\\', '/')).Append('|')
           .Append(length).Append('|').Append(lastWriteUtcTicks).Append('|').Append(r.MaxWidth);
         if (kind.IsHdr())
             sb.Append('|').Append(r.ExposureEv.ToString("R", CultureInfo.InvariantCulture)).Append('|').Append((int)r.ToneMap);
+        sb.Append("|enc=").Append(encoderId);
         return Hash16(Encoding.UTF8.GetBytes(sb.ToString()));
     }
 

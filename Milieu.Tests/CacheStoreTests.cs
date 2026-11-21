@@ -50,18 +50,18 @@ public class CacheStoreTests
     public void Keys_ChangeWithInputs()
     {
         var r = new BackdropRequest(@"C:\p\pano.hdr", 8192, 0, ToneMapOperator.Aces);
-        var k = CacheStore.TextureKey(r, ImageKind.Hdr, 100, 5);
+        var k = CacheStore.TextureKey(r, ImageKind.Hdr, 100, 5, "enc");
         Assert.Matches("^[0-9a-f]{16}$", k);
-        Assert.NotEqual(k, CacheStore.TextureKey(r, ImageKind.Hdr, 100, 6));
-        Assert.NotEqual(k, CacheStore.TextureKey(r, ImageKind.Hdr, 101, 5));
-        Assert.NotEqual(k, CacheStore.TextureKey(r with { ImagePath = @"C:\p\other.hdr" }, ImageKind.Hdr, 100, 5));
-        Assert.NotEqual(k, CacheStore.TextureKey(r with { ExposureEv = 1 }, ImageKind.Hdr, 100, 5));
-        Assert.NotEqual(k, CacheStore.TextureKey(r with { ToneMap = ToneMapOperator.None }, ImageKind.Hdr, 100, 5));
-        Assert.NotEqual(k, CacheStore.TextureKey(r with { MaxWidth = 4096 }, ImageKind.Hdr, 100, 5));
+        Assert.NotEqual(k, CacheStore.TextureKey(r, ImageKind.Hdr, 100, 6, "enc"));
+        Assert.NotEqual(k, CacheStore.TextureKey(r, ImageKind.Hdr, 101, 5, "enc"));
+        Assert.NotEqual(k, CacheStore.TextureKey(r with { ImagePath = @"C:\p\other.hdr" }, ImageKind.Hdr, 100, 5, "enc"));
+        Assert.NotEqual(k, CacheStore.TextureKey(r with { ExposureEv = 1 }, ImageKind.Hdr, 100, 5, "enc"));
+        Assert.NotEqual(k, CacheStore.TextureKey(r with { ToneMap = ToneMapOperator.None }, ImageKind.Hdr, 100, 5, "enc"));
+        Assert.NotEqual(k, CacheStore.TextureKey(r with { MaxWidth = 4096 }, ImageKind.Hdr, 100, 5, "enc"));
 
         var j = new BackdropRequest(@"C:\p\pano.jpg", 8192, 0, ToneMapOperator.Aces);
-        var kj = CacheStore.TextureKey(j, ImageKind.Jpeg, 100, 5);
-        Assert.Equal(kj, CacheStore.TextureKey(j with { ExposureEv = 3, ToneMap = ToneMapOperator.None }, ImageKind.Jpeg, 100, 5));
+        var kj = CacheStore.TextureKey(j, ImageKind.Jpeg, 100, 5, "enc");
+        Assert.Equal(kj, CacheStore.TextureKey(j with { ExposureEv = 3, ToneMap = ToneMapOperator.None }, ImageKind.Jpeg, 100, 5, "enc"));
 
         Assert.Matches("^vfx/milieu/[0-9a-f]{16}/sky\\.atex$", CacheStore.TextureGamePath(k));
         Assert.Matches("^vfx/milieu/[0-9a-f]{16}/dome\\.avfx$", CacheStore.AvfxGamePath(CacheStore.AvfxKey([1, 2])));
@@ -71,11 +71,11 @@ public class CacheStoreTests
     public void ExrKey_IncludesExposureAndToneMap()
     {
         var r = new BackdropRequest(@"C:\p\pano.exr", 8192, 0, ToneMapOperator.Aces);
-        var k = CacheStore.TextureKey(r, ImageKind.Exr, 100, 5);
-        Assert.Equal(k, CacheStore.TextureKey(r with { }, ImageKind.Exr, 100, 5));
-        Assert.NotEqual(k, CacheStore.TextureKey(r with { ExposureEv = 1.5f }, ImageKind.Exr, 100, 5));
-        Assert.NotEqual(k, CacheStore.TextureKey(r with { ToneMap = ToneMapOperator.Reinhard }, ImageKind.Exr, 100, 5));
-        Assert.NotEqual(k, CacheStore.TextureKey(r, ImageKind.Exr, 101, 5));
+        var k = CacheStore.TextureKey(r, ImageKind.Exr, 100, 5, "enc");
+        Assert.Equal(k, CacheStore.TextureKey(r with { }, ImageKind.Exr, 100, 5, "enc"));
+        Assert.NotEqual(k, CacheStore.TextureKey(r with { ExposureEv = 1.5f }, ImageKind.Exr, 100, 5, "enc"));
+        Assert.NotEqual(k, CacheStore.TextureKey(r with { ToneMap = ToneMapOperator.Reinhard }, ImageKind.Exr, 100, 5, "enc"));
+        Assert.NotEqual(k, CacheStore.TextureKey(r, ImageKind.Exr, 101, 5, "enc"));
     }
 
     [Fact] // [EDGE-synced-delivery-22]
@@ -97,7 +97,7 @@ public class CacheStoreTests
         var path = t.File("pano.hdr");
         var a = new BackdropRequest(path, 8192, 0f, ToneMapOperator.Aces);
         var b = new BackdropRequest(path, 4096, 2.5f, ToneMapOperator.Reinhard);
-        Assert.NotEqual(CacheStore.TextureKey(a, ImageKind.Hdr, 100, 5), CacheStore.TextureKey(b, ImageKind.Hdr, 100, 5));
+        Assert.NotEqual(CacheStore.TextureKey(a, ImageKind.Hdr, 100, 5, "enc"), CacheStore.TextureKey(b, ImageKind.Hdr, 100, 5, "enc"));
         var key = CacheStore.LightRigKey(path, 100, 5);
         Assert.Matches("^[0-9a-f]{16}$", key);
         Assert.Equal(key, CacheStore.LightRigKey(path.ToUpperInvariant(), 100, 5));   // the path is case-folded

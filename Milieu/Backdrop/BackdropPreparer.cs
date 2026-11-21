@@ -134,7 +134,7 @@ public sealed class BackdropPreparer(CacheStore cache, IBlockEncoder encoder, IB
             warnings.Add(StatusMessage.Of(MessageKey.NotTwoToOne, ("file", file)));
 
         var info = new FileInfo(request.ImagePath);
-        var key = CacheStore.TextureKey(request, probe.Kind, info.Length, info.LastWriteTimeUtc.Ticks);
+        var key = CacheStore.TextureKey(request, probe.Kind, info.Length, info.LastWriteTimeUtc.Ticks, encoder.CacheId);
         var layout = AtexWriter.Layout(outW, outH);
         var diskPath = cache.TextureDiskPath(key);
         if (cache.TryGetTexture(key, layout.TotalLength))

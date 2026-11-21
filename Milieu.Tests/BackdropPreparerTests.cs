@@ -25,6 +25,7 @@ public sealed class BackdropPreparerTests : IDisposable
     /// <summary>Returns correctly sized zero blocks: the pipeline test does not need real BC7.</summary>
     private sealed class StubEncoder : IBlockEncoder
     {
+        public string CacheId { get; init; } = "stub";
         public int Calls;
         public Func<CancellationToken, Task>? Before;
 
