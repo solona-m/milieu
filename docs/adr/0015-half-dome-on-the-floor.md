@@ -28,7 +28,7 @@ Two defects made the screenshot:
 - **D1, a half dome standing on the floor.** With ground projection on, the dome is a hemisphere centred at the feet: its
   rim on the floor at radius R, its top R·vs above the floor ("Radius" now sets the wall). The new per-dome-set setting
   `DomeSettings.Bottom` chooses what lies beneath it:
-  - **Image floor** (default): the image's lower half on a flat floor disc. Each vertex is cast from the capture point (the
+  - **Image floor** (the sky default; see the amendment for rooms): the image's lower half on a flat floor disc. Each vertex is cast from the capture point (the
     dome centre, camera height h above the floor) along its image direction to the exit of the solid "unit ball centred at
     (0, −f, 0), cut at y ≥ −f" (f = h / (R·vs)): t = min(−f·d.y + √(1 − f²(1 − d.y²)), f / −d.y when d.y < 0). The image's
     horizon sits at camera height; the camera height is now only that.
@@ -37,7 +37,7 @@ Two defects made the screenshot:
     centre moves to the feet (local spawn height 0, synced `BakedHeight` 0) and the mesh is rows 0..24 of the reference: a
     byte prefix of model 7. This matches the owner's own −0.15 approximation and the literal "bottom level with the
     horizon". In a room it puts the drawn horizon about atan(eye/R) below eye level (≈9° at R = 10) and drops the image's
-    floor, so it suits skies and open scenes; the tooltip says so.
+    floor; since the amendment it is the room default (a game room already has a floor).
   - Rejected for "or the horizon": a rim at eye level with vertical walls down to an image floor (looks nearly the same as
     Image floor and doesn't match the owner's approximation). Rejected for Open: keeping the centre at camera height and
     pulling the upper half onto a floor-standing hemisphere (vertices leave their rays, the horizon misses the rim, and the
@@ -87,6 +87,25 @@ Two defects made the screenshot:
   (`SphereMesh.BuildLegacyFloor`, golden `floor0.16_r10`), local and synced; the Bottom choice is hidden and an open entry
   draws that floor.
 
+## Amendment (2026-11-21): the room dome defaults to the open bottom
+
+Tried in game, the owner wanted the room dome to show "the picture only on the hemisphere, leaving the game floor in
+place", with the picture's horizon at the feet (chosen over keeping the horizon at eye level without the floor disc).
+That is the open bottom, so `DomeSettings.RoomDefaults()` now has `Bottom = Open`; the Sky default stays the image floor.
+
+- **Prior art.** HDRI viewers draw the environment by default on an infinitely distant sphere with no floor (Substance 3D
+  Painter's Iray "infinite sphere"); a projected floor is an opt-in extra (Iray's finite sphere with ground, Unreal's HDRI
+  Backdrop, Blender ground-projection add-ons, each with the projection centre at the capture height). The image floor is
+  that extra; a room in the game already has a floor.
+- **Migration v6 → v7**: every room set with the image floor (working copy and every entry) becomes open. v6 existed only in
+  dev builds for a few hours and wrote the image floor for every room set, so no room choice is lost; a room image floor
+  chosen from v7 on is kept. A v5 file has no bottom and reads the new room default.
+- This amendment supersedes D1's "suits skies" note and the room lines under Consequences. The −0.15 room entries become
+  open half domes at the feet (their v6 image floor flips to open; the camera height is unused). A corrupted bottom repairs
+  to the dome's default (open for a room, image floor for the sky), like the other fields.
+- AC-half-dome-11: new configs, v5 files and v6 room sets get the open bottom for the room dome; the sky dome keeps the
+  image floor; a v7 room image floor stays.
+
 ## Release gate
 
 No testing or stable tag ships with `HalfDomeAvailable()` true until the worst-case half dome (Sky, vertical scale 2,
@@ -96,8 +115,10 @@ before tagging.
 
 ## Consequences
 
-- Room backdrops read as a room with a flat floor at the feet; the lodge config migrates to camera height 1.6.
-- The −0.15 entries stay full spheres until the owner picks Open; nothing converts them automatically.
+- Room backdrops draw the open bottom by default (amendment): the picture on the hemisphere, the game's floor in place;
+  the image floor (a flat floor at the feet; the lodge's camera height migrates to 1.6) is one click away.
+- The −0.15 room entries (projection on, v6 image floor) become open half domes at the feet through v7 (amendment): the
+  look they approximated. Sky sets at −0.15 stay full spheres.
 - Building the dome stays on the framework thread, as before, but is up to about 2.5× the work: measured at about 4 ms a
   build on average and about 12 ms for the largest half dome (including the tests' own parse-back), so at most a one-frame
   hitch when a slider is released. Moving `DomeAvfxBuilder.Build` off the framework thread is the lever if it shows.

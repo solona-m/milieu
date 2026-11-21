@@ -29,6 +29,7 @@ public sealed class BackdropControllerTests : IDisposable
         cache = new CacheStore(dir.File("cache"));
         preparer = new FakePreparer(cache);
         config.ImagePath = dir.File("pano.jpg");
+        config.Room.Bottom = DomeBottom.ImageFloor;   // the image-floor tests; the open bottom (the room default) sets it per test
         spawner.Clock = () => now;
         c = new BackdropController(spawner, penumbra, game, preparer, cache, config, log, run: f => f(), utcNow: () => now);
     }
@@ -779,6 +780,7 @@ public sealed class BackdropControllerTests : IDisposable
     public void ProjectionStatus_DescribesShape()
     {
         var d = DomeSettings.RoomDefaults();
+        d.Bottom = DomeBottom.ImageFloor;
         Assert.Equal("Half dome on the floor with the image's floor; its horizon 1.6 above your feet.", d.ProjectionStatus(true));
         Assert.Equal("Floor at your feet; horizon 1.6 above it.", d.ProjectionStatus(halfDomeAvailable: false));
         Assert.False(d.ProjectionInactive);
@@ -873,6 +875,7 @@ public sealed class BackdropControllerTests : IDisposable
     public void Shape_HeightAboveDome()
     {
         var d = DomeSettings.RoomDefaults();
+        d.Bottom = DomeBottom.ImageFloor;
         d.HeightOffset = 10;
         Assert.Equal(new DomeShapeChoice(DomeMeshKind.Sphere, null, 10), d.Shape(true));
         d.Bottom = DomeBottom.Open;
@@ -883,6 +886,7 @@ public sealed class BackdropControllerTests : IDisposable
     public void Shape_LowHeight()
     {
         var d = DomeSettings.RoomDefaults();
+        d.Bottom = DomeBottom.ImageFloor;
         foreach (var h in new[] { 0.1f, 0f, -0.15f })
         {
             d.HeightOffset = h;

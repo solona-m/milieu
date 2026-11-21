@@ -20,7 +20,10 @@ public sealed class DomeSettings
     /// <summary>The half dome standing on the floor (docs/adr/0015); <see cref="HeightOffset"/> is then the camera height.</summary>
     public bool GroundProjection { get; set; }
 
-    /// <summary>What lies under the half dome with ground projection on (docs/adr/0015). Absent in older configs: the image floor.</summary>
+    /// <summary>
+    /// What lies under the half dome with ground projection on (docs/adr/0015). Absent in older configs: the dome's default (the
+    /// image floor for the sky; the open bottom for a room, which v7 also applies to v6 room sets).
+    /// </summary>
     public DomeBottom Bottom { get; set; }
 
     /// <summary>The lowest camera height the image floor accepts (docs/adr/0015): below it the image's floor squashes to a dot.</summary>
@@ -32,8 +35,14 @@ public sealed class DomeSettings
     /// </summary>
     public static DomeSettings SkyDefaults() => new() { Radius = 20000f, VerticalScale = 1f, HeightOffset = 1.6f, YawDegrees = 0f, GroundProjection = true };
 
-    /// <summary>A room-sized dome around the camera, its centre at roughly eye height.</summary>
-    public static DomeSettings RoomDefaults() => new() { Radius = 10f, VerticalScale = 1f, HeightOffset = 1.6f, YawDegrees = 0f, GroundProjection = true };
+    /// <summary>
+    /// A room-sized half dome with an open bottom: the picture's upper half on the hemisphere, its horizon at your feet, and
+    /// the game's own floor left in place (chosen in game, docs/adr/0015 amendment).
+    /// </summary>
+    public static DomeSettings RoomDefaults() => new()
+    {
+        Radius = 10f, VerticalScale = 1f, HeightOffset = 1.6f, YawDegrees = 0f, GroundProjection = true, Bottom = DomeBottom.Open,
+    };
 
     public static (float Min, float Max) RadiusRange(DomeMode mode) => mode == DomeMode.Sky ? (200f, 20000f) : (1f, 100f);
     public static (float Min, float Max) HeightRange(DomeMode mode) => mode == DomeMode.Sky ? (-2000f, 2000f) : (-10f, 10f);
@@ -63,7 +72,7 @@ public sealed class DomeSettings
     public static readonly string[] BottomLabels = ["Image floor", "Open (horizon at your feet)"];
 
     public static string BottomTooltip(DomeBottom bottom) => bottom == DomeBottom.Open
-        ? "Only the image's upper half is drawn, its horizon at your feet, and the game's own ground shows below. Best for skies and open scenes: in a room the horizon sits below eye level and the image's floor is gone."
+        ? "Only the image's upper half is drawn, its horizon at your feet, and the game's own floor stays. The room default; in a room the horizon sits below eye level and the image's floor isn't drawn."
         : "The image's lower half lies on a flat floor at your feet; its horizon sits at camera height.";
 
     public const string CameraHeightTooltip = "How high the image was taken above the floor: its horizon sits this far above your feet.";
@@ -142,7 +151,7 @@ public sealed class DomeSettings
         VerticalScale = Fix(VerticalScale, VerticalScaleRange, d.VerticalScale);
         HeightOffset = Fix(HeightOffset, HeightRange(mode), d.HeightOffset);
         YawDegrees = Fix(YawDegrees, YawRange, d.YawDegrees);
-        if (!Enum.IsDefined(Bottom)) Bottom = DomeBottom.ImageFloor;
+        if (!Enum.IsDefined(Bottom)) Bottom = d.Bottom;   // the mode's default, like every other field
     }
 
     internal static float Fix(float v, (float Min, float Max) range, float fallback) =>
