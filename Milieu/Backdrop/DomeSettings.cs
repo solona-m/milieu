@@ -32,8 +32,14 @@ public sealed class DomeSettings
     /// </summary>
     public static DomeSettings SkyDefaults() => new() { Radius = 20000f, VerticalScale = 1f, HeightOffset = 1.6f, YawDegrees = 0f, GroundProjection = true };
 
-    /// <summary>A room-sized dome around the camera, its centre at roughly eye height.</summary>
-    public static DomeSettings RoomDefaults() => new() { Radius = 10f, VerticalScale = 1f, HeightOffset = 1.6f, YawDegrees = 0f, GroundProjection = true };
+    /// <summary>
+    /// A room-sized half dome with an open bottom: the picture's upper half on the hemisphere, its horizon at your feet, and
+    /// the game's own floor left in place (chosen in game, docs/adr/0015 amendment).
+    /// </summary>
+    public static DomeSettings RoomDefaults() => new()
+    {
+        Radius = 10f, VerticalScale = 1f, HeightOffset = 1.6f, YawDegrees = 0f, GroundProjection = true, Bottom = DomeBottom.Open,
+    };
 
     public static (float Min, float Max) RadiusRange(DomeMode mode) => mode == DomeMode.Sky ? (200f, 20000f) : (1f, 100f);
     public static (float Min, float Max) HeightRange(DomeMode mode) => mode == DomeMode.Sky ? (-2000f, 2000f) : (-10f, 10f);

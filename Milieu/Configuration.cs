@@ -5,6 +5,7 @@ using System.Linq;
 using Milieu.Assets;
 using Dalamud.Configuration;
 using Milieu.Backdrop;
+using Milieu.GameFiles;
 using Milieu.Imaging;
 
 namespace Milieu;
@@ -24,7 +25,7 @@ namespace Milieu;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     private readonly object gate = new();
 
@@ -213,7 +214,8 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>
     /// Upgrades older versions in place, as ordered steps (a later version adds its own step). Steps change only
     /// untouched defaults, except v3/v4, which apply defaults chosen in game to configs written by unreleased dev builds, and
-    /// v6, which resets a camera height whose meaning changed (docs/adr/0015).
+    /// v6, which resets a camera height whose meaning changed, and v7, which applies the room default chosen in game to
+    /// bottoms written by dev builds (docs/adr/0015).
     /// </summary>
     public void Migrate(string configDirectory)
     {
@@ -278,6 +280,20 @@ public sealed class Configuration : IPluginConfiguration
                 Reset(entry.Room);
             }
             Version = 6;
+        }
+        if (Version < 7)
+        {
+            // Chosen in game (docs/adr/0015 amendment): the room dome shows the picture only on the hemisphere and leaves the
+            // game's floor in place. v6 (dev builds only, hours old) wrote the image floor for every room set; it becomes the
+            // open bottom, in the working copy and every entry. A v5 file has no bottom and already reads the new default.
+            static void Open(DomeSettings? d)
+            {
+                if (d is { Bottom: DomeBottom.ImageFloor }) d.Bottom = DomeBottom.Open;
+            }
+            Open(Room);
+            foreach (var entry in (Backdrops ?? []).Values)
+                if (entry != null) Open(entry.Room);
+            Version = 7;
         }
         if (Version < CurrentVersion) Version = CurrentVersion;
     }

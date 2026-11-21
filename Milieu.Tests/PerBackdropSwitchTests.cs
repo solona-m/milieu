@@ -129,11 +129,11 @@ public sealed class PerBackdropSwitchTests : IDisposable
         Assert.Equal((a, -2f, ToneMapOperator.Reinhard), (req.ImagePath, req.ExposureEv, req.ToneMap));
         var spawn = spawner.Spawns[^1];
         Assert.Equal(30f * MathF.PI / 180f, spawn.Yaw, 4);
-        Assert.Equal(game.PlayerPosition!.Value.Y + config.Backdrops[a].Room.HeightOffset, spawn.Pos.Y, 3);
+        Assert.Equal(game.PlayerPosition!.Value.Y + config.Backdrops[a].Room.Shape(true).CentreHeight, spawn.Pos.Y, 3);
         var e = config.Backdrops[a];
         var tex = pen.Sets[^1].First(kv => !kv.Key.EndsWith(".avfx")).Key;
         var expected = DomeAvfxBuilder.Build(new DomeAvfxParams(tex, e.Room.Radius, e.Room.VerticalScale, e.HorizontalRepeat, e.VerticalRepeat,
-                                                                e.FlipHorizontal, e.Brightness, e.Room.FloorY(), Mesh: e.Room.Shape(true).Kind));
+                                                                e.FlipHorizontal, e.Brightness, e.Room.Shape(true).FloorY, Mesh: e.Room.Shape(true).Kind));
         Assert.Equal(expected, File.ReadAllBytes(pen.Sets[^1].First(kv => kv.Key.EndsWith(".avfx")).Value));   // A's lighting is off: no lights
     }
 

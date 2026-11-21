@@ -28,7 +28,7 @@ Two defects made the screenshot:
 - **D1, a half dome standing on the floor.** With ground projection on, the dome is a hemisphere centred at the feet: its
   rim on the floor at radius R, its top R·vs above the floor ("Radius" now sets the wall). The new per-dome-set setting
   `DomeSettings.Bottom` chooses what lies beneath it:
-  - **Image floor** (default): the image's lower half on a flat floor disc. Each vertex is cast from the capture point (the
+  - **Image floor** (the sky default; see the amendment for rooms): the image's lower half on a flat floor disc. Each vertex is cast from the capture point (the
     dome centre, camera height h above the floor) along its image direction to the exit of the solid "unit ball centred at
     (0, −f, 0), cut at y ≥ −f" (f = h / (R·vs)): t = min(−f·d.y + √(1 − f²(1 − d.y²)), f / −d.y when d.y < 0). The image's
     horizon sits at camera height; the camera height is now only that.
@@ -86,6 +86,22 @@ Two defects made the screenshot:
 - **D11, kill switch** `Plugin.HalfDomeAvailable()`: false builds the pre-0015 floor again, byte-identical
   (`SphereMesh.BuildLegacyFloor`, golden `floor0.16_r10`), local and synced; the Bottom choice is hidden and an open entry
   draws that floor.
+
+## Amendment (2026-11-21): the room dome defaults to the open bottom
+
+Tried in game, the owner wanted the room dome to show "the picture only on the hemisphere, leaving the game floor in
+place", with the picture's horizon at the feet (chosen over keeping the horizon at eye level without the floor disc).
+That is the open bottom, so `DomeSettings.RoomDefaults()` now has `Bottom = Open`; the Sky default stays the image floor.
+
+- **Prior art.** HDRI viewers draw the environment by default on an infinitely distant sphere with no floor (Substance 3D
+  Painter's Iray "infinite sphere"); a projected floor is an opt-in extra (Iray's finite sphere with ground, Unreal's HDRI
+  Backdrop, Blender ground-projection add-ons, each with the projection centre at the capture height). The image floor is
+  that extra; a room in the game already has a floor.
+- **Migration v6 → v7**: every room set with the image floor (working copy and every entry) becomes open. v6 existed only in
+  dev builds for a few hours and wrote the image floor for every room set, so no room choice is lost; a room image floor
+  chosen from v7 on is kept. A v5 file has no bottom and reads the new room default.
+- AC-half-dome-11: new configs, v5 files and v6 room sets get the open bottom for the room dome; the sky dome keeps the
+  image floor; a v7 room image floor stays.
 
 ## Release gate
 

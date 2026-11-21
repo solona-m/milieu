@@ -19,12 +19,44 @@ public sealed class HalfDomeConfigTests
 
     // ---------------------------------------------------------------- AC-7: remembered per backdrop and dome
 
-    [Fact] // [AC-half-dome-7]
-    public void Defaults_ImageFloor()
+    [Fact] // [AC-half-dome-7] [AC-half-dome-11]
+    public void Defaults_SkyImageFloor_RoomOpen()
     {
         var c = new Configuration();
         Assert.Equal(DomeBottom.ImageFloor, c.Sky.Bottom);
-        Assert.Equal(DomeBottom.ImageFloor, c.Room.Bottom);
+        Assert.Equal(DomeBottom.Open, c.Room.Bottom);
+        Assert.Equal(DomeBottom.Open, DomeSettings.RoomDefaults().Bottom);
+        Assert.Equal(DomeMeshKind.OpenBottom, c.Room.Shape(true).Kind);
+    }
+
+    [Fact] // [AC-half-dome-11]
+    public void Migrate_V7_RoomSetsBecomeOpen_SkyKept()
+    {
+        var c = new Configuration { Version = 6, UserImages = [A] };
+        c.Room.Bottom = DomeBottom.ImageFloor;
+        c.Sky.Bottom = DomeBottom.ImageFloor;
+        c.Backdrops[A] = new BackdropSettings
+        {
+            Sky = new DomeSettings { Radius = 20000, HeightOffset = 1.6f, GroundProjection = true, Bottom = DomeBottom.ImageFloor },
+            Room = new DomeSettings { Radius = 11, HeightOffset = 1.6f, GroundProjection = true, Bottom = DomeBottom.ImageFloor },
+        };
+        c.Backdrops[B] = null!;
+        c.Migrate(@"C:\cfg");
+        Assert.Equal(7, c.Version);
+        Assert.Equal(DomeBottom.Open, c.Room.Bottom);
+        Assert.Equal(DomeBottom.Open, c.Backdrops[A].Room.Bottom);
+        Assert.Equal(DomeBottom.ImageFloor, c.Sky.Bottom);
+        Assert.Equal(DomeBottom.ImageFloor, c.Backdrops[A].Sky.Bottom);
+    }
+
+    [Fact] // [AC-half-dome-11]
+    public void V7RoomImageFloorChoice_Kept()
+    {
+        var c = new Configuration { Version = 7 };
+        c.Room.Bottom = DomeBottom.ImageFloor;   // chosen after the default changed
+        var back = RoundTrip(c);
+        back.Migrate(@"C:\cfg");
+        Assert.Equal(DomeBottom.ImageFloor, back.Room.Bottom);
     }
 
     [Fact] // [AC-half-dome-7]
@@ -52,16 +84,16 @@ public sealed class HalfDomeConfigTests
         Assert.Equal(DomeBottom.Open, e.Bottom);
     }
 
-    [Fact] // [AC-half-dome-7] [EDGE-half-dome-10]
-    public void V5JsonWithoutBottom_LoadsAsImageFloor()
+    [Fact] // [AC-half-dome-7] [EDGE-half-dome-10] [AC-half-dome-11]
+    public void V5JsonWithoutBottom_SkyImageFloor_RoomOpen()
     {
         const string json = "{\"Version\":5,\"Room\":{\"Radius\":11,\"VerticalScale\":1,\"HeightOffset\":1.2,\"YawDegrees\":0,\"GroundProjection\":true},"
                             + "\"Backdrops\":{\"bundled:lodge\":{\"Room\":{\"Radius\":11,\"HeightOffset\":0.9,\"GroundProjection\":true},\"Sky\":{\"Radius\":20000}}}}";
         var c = JsonConvert.DeserializeObject<Configuration>(json)!;
         c.Migrate(@"C:\cfg");
         c.Clamp();
-        Assert.Equal(DomeBottom.ImageFloor, c.Room.Bottom);
-        Assert.Equal(DomeBottom.ImageFloor, c.Backdrops["bundled:lodge"].Room.Bottom);
+        Assert.Equal(DomeBottom.Open, c.Room.Bottom);
+        Assert.Equal(DomeBottom.Open, c.Backdrops["bundled:lodge"].Room.Bottom);
         Assert.Equal(DomeBottom.ImageFloor, c.Backdrops["bundled:lodge"].Sky.Bottom);
     }
 
@@ -83,7 +115,7 @@ public sealed class HalfDomeConfigTests
         c.Migrate(@"C:\cfg");
         Assert.Equal(1.6f, c.Room.HeightOffset);
         Assert.Equal(1.6f, c.Backdrops["bundled:lodge"].Room.HeightOffset);
-        Assert.Equal(6, c.Version);
+        Assert.Equal(7, c.Version);
     }
 
     [Fact] // [EDGE-half-dome-12]
@@ -114,9 +146,11 @@ public sealed class HalfDomeConfigTests
     public void Migrate_V6Config_NotReMigrated()
     {
         var c = V5Like();
-        c.Version = 6;
+        c.Version = 7;
+        c.Room.Bottom = DomeBottom.ImageFloor;
         c.Migrate(@"C:\cfg");
         Assert.Equal(0.07f, c.Room.HeightOffset);   // shown inactive, never rewritten again
+        Assert.Equal(DomeBottom.ImageFloor, c.Room.Bottom);
         Assert.True(c.Room.ProjectionInactive);
     }
 
@@ -127,7 +161,7 @@ public sealed class HalfDomeConfigTests
         c.Room.HeightOffset = float.NaN;
         c.Sky = null!;
         c.Migrate(@"C:\cfg");
-        Assert.Equal(6, c.Version);
+        Assert.Equal(7, c.Version);
 
         var d = new Configuration { Version = 5 };
         d.Backdrops["x"] = new BackdropSettings { Sky = null!, Room = null! };
