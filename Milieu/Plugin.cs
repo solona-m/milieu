@@ -36,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 56;
+    public const int BuildNumber = 57;
 
     private const string CommandName = "/milieu";
 
@@ -76,7 +76,8 @@ public sealed class Plugin : IDalamudPlugin
                                             bundled: downloads, save: Save, syncedAvailable: SyncedAvailable,
                                             sync: penumbra, gameData: new GameData(DataManager),
                                             loadRig: SyncedRigLoader(LightingAvailable(), SyncedLightsAvailable(), preparer.PrepareLightsAsync),
-                                            loadLocalRig: LocalRigLoader(LightingAvailable(), LocalLightsAvailable(), preparer.PrepareLightsAsync));
+                                            loadLocalRig: LocalRigLoader(LightingAvailable(), LocalLightsAvailable(), preparer.PrepareLightsAsync),
+                                            halfDomeAvailable: HalfDomeAvailable());
         lighting = CreateLighting(LightingAvailable(), () => new LightInterop(SigScanner, Framework, log), gameState, () => controller.Lit,
                                   config, preparer.PrepareLightsAsync,
                                   () => new FileLightingSentinel(Path.Combine(configDir, FileLightingSentinel.FileName), log), log,
@@ -195,6 +196,14 @@ public sealed class Plugin : IDalamudPlugin
     /// UNVERIFIED items 1, 2, 3 and 5 have passed in game; otherwise flip this to false, or the default to off, before tagging.
     /// </summary>
     private static bool SunOffAvailable() => true;
+
+    /// <summary>
+    /// The half dome's kill switch (docs/adr/0015): return false and ground projection builds the pre-0015 floor again
+    /// (byte-identical, local and synced), the "Bottom" choice is hidden and an open entry draws that floor. Release gate: no
+    /// tag ships with this true until the worst-case half dome (Sky, vertical scale 2, camera height 0.25) has loaded offline
+    /// in VFXEditor and then shown in game, locally and for a PSync pair; otherwise flip this to false before tagging.
+    /// </summary>
+    private static bool HalfDomeAvailable() => true;
 
     /// <summary>
     /// Test seam: builds sun off and its switch, or nothing at all (the factories are never called) when the kill switch is

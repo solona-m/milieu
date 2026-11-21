@@ -1030,4 +1030,20 @@ public sealed class BackdropControllerSyncTests : IDisposable
         Assert.Null(c.Lit);
         Assert.DoesNotContain(pen.Player!.Value.Id, pen.Synced.Keys);
     }
+
+    [Theory] // [AC-half-dome-6]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Synced_BuildCarriesShape(bool open)
+    {
+        config.Mode = DomeMode.Room;
+        config.Room.Bottom = open ? DomeBottom.Open : DomeBottom.ImageFloor;
+        ShowSynced();
+        var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"];
+        var root = Avfx(dome);
+        var pos = root.Need("Ptcl").Need("Pos").Child("Y");
+        if (open) Assert.Null(pos);   // centre at the feet: no baked height
+        else Assert.Equal(1.6f, pos!.CurveValue());
+        Assert.Equal(open ? 2425 : 9894, root.Need("Modl").Need("VDrw").Data.Length / 36);
+    }
 }

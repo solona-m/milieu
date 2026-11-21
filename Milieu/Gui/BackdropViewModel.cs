@@ -111,8 +111,20 @@ public sealed class BackdropViewModel(BackdropStatus status, MessageKey blocker,
     {
         "Yaw" => SliderApply.Placement,
         "Height" => SliderApply.Height,
-        _ => SliderApply.Rebuild,   // Radius, VerticalScale, HorizontalRepeat, VerticalRepeat, Flip, Brightness, Mode, GroundProjection
+        _ => SliderApply.Rebuild,   // Radius, VerticalScale, HorizontalRepeat, VerticalRepeat, Flip, Brightness, Mode, GroundProjection, DomeBottom
     };
+
+    /// <summary>
+    /// The Ground projection checkbox (docs/adr/0015): sets the flag; turning it on with a camera height below
+    /// <see cref="DomeSettings.MinCameraHeight"/> (a sunk sphere, say) sets the mode's default height, so the half dome is
+    /// active at once. The caller saves and posts one rebuild.
+    /// </summary>
+    public static void ProjectionToggle(DomeSettings d, DomeMode mode, bool on)
+    {
+        d.GroundProjection = on;
+        if (on && !(d.HeightOffset >= DomeSettings.MinCameraHeight))
+            d.HeightOffset = (mode == DomeMode.Sky ? DomeSettings.SkyDefaults() : DomeSettings.RoomDefaults()).HeightOffset;
+    }
 
     /// <summary>How close a repeat value must be to a whole number to snap to it.</summary>
     public const float RepeatSnap = 0.1f;

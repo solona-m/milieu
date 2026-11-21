@@ -186,9 +186,11 @@ public class DomeAvfxBuilderTests
 
     /// <summary>
     /// Golden SHA-256 values captured from `test` (da8171b) before synced lighting touched the builder: the local dome over
-    /// a parameter matrix, and a non-default synced dome without lights (equals EmitterBaseHeight 0).
+    /// a parameter matrix, and a non-default synced dome without lights (equals EmitterBaseHeight 0). Since the half dome
+    /// (docs/adr/0015), floor0.16_r10 (no explicit mesh) pins the legacy floor, the kill-switch path; the half-dome entries
+    /// imageFloor0.16_r10, open_r10 and synced_open_h0 were captured on the half-dome branch.
     /// </summary>
-    [Theory] // [AC-synced-lighting-3]
+    [Theory] // [AC-synced-lighting-3] [AC-half-dome-4]
     [InlineData("default", "5A2E7FE433FFEA4D71952FA2177C162D0D0EEF8A27DC477336A7E9FB07539D81")]
     [InlineData("flip", "E1C0B9302FD4BB626C46A854384F820A706DA92AD873A0BD6407AE02067E92CF")]
     [InlineData("repeats3x1.5", "A8E1FD1E5D6D93277A531A8AD4EDCBDC0AC772467AE8D401D476EF21DE5F85D8")]
@@ -197,6 +199,9 @@ public class DomeAvfxBuilderTests
     [InlineData("floorNull_r10", "516DF977470DC1E59C809C09307B207C06163A0CB98711104F6F87259E3916FB")]
     [InlineData("floor0.16_r10", "C1D206A17F008FDD7775A9383C0C9A065BC905A3D050EED8327D8B5F08A3C9E7")]
     [InlineData("synced_h1.6_yaw0.7_rep3x1.5", "2DCAB3079C2BB5016E0719D3D9DFE8173815D936B9D466DBEE756275FBC8D03F")]
+    [InlineData("imageFloor0.16_r10", "DC62FDB32324C37BF5F919251C17D517ACFB9FF3D6FE9BF225229875F13C9E5A")]
+    [InlineData("open_r10", "1388DE02C1B8CBD14BDF5794D6C8165993478FA1E2300C827AE2D2315E7C30A0")]
+    [InlineData("synced_open_h0", "BFF7F8376ED8B692ED43B01AC68D9D7CD6C84D03AC091E33F787FF7018A7E54F")]
     public void GoldenMatrix_ByteIdenticalToPreFeature(string name, string sha)
     {
         var b = new DomeAvfxParams("bgcommon/milieu/aabbccddeeff0011/sky.atex", 20000, 1, 2, 1, false, 1);
@@ -210,6 +215,9 @@ public class DomeAvfxBuilderTests
             "floorNull_r10" => b with { Radius = 10 },
             "floor0.16_r10" => b with { Radius = 10, FloorY = 0.16f },
             "synced_h1.6_yaw0.7_rep3x1.5" => b with { AttachToOwner = true, BakedHeight = 1.6f, BakedYawRadians = 0.7f, URepeat = 3, VRepeat = 1.5f },
+            "imageFloor0.16_r10" => b with { Radius = 10, FloorY = 0.16f, Mesh = DomeMeshKind.ImageFloor },
+            "open_r10" => b with { Radius = 10, Mesh = DomeMeshKind.OpenBottom },
+            "synced_open_h0" => b with { Radius = 10, Mesh = DomeMeshKind.OpenBottom, AttachToOwner = true, BakedYawRadians = 0.7f },
             _ => throw new ArgumentOutOfRangeException(nameof(name)),
         };
         Assert.Equal(sha, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(DomeAvfxBuilder.Build(p))));
@@ -234,7 +242,7 @@ public class DomeAvfxBuilderTests
         var itpr = AvfxChunkReader.Parse(bytes).Need("Emit").Need("ItPr");
         Assert.Equal(DomeAvfxBuilder.SyncedAttach, (itpr.Need("PICd").AsInt(), itpr.Need("ICbS").AsInt(), itpr.Need("ICbR").AsInt(), itpr.Need("ICbP").AsInt()));
         // SelfCheck rejects bytes that don't match the params (local bytes checked as synced, and the other way round).
-        var mesh = SphereMesh.Build(floorY: p.FloorY);
+        var mesh = SphereMesh.For(p.MeshKind, p.FloorY);
         Assert.Throws<InvalidDataException>(() => DomeAvfxBuilder.SelfCheck(DomeAvfxBuilder.Build(Params()), p, mesh));
         Assert.Throws<InvalidDataException>(() => DomeAvfxBuilder.SelfCheck(bytes, Params(), mesh));
     }
@@ -248,7 +256,7 @@ public class DomeAvfxBuilderTests
         Assert.Equal(0.5f, ptcl.Need("Rot").Need("Y").CurveValue());
         Assert.Equal(["ACT", "ACTR", "Y"], ptcl.Need("Pos").Children.Select(c => c.Tag).ToArray());
         Assert.Equal(["ACT", "ACTR", "Y"], ptcl.Need("Rot").Children.Select(c => c.Tag).ToArray());
-        var mesh = SphereMesh.Build(floorY: p.FloorY);
+        var mesh = SphereMesh.For(p.MeshKind, p.FloorY);
         Assert.Throws<InvalidDataException>(() => DomeAvfxBuilder.SelfCheck(DomeAvfxBuilder.Build(Params()), p, mesh));
     }
 
@@ -270,5 +278,131 @@ public class DomeAvfxBuilderTests
     public void EmitterBaseHeight_NonFiniteOrOutOfRange_Rejected(float y)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => DomeAvfxBuilder.Build(Params() with { AttachToOwner = true, EmitterBaseHeight = y }));
+    }
+
+    // ---------------------------------------------------------------- half dome (docs/adr/0015)
+
+    private static (int Vertices, ushort[] Indices, byte[] Vdrw) Model(byte[] avfx)
+    {
+        var modl = AvfxChunkReader.Parse(avfx).Need("Modl");
+        var vdrw = modl.Need("VDrw").Data;
+        var vidx = modl.Need("VIdx").Data;
+        var idx = new ushort[vidx.Length / 2];
+        Buffer.BlockCopy(vidx, 0, idx, 0, vidx.Length);
+        return (vdrw.Length / 36, idx, vdrw);
+    }
+
+    [Theory] // [AC-half-dome-6]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Synced_SameMeshAsLocal(bool imageFloor)
+    {
+        var kind = imageFloor ? DomeMeshKind.ImageFloor : DomeMeshKind.OpenBottom;
+        var floor = kind == DomeMeshKind.ImageFloor ? 0.16f : (float?)null;
+        var local = Params(radius: 10) with { FloorY = floor, Mesh = kind };
+        var synced = local with { AttachToOwner = true, BakedHeight = kind == DomeMeshKind.ImageFloor ? 1.6f : 0f, BakedYawRadians = 0.4f, EmitterBaseHeight = 12f };
+        var a = AvfxChunkReader.Parse(DomeAvfxBuilder.Build(local)).Need("Modl");
+        var b = AvfxChunkReader.Parse(DomeAvfxBuilder.Build(synced)).Need("Modl");
+        Assert.Equal(a.Need("VDrw").Data, b.Need("VDrw").Data);
+        Assert.Equal(a.Need("VIdx").Data, b.Need("VIdx").Data);
+    }
+
+    [Fact] // [EDGE-half-dome-16]
+    public void Synced_OpenBottom_FlagsAndNoPosKey()
+    {
+        var p = Params(radius: 10) with { Mesh = DomeMeshKind.OpenBottom, AttachToOwner = true, BakedHeight = 0f, BakedYawRadians = 0.4f };
+        var root = Build(p);
+        Assert.Null(root.Need("Ptcl").Need("Pos").Child("Y"));
+        var itpr = root.Need("Emit").Need("ItPr");
+        Assert.Equal(DomeAvfxBuilder.SyncedAttach, (itpr.Need("PICd").AsInt(), itpr.Need("ICbS").AsInt(), itpr.Need("ICbR").AsInt(), itpr.Need("ICbP").AsInt()));
+        Assert.Equal(2425, Model(DomeAvfxBuilder.Build(p)).Vertices);
+    }
+
+    [Fact] // [EDGE-half-dome-16]
+    public void Synced_ImageFloor_BakesHeight()
+    {
+        var p = Params(radius: 10) with { FloorY = 0.16f, Mesh = DomeMeshKind.ImageFloor, AttachToOwner = true, BakedHeight = 1.6f };
+        Assert.Equal(1.6f, Build(p).Need("Ptcl").Need("Pos").Need("Y").CurveValue());
+        Assert.Equal(9894, Model(DomeAvfxBuilder.Build(p)).Vertices);
+    }
+
+    public static TheoryData<float, float, float, int, bool, bool> AllowedSettings()
+    {
+        var data = new TheoryData<float, float, float, int, bool, bool>();
+        foreach (var (r, mode) in new[] { (200f, 0), (20000f, 0), (1f, 1), (100f, 1) })
+        foreach (var vs in new[] { 0.25f, 1f, 2f })
+        foreach (var h in new[] { 0.25f, 1.6f, -1f })   // -1: just below the dome's height
+        foreach (var kind in new[] { 0, 1, 2, 3 })
+        foreach (var lights in new[] { false, true })
+        foreach (var synced in new[] { false, true })
+            data.Add(r, vs, h, kind, lights, synced);
+        return data;
+    }
+
+    [Theory] // [AC-half-dome-10] [EDGE-half-dome-1] [EDGE-half-dome-2]
+    [MemberData(nameof(AllowedSettings))]
+    public void AllowedSettings_SelfCheckPasses(float r, float vs, float h, int kindIndex, bool lights, bool synced)
+    {
+        var kind = (DomeMeshKind)kindIndex;
+        var height = h < 0 ? r * vs * 0.999f : h;
+        float? floor = kind is DomeMeshKind.ImageFloor or DomeMeshKind.LegacyFloor ? height / (r * vs) : null;
+        if (floor is { } f && !(f > 0 && f < 1)) return;   // camera at or above the dome: inactive, built as a sphere
+        var p = Params(radius: r, vscale: vs) with
+        {
+            FloorY = floor, Mesh = kind,
+            Lights = lights ? [new DomeLight(new System.Numerics.Vector3(0, 30, 0), System.Numerics.Vector3.One, 1, 50, true, 0.1f, 30)] : null,
+            AttachToOwner = synced, BakedHeight = synced && kind != DomeMeshKind.OpenBottom ? height : 0f,
+        };
+        var (vertices, indices, vdrw) = Model(DomeAvfxBuilder.Build(p));
+        Assert.True(vertices <= DomeAvfxBuilder.MaxVertices);
+        Assert.All(indices, i => Assert.True(i < vertices));
+        Assert.Equal(6 * 96 * (vertices / 97 - 1), indices.Length);
+        for (var o = 0; o < vdrw.Length; o += 36)
+            for (var k = 0; k < 6; k += 2)
+                Assert.True(Half.IsFinite(BitConverter.ToHalf(vdrw, o + k)));
+    }
+
+    [Fact] // [AC-half-dome-10]
+    public void SelfCheck_RejectsBadMesh()
+    {
+        var p = Params(radius: 10) with { FloorY = 0.16f, Mesh = DomeMeshKind.ImageFloor };
+        var bytes = DomeAvfxBuilder.Build(p);
+        var good = SphereMesh.BuildProjected(0.16f);
+        var nan = (DomeVertex[])good.Vertices.Clone();
+        nan[5] = nan[5] with { Y = Half.NaN };
+        Assert.Throws<InvalidDataException>(() => DomeAvfxBuilder.SelfCheck(bytes, p, new SphereMesh { Vertices = nan, Indices = good.Indices }));
+        Assert.Throws<InvalidDataException>(() => DomeAvfxBuilder.SelfCheck(bytes, p, new SphereMesh { Vertices = good.Vertices, Indices = good.Indices[..^3] }));
+    }
+
+    public static TheoryData<int, float> BadKindOrFloor() => new()
+    {
+        { 2, float.NaN }, { 2, 0f }, { 2, 1f }, { 2, -0.1f }, { 1, 1.5f }, { 2, float.PositiveInfinity },
+        { 0, 0.16f }, { 3, 0.16f }, { 7, 0.16f }, { 7, float.NegativeZero },
+    };
+
+    [Theory] // [EDGE-half-dome-17] [EDGE-half-dome-21]
+    [MemberData(nameof(BadKindOrFloor))]
+    public void Validate_RejectsBadKindOrFloor(int kind, float floor)
+    {
+        float? f = kind is 7 && floor == 0 ? null : floor;
+        var p = Params(radius: 10) with { FloorY = f, Mesh = (DomeMeshKind)kind };
+        Assert.Throws<ArgumentOutOfRangeException>(() => DomeAvfxBuilder.Build(p));
+    }
+
+    [Fact] // [EDGE-half-dome-21]
+    public void GuardExceptionTypes()
+    {
+        static void IsCaught(Action a)
+        {
+            var e = Record.Exception(a);
+            Assert.NotNull(e);
+            Assert.True(e is ArgumentException or InvalidDataException, e.GetType().Name);
+        }
+        IsCaught(() => DomeAvfxBuilder.Build(Params(radius: 10) with { Mesh = DomeMeshKind.ImageFloor }));
+        IsCaught(() => DomeAvfxBuilder.Build(Params(radius: 10) with { Mesh = (DomeMeshKind)9 }));
+        IsCaught(() => DomeShape.RingElevations(0.16, maxIterations: 2));
+        IsCaught(() => DomeShape.CastImageFloor(0, -1, 0, 2));
+        IsCaught(() => SphereMesh.BuildProjected(0.16f, segments: 2));
+        IsCaught(() => SphereMesh.BuildProjected(0.16f, segments: 1000));   // beyond 16-bit indices
     }
 }

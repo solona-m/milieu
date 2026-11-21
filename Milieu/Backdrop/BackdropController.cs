@@ -73,9 +73,19 @@ public sealed class BackdropController : Gui.IGridController
 
     // Scene lighting (docs/adr/0009): the image and build values of the dome as drawn. The image path travels with the
     // texture: the job's request, then the texture when assigned, then the pending registration, then the shown dome.
-    // Radius and HeightOffset are the values the dome was built with (local lights are planned from them, never live config).
+    // Radius and CentreHeight are the values the dome was built with (local lights are planned from them, never live config).
+    // Kind is the mesh (docs/adr/0015); CentreHeight is the dome centre's height above the feet: the camera height, or 0 for
+    // an open bottom. A local spawn takes its height from the build of the file it spawns, except a sphere (live height).
     private readonly record struct DomeBuild(bool Flip, float VerticalScale, float URepeat, float VRepeat, float? BakedYawRadians,
-                                             float Radius, float HeightOffset);
+                                             float Radius, float CentreHeight, DomeMeshKind Kind)
+    {
+        public bool OpenBottom => Kind == DomeMeshKind.OpenBottom;
+
+        /// <summary>The half dome's wall, which bounds its VFX lights (docs/adr/0015); null for the sphere and the legacy floor.</summary>
+        public DomeBounds? Bounds => Kind is DomeMeshKind.ImageFloor or DomeMeshKind.OpenBottom ? new DomeBounds(Radius, VerticalScale) : null;
+
+        public DomeView View(float yaw) => new(yaw, Flip, VerticalScale, URepeat, VRepeat, OpenBottom);
+    }
 
     private string? jobImagePath;
     private string? textureImagePath;
@@ -91,8 +101,8 @@ public sealed class BackdropController : Gui.IGridController
 
     private Dictionary<string, string>? shownSet;
     private string? shownAvfxGamePath;
-    private float? shownFloorY;
-    private float? pendingFloorY;
+    private DomeShapeChoice? shownShape;
+    private DomeShapeChoice? pendingShape;
     private VfxHandle? handle;
     private Vector3 centre;
     private bool recenterOnRespawn;
@@ -116,8 +126,10 @@ public sealed class BackdropController : Gui.IGridController
                               IPenumbraSync? sync = null, IGameData? gameData = null, Func<string, SyncStaging>? stagingFor = null,
                               Func<string, CancellationToken, Task<LightRig?>>? loadRig = null,
                               bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters,
-                              Func<string, CancellationToken, Task<LightRig?>>? loadLocalRig = null)
+                              Func<string, CancellationToken, Task<LightRig?>>? loadLocalRig = null,
+                              bool halfDomeAvailable = true)
     {
+        HalfDomeAvailable = halfDomeAvailable;
         this.loadRig = loadRig;
         this.loadLocalRig = loadLocalRig;
         lastSceneLighting = config.SceneLighting;
@@ -141,6 +153,9 @@ public sealed class BackdropController : Gui.IGridController
 
     public BackdropStatus Status => new(state, progress, CurrentMessage(), warnings);
 
+    /// <summary>The half-dome kill switch (<c>Plugin.HalfDomeAvailable</c>, docs/adr/0015): off builds the pre-0015 floor.</summary>
+    public bool HalfDomeAvailable { get; }
+
     /// <summary>Raised at the end of <see cref="Hide"/> (so also on logout), <see cref="OnPenumbraDisposed"/> and <see cref="Teardown"/>.</summary>
     public event Action? Hidden;
 
@@ -155,10 +170,10 @@ public sealed class BackdropController : Gui.IGridController
         {
             if (shownImagePath == null || shownBuild is not { } b) return null;
             if (synced?.Shown != null && b.BakedYawRadians is { } baked)
-                return new LitBackdrop(shownImagePath, new DomeView(baked, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat),
+                return new LitBackdrop(shownImagePath, b.View(baked),
                                        Synced: true, VfxLightCount: SyncedLights?.Lights.Count ?? 0);
             if (handle is { IsDead: false } && b.BakedYawRadians == null)
-                return new LitBackdrop(shownImagePath, new DomeView(spawnedYaw, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat),
+                return new LitBackdrop(shownImagePath, b.View(spawnedYaw),
                                        Synced: false, VfxLightCount: LocalLights?.Lights.Count ?? 0);
             return null;
         }
@@ -322,8 +337,9 @@ public sealed class BackdropController : Gui.IGridController
     private VfxLightPlan PlanLights(PreparedTexture tex, DomeBuild? build)
     {
         if (!LightsWanted(tex, loadRig, build, out var rig, out var b)) return VfxLightPlan.Empty;
-        var view = new DomeView(b.BakedYawRadians ?? 0f, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat);
-        return VfxLightPlanner.Plan(rig, view, config.Current.Radius, config.LightStrength, config.FillLightCount, fillsOnOwnEmitters);
+        var view = b.View(b.BakedYawRadians ?? 0f);
+        return VfxLightPlanner.Plan(rig, view, config.Current.Radius, config.LightStrength, config.FillLightCount, fillsOnOwnEmitters,
+                                    bounds: b.Bounds);
     }
 
     /// <summary>
@@ -334,8 +350,8 @@ public sealed class BackdropController : Gui.IGridController
     private VfxLightPlan PlanLocalLights(PreparedTexture tex, DomeBuild build, bool gpose)
     {
         if (gpose || !LocalLightsActive || !LightsWanted(tex, loadLocalRig, build, out var rig, out var b)) return VfxLightPlan.Empty;
-        return VfxLightPlanner.PlanLocal(rig, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat, b.Radius, b.HeightOffset,
-                                         config.LightStrength, config.FillLightCount, fillsOnOwnEmitters);
+        return VfxLightPlanner.PlanLocal(rig, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat, b.Radius, b.CentreHeight,
+                                         config.LightStrength, config.FillLightCount, fillsOnOwnEmitters, b.Bounds, b.OpenBottom);
     }
 
     /// <summary>The guard shared by synced and local planning: scene lighting on, a loader, a rig and a build.</summary>
@@ -568,15 +584,15 @@ public sealed class BackdropController : Gui.IGridController
         // Synced: the game places the item's VFX, so height and yaw are baked into the file: one rebuild, one redraw.
         if (SyncedLive) { ApplyRebuild(); return; }
         if (state != BackdropState.Shown || handle is not { IsDead: false } old || shownAvfxGamePath == null) return;
-        var spawned = SpawnDome(shownAvfxGamePath);
+        var spawned = SpawnDome(shownAvfxGamePath, shownBuild);
         if (spawned == null) return;
         spawner.Remove(old);
         handle = spawned;
     }
 
     /// <summary>
-    /// Height changed. With ground projection the floor is baked into the mesh, so a new floor means a rebuild; if the
-    /// floor is unchanged (or projection is off) the same VFX is respawned at the new height. Exactly one swap.
+    /// Height changed. With ground projection the floor is baked into the mesh, so a new floor (or mesh) means a rebuild; if
+    /// the shape is unchanged (projection off, or an open bottom) the same VFX is respawned. Exactly one swap.
     /// </summary>
     public void ApplyHeight()
     {
@@ -584,8 +600,9 @@ public sealed class BackdropController : Gui.IGridController
         // A lit local dome has the height baked into its light offsets: rebuild. While a rebuild is pending, the VFX about
         // to appear is the pending one: compare against its lights and its floor.
         if ((pendingSet != null ? pendingLocalLights : LocalLights) is { Lights.Count: > 0 }) { ApplyRebuild(); return; }
-        var current = pendingSet != null ? pendingFloorY : shownFloorY;
-        if (config.Current.FloorY() != current) ApplyRebuild();
+        var current = pendingSet != null ? pendingShape : shownShape;
+        var wanted = config.Current.Shape(HalfDomeAvailable);
+        if (current is not { } c || c.Kind != wanted.Kind || c.FloorY != wanted.FloorY) ApplyRebuild();
         else ApplyPlacement();
     }
 
@@ -815,15 +832,16 @@ public sealed class BackdropController : Gui.IGridController
     {
         if (IsSynced) { RegisterSynced(tex); return; }
         byte[] avfx;
-        var floorY = config.Current.FloorY();
+        var shape = config.Current.Shape(HalfDomeAvailable);
         var gpose = game.IsGPosing;
         var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, null,
-                                  config.Current.Radius, config.Current.HeightOffset);
+                                  config.Current.Radius, shape.CentreHeight, shape.Kind);
         var lights = PlanLocalLights(tex, build, gpose);
         if (lights.OutOfBounds)
             log.Information("[Milieu] The backdrop's own lights would sit too far from the dome at this height; showing it without them.");
         byte[] BuildWith(VfxLightPlan l) => DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, build.Radius, build.VerticalScale,
-            build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY, Lights: l.Lights.Count > 0 ? l.Lights : null));
+            build.URepeat, build.VRepeat, build.Flip, config.Brightness, shape.FloorY, Lights: l.Lights.Count > 0 ? l.Lights : null,
+            Mesh: shape.Kind));
         try
         {
             try { avfx = BuildWith(lights); }
@@ -876,7 +894,7 @@ public sealed class BackdropController : Gui.IGridController
         }
         pendingSet = set;
         pendingAvfxGamePath = CacheStore.AvfxGamePath(key);
-        pendingFloorY = floorY;
+        pendingShape = shape;
         pendingImagePath = textureImagePath;
         pendingBuild = build;
         pendingLocalLights = lights;
@@ -900,10 +918,10 @@ public sealed class BackdropController : Gui.IGridController
             return;
         }
         var staging = stagingFor(modDir);
-        var floorY = config.Current.FloorY();
+        var shape = config.Current.Shape(HalfDomeAvailable);
         var bakedYaw = YawRadians();
         var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, bakedYaw,
-                                  config.Current.Radius, config.Current.HeightOffset);
+                                  config.Current.Radius, shape.CentreHeight, shape.Kind);
         // Item VFX are anchored at world height 0, not at the item (seen in game, 2026-11-16): raise the dome to the player.
         var anchorY = game.PlayerPosition?.Y ?? 0f;
         var lights = PlanLights(tex, build);
@@ -911,9 +929,9 @@ public sealed class BackdropController : Gui.IGridController
         try
         {
             avfx = DomeAvfxBuilder.Build(new DomeAvfxParams(tex.GamePath, config.Current.Radius, build.VerticalScale,
-                build.URepeat, build.VRepeat, build.Flip, config.Brightness, floorY,
-                BakedHeight: config.Current.HeightOffset, BakedYawRadians: bakedYaw, AttachToOwner: true,
-                EmitterBaseHeight: anchorY, Lights: lights.Lights));
+                build.URepeat, build.VRepeat, build.Flip, config.Brightness, shape.FloorY,
+                BakedHeight: shape.CentreHeight, BakedYawRadians: bakedYaw, AttachToOwner: true,
+                EmitterBaseHeight: anchorY, Lights: lights.Lights, Mesh: shape.Kind));
             log.Information($"[Milieu] Synced dome anchor height {anchorY:0.00} (player world Y).");
             LogLights("Synced", lights, new Vector3(0, LightRigLayout.AnchorHeight, 0));
         }
@@ -953,7 +971,7 @@ public sealed class BackdropController : Gui.IGridController
             if (shownLost && state == BackdropState.Hidden) Hidden?.Invoke();
             return;
         }
-        pendingFloorY = floorY;
+        pendingShape = shape;
         pendingImagePath = textureImagePath;
         pendingBuild = build;
         pendingLights = lights;
@@ -988,7 +1006,7 @@ public sealed class BackdropController : Gui.IGridController
             foreach (var w in (texture?.Warnings ?? []).Concat(syncWarnings))
                 if (!list.Any(x => x.Key == w.Key)) list.Add(w);
             warnings = list;
-            shownFloorY = pendingFloorY;
+            shownShape = pendingShape;
             shownImagePath = pendingImagePath;
             shownBuild = pendingBuild;
             SyncedLights = pendingLights;
@@ -1019,7 +1037,7 @@ public sealed class BackdropController : Gui.IGridController
                 centre = game.PlayerPosition ?? centre;
                 recenterOnRespawn = false;
             }
-            var spawned = SpawnDome(pendingAvfxGamePath);
+            var spawned = SpawnDome(pendingAvfxGamePath, pendingBuild);
             if (spawned == null)
             {
                 message = StatusMessage.Of(MessageKey.InteropUnavailable);
@@ -1031,14 +1049,14 @@ public sealed class BackdropController : Gui.IGridController
             handle = spawned;
             shownSet = pendingSet;
             shownAvfxGamePath = pendingAvfxGamePath;
-            shownFloorY = pendingFloorY;
+            shownShape = pendingShape;
             shownImagePath = pendingImagePath;
             shownBuild = pendingBuild;
             LocalLights = pendingLocalLights;
             shownLocalGPose = pendingLocalGPose;
             failedLocalGPose = null;
             if (LocalLights is { Lights.Count: > 0 } lit && shownBuild is { } sb)
-                LogLights("Local", lit, new Vector3(0, LightRigLayout.AnchorHeight - sb.HeightOffset, 0));
+                LogLights("Local", lit, new Vector3(0, LightRigLayout.AnchorHeight - sb.CentreHeight, 0));
             pendingSet = null; pendingAvfxGamePath = null; pendingLocalLights = null;
             state = BackdropState.Shown;
             readyFrames = 0;
@@ -1075,7 +1093,7 @@ public sealed class BackdropController : Gui.IGridController
         if (++readyFrames < RespawnDelayFrames || shownAvfxGamePath == null) return;
         if (recenterOnRespawn && game.PlayerPosition is { } p) centre = p;
         recenterOnRespawn = false;
-        var spawned = SpawnDome(shownAvfxGamePath);
+        var spawned = SpawnDome(shownAvfxGamePath, shownBuild);
         if (spawned == null) { readyFrames = 0; return; }
         handle = spawned;
         state = BackdropState.Shown;
@@ -1091,15 +1109,21 @@ public sealed class BackdropController : Gui.IGridController
     internal static bool SamePath(string a, string b) =>
         string.Equals(a.Replace('\\', '/'), b.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase);
 
-    private Vector3 SpawnPosition() => centre + new Vector3(0, config.Current.HeightOffset, 0);
+    /// <summary>
+    /// Where the dome of <paramref name="build"/> is spawned: its built centre height (docs/adr/0015), so a failed rebuild
+    /// after a shape change never respawns the old file at the new shape's height; a sphere (or no build) follows the live
+    /// height, since a height change respawns it without a rebuild.
+    /// </summary>
+    private Vector3 SpawnPosition(DomeBuild? build) =>
+        centre + new Vector3(0, build is { } b && b.Kind != DomeMeshKind.Sphere ? b.CentreHeight : config.Current.HeightOffset, 0);
 
     private float YawRadians() => config.Current.YawDegrees * MathF.PI / 180f;
 
     /// <summary>Every local dome spawn goes through here, so the drawn yaw (<see cref="Lit"/>) is the one actually spawned.</summary>
-    private VfxHandle? SpawnDome(string gamePath)
+    private VfxHandle? SpawnDome(string gamePath, DomeBuild? build)
     {
         var yaw = YawRadians();
-        var spawned = spawner.Spawn(gamePath, SpawnPosition(), yaw);
+        var spawned = spawner.Spawn(gamePath, SpawnPosition(build), yaw);
         if (spawned != null) spawnedYaw = yaw;
         return spawned;
     }

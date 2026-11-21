@@ -96,15 +96,22 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         c.Tick();
     }
 
+    // The shape the controller builds (docs/adr/0015): its centre height shifts local lights, and a half dome bounds them.
+    private DomeShapeChoice Shape => config.Current.Shape(true);
+
+    private DomeBounds? Bounds => Shape.Kind is DomeMeshKind.ImageFloor or DomeMeshKind.OpenBottom
+        ? new DomeBounds(config.Current.Radius, config.Current.VerticalScale) : null;
+
     private VfxLightPlan Expected() =>
         VfxLightPlanner.PlanLocal(rig!, config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat,
-                                  config.Current.Radius, config.Current.HeightOffset, config.LightStrength, config.FillLightCount);
+                                  config.Current.Radius, Shape.CentreHeight, config.LightStrength, config.FillLightCount,
+                                  bounds: Bounds, lowerHalfHidden: Shape.Kind == DomeMeshKind.OpenBottom);
 
     private byte[] BuildFor(IReadOnlyList<DomeLight>? lights)
     {
         var tex = pen.Sets[^1].First(kv => !kv.Key.EndsWith(".avfx")).Key;
         return DomeAvfxBuilder.Build(new DomeAvfxParams(tex, config.Current.Radius, config.Current.VerticalScale, config.HorizontalRepeat,
-            config.VerticalRepeat, config.FlipHorizontal, config.Brightness, config.Current.FloorY(), Lights: lights));
+            config.VerticalRepeat, config.FlipHorizontal, config.Brightness, Shape.FloorY, Lights: lights, Mesh: Shape.Kind));
     }
 
     // ---------------------------------------------------------------- AC

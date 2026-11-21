@@ -133,7 +133,7 @@ public sealed class PerBackdropSwitchTests : IDisposable
         var e = config.Backdrops[a];
         var tex = pen.Sets[^1].First(kv => !kv.Key.EndsWith(".avfx")).Key;
         var expected = DomeAvfxBuilder.Build(new DomeAvfxParams(tex, e.Room.Radius, e.Room.VerticalScale, e.HorizontalRepeat, e.VerticalRepeat,
-                                                                e.FlipHorizontal, e.Brightness, e.Room.FloorY()));
+                                                                e.FlipHorizontal, e.Brightness, e.Room.FloorY(), Mesh: e.Room.Shape(true).Kind));
         Assert.Equal(expected, File.ReadAllBytes(pen.Sets[^1].First(kv => kv.Key.EndsWith(".avfx")).Value));   // A's lighting is off: no lights
     }
 
@@ -347,5 +347,24 @@ public sealed class PerBackdropSwitchTests : IDisposable
         Tick(125);
         Assert.Equal(redraws + 1, pen.Redraws);
         Assert.Equal(syncSets + 1, pen.SyncSets.Count);
+    }
+
+    [Fact] // [EDGE-half-dome-15]
+    public void Switch_UsesEntryBottom()
+    {
+        config.Backdrops[a].Room.Bottom = DomeBottom.ImageFloor;
+        config.Backdrops[b].Mode = DomeMode.Room;
+        config.Backdrops[b].Room.Bottom = DomeBottom.Open;
+        Click(a);
+        Assert.Equal(BackdropState.Shown, c.State);
+        int Vertices() => AvfxChunkReader.Parse(File.ReadAllBytes(pen.Sets[^1].First(kv => kv.Key.EndsWith(".avfx")).Value))
+            .Need("Modl").Need("VDrw").Data.Length / 36;
+        Assert.NotEqual(2425, Vertices());
+        var sets = pen.Sets.Count;
+        Click(b);
+        Assert.Equal(sets + 1, pen.Sets.Count);   // one build for the switch
+        Assert.Equal(2425, Vertices());
+        Assert.Equal(game.PlayerPosition!.Value.Y, spawner.Spawns[^1].Pos.Y, 3);
+        Assert.Equal(DomeBottom.ImageFloor, config.Backdrops[a].Room.Bottom);
     }
 }
