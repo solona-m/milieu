@@ -99,13 +99,18 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
     // The shape the controller builds (docs/adr/0015): its centre height shifts local lights, and a half dome bounds them.
     private DomeShapeChoice Shape => config.Current.Shape(true);
 
-    private DomeBounds? Bounds => Shape.Kind is DomeMeshKind.ImageFloor or DomeMeshKind.OpenBottom
-        ? new DomeBounds(config.Current.Radius, config.Current.VerticalScale) : null;
+    private DomeBounds? Bounds => Shape.Kind switch
+    {
+        DomeMeshKind.ImageFloor => new DomeBounds(config.Current.Radius, config.Current.VerticalScale),
+        DomeMeshKind.OpenBottom => new DomeBounds(config.Current.Radius, config.Current.VerticalScale, Shape.CentreHeight),
+        _ => null,
+    };
 
     private VfxLightPlan Expected() =>
         VfxLightPlanner.PlanLocal(rig!, config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat,
                                   config.Current.Radius, Shape.CentreHeight, config.LightStrength, config.FillLightCount,
-                                  bounds: Bounds, lowerHalfHidden: Shape.Kind == DomeMeshKind.OpenBottom);
+                                  bounds: Bounds, lowerHalfHidden: Shape.Kind == DomeMeshKind.OpenBottom,
+                                  cutV: Shape.Kind == DomeMeshKind.OpenBottom ? DomeShape.OpenCutV(Shape.FloorY) : 0f);
 
     private byte[] BuildFor(IReadOnlyList<DomeLight>? lights)
     {
@@ -849,12 +854,13 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
     private static readonly Vector3 LightAnchor = new(0, LightRigLayout.AnchorHeight, 0);
 
     /// <summary>Asserts each light (in the feet frame) lies on its ray within 0.9 × the R-10 half dome's wall.</summary>
-    private static void InsideWall(IReadOnlyList<DomeLight> lights, float centre)
+    // centre: the shift from the light's frame to the feet; wall: the dome centre's height above the feet (the open bottom's camera height).
+    private static void InsideWall(IReadOnlyList<DomeLight> lights, float centre, float wall = 0f)
     {
         foreach (var l in lights)
         {
             var rel = l.Position + new Vector3(0, centre, 0) - LightAnchor;
-            var exit = DomeShape.ExitDistance(LightAnchor, Vector3.Normalize(rel), 10f, 1f);
+            var exit = DomeShape.ExitDistance(LightAnchor - new Vector3(0, wall, 0), Vector3.Normalize(rel), 10f, 1f);
             Assert.True(rel.Length() <= 0.9f * exit + 1e-3f, $"light at {rel.Length()} beyond 0.9 × wall {exit}");
         }
     }
@@ -870,11 +876,11 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         var lights = c.LocalLights!.Lights;
         Assert.Single(lights);
         Assert.Equal(Expected().Lights, lights);
-        var centre = open ? 0f : 1.6f;
-        InsideWall(lights, centre);
-        // The key (45° up) sits closer than the old sphere rule (0.9 × R = 9): the half dome's wall is nearer.
+        var centre = 1.6f;   // the open bottom is centred at the camera height too (amendment 2)
+        InsideWall(lights, centre, open ? centre : 0f);
+        // The image floor: the key (45° up) sits closer than the old sphere rule (0.9 × R = 9), its wall nearer.
         var keyDistance = (lights[0].Position + new Vector3(0, centre, 0) - LightAnchor).Length();
-        Assert.InRange(keyDistance, 8f, 8.6f);
+        Assert.InRange(keyDistance, open ? 9f : 8f, open ? 9.6f : 8.6f);   // open: the wall centred at 1.6, above the anchor, is farther
         Assert.Equal(open, c.Lit!.View.LowerHalfHidden);
     }
 
@@ -902,10 +908,11 @@ public sealed class BackdropControllerLocalLightTests : IDisposable
         config.Mode = DomeMode.Room;
         config.Room.Bottom = open ? DomeBottom.Open : DomeBottom.ImageFloor;
         Show();
-        var expected = VfxLightPlanner.Plan(rig!, new DomeView(0, config.FlipHorizontal, 1, config.HorizontalRepeat, config.VerticalRepeat, open),
-                                            10f, config.LightStrength, config.FillLightCount, false, bounds: new DomeBounds(10f, 1f));
+        var expected = VfxLightPlanner.Plan(rig!, new DomeView(0, config.FlipHorizontal, 1, config.HorizontalRepeat, config.VerticalRepeat, open,
+                                                               open ? DomeShape.OpenCutV(0.16f) : 0f),
+                                            10f, config.LightStrength, config.FillLightCount, false, bounds: new DomeBounds(10f, 1f, open ? 1.6f : 0f));
         Assert.Equal(expected.Lights, c.SyncedLights!.Lights);
-        InsideWall(c.SyncedLights.Lights, 0f);   // synced lights are already in the feet frame (emitter-relative)
+        InsideWall(c.SyncedLights.Lights, 0f, open ? 1.6f : 0f);   // synced lights are already in the feet frame (emitter-relative)
         Assert.Equal(open, c.Lit!.View.LowerHalfHidden);
     }
 

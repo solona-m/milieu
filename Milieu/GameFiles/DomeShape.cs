@@ -11,7 +11,7 @@ public enum DomeBottom
     /// <summary>The image's lower half on a flat floor disc at your feet; its horizon at camera height.</summary>
     ImageFloor = 0,
 
-    /// <summary>Only the image's upper half, its horizon on the rim at your feet; the game's own ground shows below.</summary>
+    /// <summary>No image floor: the sphere centred at camera height, cut where it meets the floor; the game's own floor shows below.</summary>
     Open = 1,
 }
 
@@ -27,7 +27,7 @@ internal enum DomeMeshKind
     /// <summary>A half dome standing on the floor, closed by the image's floor, cast from the capture point.</summary>
     ImageFloor = 2,
 
-    /// <summary>The reference sphere's upper half, centred at the feet.</summary>
+    /// <summary>The reference sphere centred at camera height, cut at the floor (its upper half when the centre is at the feet).</summary>
     OpenBottom = 3,
 }
 
@@ -109,6 +109,12 @@ internal static class DomeShape
         var t = (-b + Math.Sqrt(b * b - 4 * a * c)) / (2 * a);
         return double.IsFinite(t) && t > 0 ? (float)t : 0f;
     }
+
+    /// <summary>
+    /// The model v below which an open bottom cut at unit floor <paramref name="floorY"/> draws nothing: asin(f)/π (0, the
+    /// horizon, with no cut). v grows downward: the cut ring's elevation is −asin(f).
+    /// </summary>
+    public static float OpenCutV(float? floorY) => floorY is { } f && f > 0 ? (float)(Math.Asin(Math.Min(1.0, f)) / Math.PI) : 0f;
 
     private static void CheckFloor(double floorY)
     {

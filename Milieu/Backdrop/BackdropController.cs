@@ -74,17 +74,26 @@ public sealed class BackdropController : Gui.IGridController
     // Scene lighting (docs/adr/0009): the image and build values of the dome as drawn. The image path travels with the
     // texture: the job's request, then the texture when assigned, then the pending registration, then the shown dome.
     // Radius and CentreHeight are the values the dome was built with (local lights are planned from them, never live config).
-    // Kind is the mesh (docs/adr/0015); CentreHeight is the dome centre's height above the feet: the camera height, or 0 for
-    // an open bottom. A local spawn takes its height from the build of the file it spawns, except a sphere (live height).
+    // Kind is the mesh (docs/adr/0015); CentreHeight is the dome centre's height above the feet: the camera height (0 for an
+    // uncut open bottom); FloorY is the mesh's unit floor (the image floor's, or the open bottom's cut). A local spawn takes
+    // its height from the build of the file it spawns, except a sphere (live height).
     private readonly record struct DomeBuild(bool Flip, float VerticalScale, float URepeat, float VRepeat, float? BakedYawRadians,
-                                             float Radius, float CentreHeight, DomeMeshKind Kind)
+                                             float Radius, float CentreHeight, DomeMeshKind Kind, float? FloorY = null)
     {
         public bool OpenBottom => Kind == DomeMeshKind.OpenBottom;
 
-        /// <summary>The half dome's wall, which bounds its VFX lights (docs/adr/0015); null for the sphere and the legacy floor.</summary>
-        public DomeBounds? Bounds => Kind is DomeMeshKind.ImageFloor or DomeMeshKind.OpenBottom ? new DomeBounds(Radius, VerticalScale) : null;
+        /// <summary>The model v below which an open bottom draws nothing (docs/adr/0015 amendment 2).</summary>
+        public float CutV => OpenBottom ? DomeShape.OpenCutV(FloorY) : 0f;
 
-        public DomeView View(float yaw) => new(yaw, Flip, VerticalScale, URepeat, VRepeat, OpenBottom);
+        /// <summary>The half dome's wall, which bounds its VFX lights (docs/adr/0015); null for the sphere and the legacy floor.</summary>
+        public DomeBounds? Bounds => Kind switch
+        {
+            DomeMeshKind.ImageFloor => new DomeBounds(Radius, VerticalScale),
+            DomeMeshKind.OpenBottom => new DomeBounds(Radius, VerticalScale, CentreHeight),
+            _ => null,
+        };
+
+        public DomeView View(float yaw) => new(yaw, Flip, VerticalScale, URepeat, VRepeat, OpenBottom, CutV);
     }
 
     private string? jobImagePath;
@@ -351,7 +360,7 @@ public sealed class BackdropController : Gui.IGridController
     {
         if (gpose || !LocalLightsActive || !LightsWanted(tex, loadLocalRig, build, out var rig, out var b)) return VfxLightPlan.Empty;
         return VfxLightPlanner.PlanLocal(rig, b.Flip, b.VerticalScale, b.URepeat, b.VRepeat, b.Radius, b.CentreHeight,
-                                         config.LightStrength, config.FillLightCount, fillsOnOwnEmitters, b.Bounds, b.OpenBottom);
+                                         config.LightStrength, config.FillLightCount, fillsOnOwnEmitters, b.Bounds, b.OpenBottom, b.CutV);
     }
 
     /// <summary>The guard shared by synced and local planning: scene lighting on, a loader, a rig and a build.</summary>
@@ -835,7 +844,7 @@ public sealed class BackdropController : Gui.IGridController
         var shape = config.Current.Shape(HalfDomeAvailable);
         var gpose = game.IsGPosing;
         var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, null,
-                                  config.Current.Radius, shape.CentreHeight, shape.Kind);
+                                  config.Current.Radius, shape.CentreHeight, shape.Kind, shape.FloorY);
         var lights = PlanLocalLights(tex, build, gpose);
         if (lights.OutOfBounds)
             log.Information("[Milieu] The backdrop's own lights would sit too far from the dome at this height; showing it without them.");
@@ -921,7 +930,7 @@ public sealed class BackdropController : Gui.IGridController
         var shape = config.Current.Shape(HalfDomeAvailable);
         var bakedYaw = YawRadians();
         var build = new DomeBuild(config.FlipHorizontal, config.Current.VerticalScale, config.HorizontalRepeat, config.VerticalRepeat, bakedYaw,
-                                  config.Current.Radius, shape.CentreHeight, shape.Kind);
+                                  config.Current.Radius, shape.CentreHeight, shape.Kind, shape.FloorY);
         // Item VFX are anchored at world height 0, not at the item (seen in game, 2026-11-16): raise the dome to the player.
         var anchorY = game.PlayerPosition?.Y ?? 0f;
         var lights = PlanLights(tex, build);

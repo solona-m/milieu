@@ -355,6 +355,7 @@ public sealed class PerBackdropSwitchTests : IDisposable
         config.Backdrops[a].Room.Bottom = DomeBottom.ImageFloor;
         config.Backdrops[b].Mode = DomeMode.Room;
         config.Backdrops[b].Room.Bottom = DomeBottom.Open;
+        config.Backdrops[b].Room.HeightOffset = 0f;   // the uncut open bottom at the feet
         Click(a);
         Assert.Equal(BackdropState.Shown, c.State);
         int Vertices() => AvfxChunkReader.Parse(File.ReadAllBytes(pen.Sets[^1].First(kv => kv.Key.EndsWith(".avfx")).Value))

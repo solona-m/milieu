@@ -49,9 +49,11 @@ public interface ILightSpawner
 
 /// <summary>
 /// The dome as drawn: everything that decides where a texel of the image appears in the world. <see cref="LowerHalfHidden"/>:
-/// an open-bottom half dome (docs/adr/0015) draws only the image's upper half.
+/// an open-bottom dome (docs/adr/0015) draws nothing of the image below model v = <see cref="CutV"/> (0, the horizon, with the
+/// centre at the feet; asin(f)/π when cut at a floor below the centre).
 /// </summary>
-public readonly record struct DomeView(float YawRadians, bool Flip, float VerticalScale, float URepeat, float VRepeat, bool LowerHalfHidden = false);
+public readonly record struct DomeView(float YawRadians, bool Flip, float VerticalScale, float URepeat, float VRepeat, bool LowerHalfHidden = false,
+                                       float CutV = 0f);
 
 /// <summary>The image the drawn dome shows, and how it is drawn.</summary>
 /// <param name="Synced">The drawn dome is a committed synced registration (not a local dome under a synced config).</param>

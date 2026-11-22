@@ -19,8 +19,11 @@ internal sealed record VfxLightPlan(IReadOnlyList<DomeLight> Lights, bool HasKey
     public static bool SameLights(IReadOnlyList<DomeLight>? a, IReadOnlyList<DomeLight>? b) => (a ?? []).SequenceEqual(b ?? []);
 }
 
-/// <summary>The half dome's wall in the feet frame (docs/adr/0015): an ellipsoid with semi-axes (R, R·vs, R) centred at the feet.</summary>
-internal readonly record struct DomeBounds(float Radius, float VerticalScale);
+/// <summary>
+/// The half dome's wall in the feet frame (docs/adr/0015): an ellipsoid with semi-axes (R, R·vs, R) centred
+/// <paramref name="CentreHeight"/> above the feet (0 for the image floor; the camera height for an open bottom).
+/// </summary>
+internal readonly record struct DomeBounds(float Radius, float VerticalScale, float CentreHeight = 0f);
 
 /// <summary>
 /// Turns a <see cref="LightRig"/> into VFX point lights for a synced dome, or a local one outside GPose (pure; docs/adr/0011). The selection is the native
@@ -91,15 +94,15 @@ internal static class VfxLightPlanner
     /// <summary>
     /// The lights for a local ("Only me") dome outside GPose (docs/adr/0011, local amendment): the static VFX root carries
     /// the dome's yaw and height, so the plan is made at yaw 0 and every light is shifted down by the height offset (the
-    /// anchor then lands at the player's chest, as in synced; an open bottom's dome centre is at the feet, so its shift is 0). Empty (keeping <see cref="VfxLightPlan.Estimated"/>) when any
+    /// anchor then lands at the player's chest, as in synced; the shift is the built centre height, an open bottom's too). Empty (keeping <see cref="VfxLightPlan.Estimated"/>) when any
     /// shifted position is beyond <see cref="DomeAvfxBuilder.MaxLightPosition"/>, so the plan always equals what is built.
     /// </summary>
     public static VfxLightPlan PlanLocal(LightRig rig, bool flip, float verticalScale, float uRepeat, float vRepeat, float radius,
                                          float heightOffset, float strength, int fillCount,
                                          bool fillsOnOwnEmitters = VfxLightLayout.FillsOnOwnEmitters, DomeBounds? bounds = null,
-                                         bool lowerHalfHidden = false)
+                                         bool lowerHalfHidden = false, float cutV = 0f)
     {
-        var plan = Plan(rig, new DomeView(0f, flip, verticalScale, uRepeat, vRepeat, lowerHalfHidden), radius, strength, fillCount,
+        var plan = Plan(rig, new DomeView(0f, flip, verticalScale, uRepeat, vRepeat, lowerHalfHidden, cutV), radius, strength, fillCount,
                         fillsOnOwnEmitters, bounds: bounds);
         if (plan.Lights.Count == 0) return plan;
         var shift = new Vector3(0, heightOffset, 0);
@@ -129,7 +132,7 @@ internal static class VfxLightPlanner
     public static float Distance(float nominal, float radius, Vector3 anchor, Vector3 dir, DomeBounds? bounds)
     {
         if (bounds is not { } b) return Distance(nominal, radius);
-        var exit = DomeShape.ExitDistance(anchor, dir, b.Radius, b.VerticalScale);
+        var exit = DomeShape.ExitDistance(anchor - new Vector3(0, b.CentreHeight, 0), dir, b.Radius, b.VerticalScale);
         return Math.Clamp(MathF.Min(nominal, VfxLightLayout.RoomDistanceFraction * exit), VfxLightLayout.MinDistance, nominal);
     }
 

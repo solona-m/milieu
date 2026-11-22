@@ -377,7 +377,7 @@ public class DomeAvfxBuilderTests
     public static TheoryData<int, float> BadKindOrFloor() => new()
     {
         { 2, float.NaN }, { 2, 0f }, { 2, 1f }, { 2, -0.1f }, { 1, 1.5f }, { 2, float.PositiveInfinity },
-        { 0, 0.16f }, { 3, 0.16f }, { 7, 0.16f }, { 7, float.NegativeZero },
+        { 0, 0.16f }, { 3, 0f }, { 3, 1f }, { 3, float.NaN }, { 7, 0.16f }, { 7, float.NegativeZero },
     };
 
     [Theory] // [EDGE-half-dome-17] [EDGE-half-dome-21]

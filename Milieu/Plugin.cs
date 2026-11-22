@@ -36,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>Hand-maintained; bump it for every build meant for the game.</summary>
-    public const int BuildNumber = 59;
+    public const int BuildNumber = 60;
 
     private const string CommandName = "/milieu";
 

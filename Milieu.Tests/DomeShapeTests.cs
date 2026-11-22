@@ -85,6 +85,34 @@ public class DomeShapeTests
         Assert.Equal(full.IndexBytes()[..open.IndexBytes().Length], open.IndexBytes());
     }
 
+    [Theory] // [AC-half-dome-12] [EDGE-half-dome-23]
+    [InlineData(0.16f, 28)]          // the room default: rows to −7.5°, then the cut at −9.2°
+    [InlineData(0.0654031f, 26)]     // sin 3.75°: the cut lands on row 25, which it replaces
+    [InlineData(0.001f, 26)]         // just below the horizon: row 24 kept, a sliver band to the cut
+    [InlineData(0.999f, 49)]         // nearly the whole sphere
+    public void OpenBottom_Cut_IsReferencePrefixPlusRimOnTheFloor(float f, int rows)
+    {
+        var open = SphereMesh.BuildOpenBottom(f);
+        var full = SphereMesh.Build();
+        Assert.Equal(rows * 97, open.Vertices.Length);
+        Assert.Equal(6 * 96 * (rows - 1), open.Indices.Length);
+        var prefix = (rows - 1) * 97 * DomeVertex.Stride;
+        Assert.Equal(full.VertexBytes()[..prefix], open.VertexBytes()[..prefix]);
+        Assert.Equal(full.IndexBytes()[..open.IndexBytes().Length], open.IndexBytes());
+        var rim = open.Vertices[^97..];
+        Assert.All(rim, v => Assert.Equal(-f, (double)v.Y, 2));   // world y = h − R·vs·f = 0
+        Assert.All(rim, v => Assert.Equal(Math.Asin(f) / Math.PI, (double)v.V, 3));
+        Assert.True(rim[0].V > open.Vertices[^98].V);   // v strictly increasing to the rim
+        Assert.True(open.Vertices.Length <= DomeAvfxBuilder.MaxVertices);
+    }
+
+    [Theory] // [EDGE-half-dome-23]
+    [InlineData(0f)]
+    [InlineData(1f)]
+    [InlineData(float.NaN)]
+    public void OpenBottom_BadCut_Throws(float f) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => SphereMesh.BuildOpenBottom(f));
+
     [ReferenceFileFact(ReferenceFiles.Avfx)] // [AC-half-dome-2] (reference)
     public void Reference_OpenBottomPrefixMatchesModel7()
     {

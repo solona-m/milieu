@@ -36,8 +36,8 @@ public sealed class DomeSettings
     public static DomeSettings SkyDefaults() => new() { Radius = 20000f, VerticalScale = 1f, HeightOffset = 1.6f, YawDegrees = 0f, GroundProjection = true };
 
     /// <summary>
-    /// A room-sized half dome with an open bottom: the picture's upper half on the hemisphere, its horizon at your feet, and
-    /// the game's own floor left in place (chosen in game, docs/adr/0015 amendment).
+    /// A room-sized dome with an open bottom: the picture on the dome cut at the floor, its horizon at eye height (1.6), and
+    /// the game's own floor left in place (chosen in game, docs/adr/0015 amendments).
     /// </summary>
     public static DomeSettings RoomDefaults() => new()
     {
@@ -49,34 +49,39 @@ public sealed class DomeSettings
     public static readonly (float Min, float Max) VerticalScaleRange = (0.25f, 2f);
     public static readonly (float Min, float Max) YawRange = (-180f, 180f);
 
-    /// <summary>The height slider's minimum: <see cref="MinCameraHeight"/> while ground projection is on, else the mode's range.</summary>
-    public float HeightMin(DomeMode mode) =>
-        GroundProjection ? MathF.Max(MinCameraHeight, HeightRange(mode).Min) : HeightRange(mode).Min;
-
-    /// <summary>The camera height does nothing (an open bottom puts the image's horizon at the feet), so the slider is disabled.</summary>
-    public bool CameraHeightDisabled(bool halfDomeAvailable) => GroundProjection && Bottom == DomeBottom.Open && halfDomeAvailable;
+    /// <summary>
+    /// The height slider's minimum while ground projection is on: 0 for an open bottom (the horizon at the feet), else
+    /// <see cref="MinCameraHeight"/>; off, the mode's range. Kill switch off, an open entry builds the legacy floor: its minimum.
+    /// </summary>
+    public float HeightMin(DomeMode mode, bool halfDomeAvailable = true) => !GroundProjection
+        ? HeightRange(mode).Min
+        : MathF.Max(halfDomeAvailable && Bottom == DomeBottom.Open ? 0f : MinCameraHeight, HeightRange(mode).Min);
 
     /// <summary>
-    /// The dome these settings build (docs/adr/0015). Projection off, or the image floor inactive: the reference sphere centred
-    /// at the height. Kill switch off: the pre-0015 floor (an open entry too). Open: the reference's upper half centred at the feet.
+    /// The dome these settings build (docs/adr/0015). Projection off, or the floor inactive: the reference sphere centred at
+    /// the height. Kill switch off: the pre-0015 floor (an open entry too). Open: the reference sphere centred at the camera
+    /// height and cut at the floor (amendment 2); at or below the feet (an old −0.15 entry), its upper half at the feet.
     /// </summary>
     internal DomeShapeChoice Shape(bool halfDomeAvailable)
     {
         if (!GroundProjection) return new(DomeMeshKind.Sphere, null, HeightOffset);
-        if (halfDomeAvailable && Bottom == DomeBottom.Open) return new(DomeMeshKind.OpenBottom, null, 0f);
+        if (halfDomeAvailable && Bottom == DomeBottom.Open)
+        {
+            if (!(HeightOffset > 0) || !float.IsFinite(HeightOffset)) return new(DomeMeshKind.OpenBottom, null, 0f);
+            return OpenCut() is { } cut ? new(DomeMeshKind.OpenBottom, cut, HeightOffset) : new(DomeMeshKind.Sphere, null, HeightOffset);
+        }
         if (FloorY() is not { } f) return new(DomeMeshKind.Sphere, null, HeightOffset);
         return new(halfDomeAvailable ? DomeMeshKind.ImageFloor : DomeMeshKind.LegacyFloor, f, HeightOffset);
     }
 
     public const string BottomLabel = "Bottom:";
-    public static readonly string[] BottomLabels = ["Image floor", "Open (horizon at your feet)"];
+    public static readonly string[] BottomLabels = ["Image floor", "Open (game floor)"];
 
     public static string BottomTooltip(DomeBottom bottom) => bottom == DomeBottom.Open
-        ? "Only the image's upper half is drawn, its horizon at your feet, and the game's own floor stays. The room default; in a room the horizon sits below eye level and the image's floor isn't drawn."
+        ? "The image stops where the dome meets the floor and the game's own floor stays; its horizon sits at camera height. The room default."
         : "The image's lower half lies on a flat floor at your feet; its horizon sits at camera height.";
 
     public const string CameraHeightTooltip = "How high the image was taken above the floor: its horizon sits this far above your feet.";
-    public const string CameraHeightDisabledTooltip = "Not used: with an open bottom the image's horizon is at your feet.";
 
     /// <summary>The Bottom choice is offered while ground projection is on, unless the half dome's kill switch is off.</summary>
     public bool ShowsBottomChoice(bool halfDomeAvailable) => GroundProjection && halfDomeAvailable;
@@ -103,6 +108,15 @@ public sealed class DomeSettings
         return HeightOffset / extent;
     }
 
+    /// <summary>The open bottom's cut in unit mesh space: height / (radius · vertical scale) in (0, 1); null at or below the feet, or above the dome's top.</summary>
+    internal float? OpenCut()
+    {
+        if (!(HeightOffset > 0) || !float.IsFinite(HeightOffset)) return null;
+        var extent = Radius * VerticalScale;
+        if (!(extent > 0) || HeightOffset >= extent) return null;
+        return HeightOffset / extent;
+    }
+
     /// <summary>What ground projection is doing, in words, so a silently inactive floor is visible in the window.</summary>
     public string ProjectionStatus(bool halfDomeAvailable)
     {
@@ -110,7 +124,11 @@ public sealed class DomeSettings
         var extent = (Radius * VerticalScale).ToString("0.##", CultureInfo.InvariantCulture);
         if (!GroundProjection) return "Off: the dome is a full sphere centred at the height above your feet.";
         if (halfDomeAvailable && Bottom == DomeBottom.Open)
-            return "Half dome on the floor, the image's horizon at your feet; the game's ground shows below.";
+        {
+            if (!(HeightOffset > 0)) return "Half dome on the floor, the image's horizon at your feet; the game's floor shows below.";
+            if (OpenCut() != null) return $"Dome cut at the floor, the image's horizon {h} above your feet; the game's floor shows below.";
+            return $"Inactive: the camera height ({h}) must be below the dome's height ({extent}). Lower it or raise the radius.";
+        }
         if (FloorY() != null)
             return halfDomeAvailable
                 ? $"Half dome on the floor with the image's floor; its horizon {h} above your feet."
@@ -122,7 +140,9 @@ public sealed class DomeSettings
 
     /// <summary>Projection is on but draws the plain sphere (the camera height is out of range).</summary>
     public bool IsProjectionInactive(bool halfDomeAvailable) =>
-        GroundProjection && !(halfDomeAvailable && Bottom == DomeBottom.Open) && FloorY() == null;
+        GroundProjection && (halfDomeAvailable && Bottom == DomeBottom.Open
+            ? HeightOffset > 0 && OpenCut() == null
+            : FloorY() == null);
 
     public bool ProjectionInactive => IsProjectionInactive(true);
 

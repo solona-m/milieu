@@ -793,8 +793,13 @@ public sealed class BackdropControllerTests : IDisposable
         Assert.True(d.ProjectionInactive);
         Assert.Equal("Inactive: the camera height (10) must be below the dome's height (10). Lower it or raise the radius.", d.ProjectionStatus(true));
         d.Bottom = DomeBottom.Open;
-        Assert.False(d.ProjectionInactive);   // the camera height is unused
-        Assert.Equal("Half dome on the floor, the image's horizon at your feet; the game's ground shows below.", d.ProjectionStatus(true));
+        Assert.True(d.ProjectionInactive);   // open, the camera height above the dome's top [EDGE-half-dome-23]
+        d.HeightOffset = 1.6f;
+        Assert.False(d.ProjectionInactive);
+        Assert.Equal("Dome cut at the floor, the image's horizon 1.6 above your feet; the game's floor shows below.", d.ProjectionStatus(true));
+        d.HeightOffset = 0f;
+        Assert.False(d.ProjectionInactive);
+        Assert.Equal("Half dome on the floor, the image's horizon at your feet; the game's floor shows below.", d.ProjectionStatus(true));
         Assert.True(d.IsProjectionInactive(halfDomeAvailable: false));   // kill switch off: an open entry is the legacy floor
         Assert.StartsWith("Inactive:", d.ProjectionStatus(halfDomeAvailable: false));
         d.GroundProjection = false;
@@ -829,17 +834,46 @@ public sealed class BackdropControllerTests : IDisposable
     }
 
     [Fact] // [AC-half-dome-2]
-    public void OpenBottom_SpawnsAtFeet()
+    public void OpenBottom_AtTheFeet_SpawnsAtFeet()
     {
         config.Mode = DomeMode.Room;
         config.Room.Bottom = DomeBottom.Open;
-        config.Room.HeightOffset = 3f;   // unused
+        config.Room.HeightOffset = 0f;
         ShowAndSpawn();
         var (vertices, minY, maxV) = SpawnedMesh();
         Assert.Equal(2425, vertices);
         Assert.Equal(0f, minY);
         Assert.Equal(0f, maxV);
         Assert.Equal(game.PlayerPosition!.Value.Y, spawner.Spawns[^1].Pos.Y, 4);
+    }
+
+    [Fact] // [AC-half-dome-12]
+    public void OpenBottom_CameraHeight_CutAtTheFloor()
+    {
+        config.Mode = DomeMode.Room;
+        config.Room.Bottom = DomeBottom.Open;   // the room default: camera height 1.6, radius 10
+        ShowAndSpawn();
+        var (vertices, minY, maxV) = SpawnedMesh();
+        Assert.Equal(28 * 97, vertices);   // reference rows down to −7.5°, then the cut ring at −asin(0.16) ≈ −9.2°
+        Assert.Equal(-0.16f, minY, 3);   // the rim on the floor: 1.6 − 10 × 0.16 = 0
+        Assert.Equal(Math.Asin(0.16) / Math.PI, maxV, 3);
+        Assert.Equal(game.PlayerPosition!.Value.Y + 1.6f, spawner.Spawns[^1].Pos.Y, 4);   // the horizon at eye level
+    }
+
+    [Fact] // [AC-half-dome-12]
+    public void OpenBottom_HeightChange_RebuildsAndSpawnsAtNewHeight()
+    {
+        config.Mode = DomeMode.Room;
+        config.Room.Bottom = DomeBottom.Open;
+        ShowAndSpawn();
+        var sets = penumbra.Sets.Count;
+        config.Room.HeightOffset = 2.5f;
+        c.ApplyHeight();
+        c.Tick();
+        Assert.True(penumbra.Sets.Count > sets);   // a new cut: a new file
+        var (_, minY, _) = SpawnedMesh();
+        Assert.Equal(-0.25f, minY, 3);
+        Assert.Equal(game.PlayerPosition!.Value.Y + 2.5f, spawner.Spawns[^1].Pos.Y, 4);
     }
 
     [Fact] // [AC-half-dome-4] [EDGE-half-dome-19]
@@ -879,7 +913,7 @@ public sealed class BackdropControllerTests : IDisposable
         d.HeightOffset = 10;
         Assert.Equal(new DomeShapeChoice(DomeMeshKind.Sphere, null, 10), d.Shape(true));
         d.Bottom = DomeBottom.Open;
-        Assert.Equal(new DomeShapeChoice(DomeMeshKind.OpenBottom, null, 0), d.Shape(true));
+        Assert.Equal(new DomeShapeChoice(DomeMeshKind.Sphere, null, 10), d.Shape(true));   // above the top: the plain sphere, shown inactive
     }
 
     [Fact] // [EDGE-half-dome-4]
@@ -914,11 +948,12 @@ public sealed class BackdropControllerTests : IDisposable
     {
         config.Mode = DomeMode.Room;
         config.Room.Bottom = DomeBottom.Open;
+        config.Room.HeightOffset = 0f;
         ShowAndSpawn();
         var sets = penumbra.Sets.Count;
         var avfx = spawner.Spawns[^1].Path;
         spawner.Calls.Clear();
-        config.Room.HeightOffset = 2.5f;
+        config.Room.HeightOffset = -0.1f;   // still at or below the feet: the same uncut mesh
         c.ApplyHeight();
         Assert.Equal(new[] { "Spawn", "Remove" }, spawner.Calls);
         Assert.Equal(avfx, spawner.Spawns[^1].Path);
@@ -933,14 +968,14 @@ public sealed class BackdropControllerTests : IDisposable
         ShowAndSpawn();
         var avfx = spawner.Spawns[^1].Path;
         config.Room.Bottom = DomeBottom.Open;
-        config.Room.HeightOffset = 3f;   // neither the live height nor the open bottom's 0 is the built centre
+        config.Room.HeightOffset = 3f;   // the live height (the open bottom's centre) isn't the built centre
         penumbra.SetSucceeds = false;
         c.ApplyRebuild();   // refused: the image-floor dome stays shown
         Assert.Equal(BackdropState.Shown, c.State);
         config.Room.YawDegrees = 45;
         c.ApplyPlacement();
         Assert.Equal(avfx, spawner.Spawns[^1].Path);
-        Assert.Equal(game.PlayerPosition!.Value.Y + 1.6f, spawner.Spawns[^1].Pos.Y, 4);   // its built centre, not the open bottom's 0
+        Assert.Equal(game.PlayerPosition!.Value.Y + 1.6f, spawner.Spawns[^1].Pos.Y, 4);   // its built centre, not the live 3
     }
 
     [Fact] // [EDGE-half-dome-22]

@@ -121,7 +121,9 @@ internal static class DomeAvfxBuilder
         var floorKind = kind is DomeMeshKind.LegacyFloor or DomeMeshKind.ImageFloor;
         if (floorKind && p.FloorY is not (> 0f and < 1f))
             throw new ArgumentOutOfRangeException(nameof(p), $"The {kind} mesh needs a finite floor in (0, 1) (got {p.FloorY}).");
-        if (!floorKind && p.FloorY != null)
+        if (kind == DomeMeshKind.OpenBottom && p.FloorY is { } cut && !(cut > 0f && cut < 1f))
+            throw new ArgumentOutOfRangeException(nameof(p), $"The open bottom's cut must be in (0, 1) (got {cut}).");
+        if (!floorKind && kind != DomeMeshKind.OpenBottom && p.FloorY != null)
             throw new ArgumentOutOfRangeException(nameof(p), $"The {kind} mesh takes no floor (got {p.FloorY}).");
         if (p.Lights is not { Count: > 0 } lights) return;
         if (lights.Count > MaxLights) throw new ArgumentOutOfRangeException(nameof(p), $"At most {MaxLights} VFX lights (got {lights.Count}).");
