@@ -49,7 +49,7 @@ public static class DomeProjection
         var u = Math.Clamp(w / ux, -0.5f, 0.5f);
         var v = (t - 0.5f) / vy;
         if (MathF.Abs(v) > 0.5f + Eps) return null;
-        if (view.LowerHalfHidden && v > Eps) return null;   // an open bottom draws only the upper half
+        if (view.LowerHalfHidden && v > view.CutV + Eps) return null;   // an open bottom draws nothing below its cut
         v = Math.Clamp(v, -0.5f, 0.5f);
         return MeshToWorld(MeshDirection(u, v), view);
     }

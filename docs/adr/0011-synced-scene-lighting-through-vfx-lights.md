@@ -56,7 +56,7 @@ Under a synced delivery with scene lighting on, the synced dome carries Milieu's
     their share of luminance × type power.
   - **Distance:** `clamp(min(nominal, 0.9 × radius), 1.5, nominal)` (nominal 30 for the key, 8 for fills), so room-mode
     lights stay inside the dome. For the half dome (ADR 0015 D7) the radius term is 0.9 × the exit distance through the
-    dome's wall along the light's direction (an ellipsoid centred at the feet, no floor plane); Sky domes are unchanged. Brightness against distance is a constant (`DistanceCompensationExponent`, 0 = none; 0.72 since the room-dome tuning).
+    dome's wall along the light's direction (an ellipsoid centred at the feet, or at the camera height for an open bottom per ADR 0015 amendment 2; no floor plane); Sky domes are unchanged. Brightness against distance is a constant (`DistanceCompensationExponent`, 0 = none; 0.72 since the room-dome tuning).
   - Colour is the energy's hue with the largest channel at 1.
 - **Positions are emitter-relative** and independent of the player's world height: the emitters carry that
   (`DomeAvfxParams.EmitterBaseHeight`).

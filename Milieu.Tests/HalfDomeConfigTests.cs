@@ -208,19 +208,21 @@ public sealed class HalfDomeConfigTests
     public void HeightMinAndStrings()
     {
         var d = DomeSettings.RoomDefaults();
+        Assert.Equal(0f, d.HeightMin(DomeMode.Room));   // open: down to the feet [AC-half-dome-12]
+        Assert.Equal(0.25f, d.HeightMin(DomeMode.Room, halfDomeAvailable: false));   // kill switch: the legacy floor's minimum
+        d.Bottom = DomeBottom.ImageFloor;
         Assert.Equal(0.25f, d.HeightMin(DomeMode.Room));
         Assert.Equal(0.25f, d.HeightMin(DomeMode.Sky));
         d.GroundProjection = false;
         Assert.Equal(-10f, d.HeightMin(DomeMode.Room));
         Assert.Equal(-2000f, d.HeightMin(DomeMode.Sky));
         Assert.Equal("Bottom:", DomeSettings.BottomLabel);
-        Assert.Equal(["Image floor", "Open (horizon at your feet)"], DomeSettings.BottomLabels);
+        Assert.Equal(["Image floor", "Open (game floor)"], DomeSettings.BottomLabels);
         Assert.Equal("The image's lower half lies on a flat floor at your feet; its horizon sits at camera height.",
                      DomeSettings.BottomTooltip(DomeBottom.ImageFloor));
-        Assert.Equal("Only the image's upper half is drawn, its horizon at your feet, and the game's own floor stays. The room default; in a room the horizon sits below eye level and the image's floor isn't drawn.",
+        Assert.Equal("The image stops where the dome meets the floor and the game's own floor stays; its horizon sits at camera height. The room default.",
                      DomeSettings.BottomTooltip(DomeBottom.Open));
         Assert.Equal("How high the image was taken above the floor: its horizon sits this far above your feet.", DomeSettings.CameraHeightTooltip);
-        Assert.Equal("Not used: with an open bottom the image's horizon is at your feet.", DomeSettings.CameraHeightDisabledTooltip);
     }
 
     [Fact] // [AC-half-dome-4]
@@ -248,17 +250,30 @@ public sealed class HalfDomeConfigTests
         Assert.Equal(DomeSettings.CameraHeightTooltip, DomeSettings.HeightTooltip(true));
     }
 
-    [Fact] // [EDGE-half-dome-19]
-    public void CameraHeightDisabled_Matrix()
+    [Theory] // [AC-half-dome-12] [EDGE-half-dome-23]
+    [InlineData(1.6f, 10f, 1f, 0.16f, 1.6f)]      // the room default: horizon at eye level, cut at the floor
+    [InlineData(1.6f, 10f, 2f, 0.08f, 1.6f)]      // vertical scale stretches the dome
+    [InlineData(0f, 10f, 1f, null, 0f)]          // at the feet: the uncut upper half
+    [InlineData(-0.15f, 10f, 1f, null, 0f)]      // an old "lower the dome" entry: the uncut upper half at the feet
+    public void Open_CameraHeightCutsAtTheFloor(float h, float r, float vs, float? cut, float centre)
     {
-        var d = new DomeSettings { GroundProjection = true, Bottom = DomeBottom.Open };
-        Assert.True(d.CameraHeightDisabled(halfDomeAvailable: true));
-        Assert.False(d.CameraHeightDisabled(halfDomeAvailable: false));
-        d.Bottom = DomeBottom.ImageFloor;
-        Assert.False(d.CameraHeightDisabled(true));
-        d.Bottom = DomeBottom.Open;
-        d.GroundProjection = false;
-        Assert.False(d.CameraHeightDisabled(true));
+        var d = new DomeSettings { Radius = r, VerticalScale = vs, HeightOffset = h, GroundProjection = true, Bottom = DomeBottom.Open };
+        var s = d.Shape(true);
+        Assert.Equal(DomeMeshKind.OpenBottom, s.Kind);
+        Assert.Equal(centre, s.CentreHeight);
+        if (cut is { } c) Assert.Equal(c, s.FloorY!.Value, 5); else Assert.Null(s.FloorY);
+        Assert.False(d.IsProjectionInactive(true));
+    }
+
+    [Fact] // [EDGE-half-dome-23]
+    public void Open_HeightAboveTheDome_IsInactiveSphere()
+    {
+        var d = new DomeSettings { Radius = 10, VerticalScale = 1, HeightOffset = 10, GroundProjection = true, Bottom = DomeBottom.Open };
+        Assert.Equal(new DomeShapeChoice(DomeMeshKind.Sphere, null, 10f), d.Shape(true));
+        Assert.True(d.IsProjectionInactive(true));
+        Assert.Equal("Inactive: the camera height (10) must be below the dome's height (10). Lower it or raise the radius.", d.ProjectionStatus(true));
+        d.HeightOffset = float.NaN;
+        Assert.Equal(new DomeShapeChoice(DomeMeshKind.OpenBottom, null, 0f), d.Shape(true));
     }
 
     [Theory] // [AC-half-dome-9] [EDGE-half-dome-20]

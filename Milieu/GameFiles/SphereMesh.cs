@@ -28,7 +28,7 @@ internal readonly record struct DomeVertex(
 /// one. Vertex <c>r·(segments+1)+c</c>: elevation 90° − 180°·r/rings, azimuth 90° + 360°·c/segments,
 /// u = −0.5 + c/segments, v = −0.5 + r/rings; normals point inward. The half-dome meshes (docs/adr/0015) keep those column,
 /// U, normal, tangent and winding formulas: <see cref="BuildProjected"/> has its own ring elevations (v follows them) and
-/// <see cref="BuildOpenBottom"/> is the reference's upper half, a byte prefix of it.
+/// <see cref="BuildOpenBottom"/> is the reference cut where it meets the floor (its upper half when the centre is at the feet).
 /// </summary>
 internal sealed class SphereMesh
 {
@@ -55,16 +55,49 @@ internal sealed class SphereMesh
     /// </summary>
     public static SphereMesh BuildLegacyFloor(float floorY) => BuildReference(96, 48, floorY, 48);
 
-    /// <summary>The reference sphere's upper half (rows 0..24, elevation 90°..0°): its buffers are prefixes of <see cref="Build"/>'s.</summary>
-    public static SphereMesh BuildOpenBottom() => BuildReference(96, 48, null, 24);
+    /// <summary>
+    /// The open bottom (docs/adr/0015 amendment 2): the reference sphere cut at the floor plane y = −<paramref name="floorY"/>
+    /// (unit space; the centre at camera height h, f = h / (R·vs)). Its reference rows above the cut, then one exact ring at
+    /// elevation −asin(f) (v = −0.5 + (90° − el)/180°), so the rim lies on the floor. No cut (null, the centre at the feet):
+    /// rows 0..24, the reference's upper half, byte prefixes of <see cref="Build"/>'s buffers.
+    /// </summary>
+    public static SphereMesh BuildOpenBottom(float? floorY = null)
+    {
+        if (floorY is not { } f) return BuildReference(96, 48, null, 24);
+        if (!(f > 0 && f < 1)) throw new ArgumentOutOfRangeException(nameof(floorY), "floorY must be in (0, 1).");
+        const int segments = 96, rings = 48;
+        var cut = -Math.Asin(f);
+        var reference = Build(segments, rings);
+        var cols = segments + 1;
+        var above = 0;   // reference rows strictly above the cut (row 0 always is)
+        while (above <= rings && (90.0 - 180.0 * above / rings) * Math.PI / 180.0 > cut + 1e-6) above++;
+        var verts = new DomeVertex[cols * (above + 1)];
+        Array.Copy(reference.Vertices, verts, cols * above);
+        var v = (Half)(-0.5 + (Math.PI / 2 - cut) / Math.PI);
+        if (!(v > reference.Vertices[(above - 1) * cols].V))
+            throw new InvalidDataException("The open bottom's cut ring must lie below its last reference row.");
+        for (var c = 0; c <= segments; c++)
+        {
+            var az = (90.0 + 360.0 * c / segments) * Math.PI / 180.0;
+            var dx = Clean(Math.Cos(cut) * Math.Cos(az));
+            var dy = Clean(Math.Sin(cut));
+            var dz = Clean(Math.Cos(cut) * Math.Sin(az));
+            verts[above * cols + c] = new DomeVertex(
+                (Half)dx, (Half)dy, (Half)dz, (Half)1.0,
+                EncodeBiased(-dx), EncodeBiased(-dy), EncodeBiased(-dz), UnusedW,
+                EncodeBiased(Clean(-Math.Sin(az))), EncodeBiased(0), EncodeBiased(Clean(Math.Cos(az))), UnusedW,
+                (Half)(-0.5 + (double)c / segments), v);
+        }
+        return new SphereMesh { Vertices = verts, Indices = BandIndices(segments, above) };
+    }
 
-    /// <summary>The mesh for <paramref name="kind"/>; the floor kinds need <paramref name="floorY"/>, the others ignore it.</summary>
+    /// <summary>The mesh for <paramref name="kind"/>; the floor kinds need <paramref name="floorY"/>, the open bottom takes an optional cut, the sphere ignores it.</summary>
     public static SphereMesh For(DomeMeshKind kind, float? floorY) => kind switch
     {
         DomeMeshKind.Sphere => Build(),
         DomeMeshKind.LegacyFloor => BuildLegacyFloor(floorY ?? throw new ArgumentOutOfRangeException(nameof(floorY), "The legacy floor needs floorY.")),
         DomeMeshKind.ImageFloor => BuildProjected(floorY ?? throw new ArgumentOutOfRangeException(nameof(floorY), "The image floor needs floorY.")),
-        DomeMeshKind.OpenBottom => BuildOpenBottom(),
+        DomeMeshKind.OpenBottom => BuildOpenBottom(floorY),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), $"Unknown dome mesh kind {(int)kind}."),
     };
 

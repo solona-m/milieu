@@ -185,4 +185,29 @@ public class HalfDomeLightTests
         var vfx = VfxLightPlanner.Plan(Rig(new RigLight(0.5f, 0.75f, new Vector3(3, 2, 1))), open, 10f, 1f, 0);
         Assert.False(vfx.HasKey);
     }
+
+    // ---------------------------------------------------------------- the open bottom at camera height (amendment 2)
+
+    [Fact] // [AC-half-dome-12] [EDGE-half-dome-18]
+    public void OpenBottom_Cut_DrawsDownToTheFloor()
+    {
+        var cutV = DomeShape.OpenCutV(0.16f);
+        Assert.Equal(Math.Asin(0.16) / Math.PI, cutV, 5);
+        Assert.Equal(0f, DomeShape.OpenCutV(null));
+        var open = Default with { LowerHalfHidden = true, CutV = cutV };
+        var (s, above) = DomeProjection.TexelOf(0f, cutV - 0.01f, open);
+        var (_, below) = DomeProjection.TexelOf(0f, cutV + 0.01f, open);
+        Assert.NotNull(DomeProjection.WorldDirection(s, above, open));   // just below the horizon, above the floor: drawn
+        Assert.Null(DomeProjection.WorldDirection(s, above, Default with { LowerHalfHidden = true }));   // uncut: not drawn
+        Assert.Null(DomeProjection.WorldDirection(s, below, open));   // below the floor: not drawn
+    }
+
+    [Fact] // [AC-half-dome-12] [EDGE-half-dome-14]
+    public void OpenBottom_WallCentredAtCameraHeight()
+    {
+        var anchor = new Vector3(0, 1.6f, 0);
+        var dir = new Vector3(1, 0, 0);
+        Assert.Equal(9f, VfxLightPlanner.Distance(100f, 10f, anchor, dir, new DomeBounds(10f, 1f, 1.6f)), 4);   // level with the centre: 0.9 × R
+        Assert.Equal(0.9f * MathF.Sqrt(100f - 1.6f * 1.6f), VfxLightPlanner.Distance(100f, 10f, anchor, dir, new DomeBounds(10f, 1f)), 3);
+    }
 }

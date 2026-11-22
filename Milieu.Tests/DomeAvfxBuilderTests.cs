@@ -292,15 +292,16 @@ public class DomeAvfxBuilderTests
         return (vdrw.Length / 36, idx, vdrw);
     }
 
-    [Theory] // [AC-half-dome-6]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void Synced_SameMeshAsLocal(bool imageFloor)
+    [Theory] // [AC-half-dome-6] [AC-half-dome-12]
+    [InlineData(2, 0.16f, 1.6f)]   // image floor
+    [InlineData(3, 0f, 0f)]        // open at the feet (uncut)
+    [InlineData(3, 0.16f, 1.6f)]   // open at camera height 1.6, cut at the floor
+    public void Synced_SameMeshAsLocal(int kindIndex, float cut, float baked)
     {
-        var kind = imageFloor ? DomeMeshKind.ImageFloor : DomeMeshKind.OpenBottom;
-        var floor = kind == DomeMeshKind.ImageFloor ? 0.16f : (float?)null;
+        var kind = (DomeMeshKind)kindIndex;
+        var floor = cut > 0 ? cut : (float?)null;
         var local = Params(radius: 10) with { FloorY = floor, Mesh = kind };
-        var synced = local with { AttachToOwner = true, BakedHeight = kind == DomeMeshKind.ImageFloor ? 1.6f : 0f, BakedYawRadians = 0.4f, EmitterBaseHeight = 12f };
+        var synced = local with { AttachToOwner = true, BakedHeight = baked, BakedYawRadians = 0.4f, EmitterBaseHeight = 12f };
         var a = AvfxChunkReader.Parse(DomeAvfxBuilder.Build(local)).Need("Modl");
         var b = AvfxChunkReader.Parse(DomeAvfxBuilder.Build(synced)).Need("Modl");
         Assert.Equal(a.Need("VDrw").Data, b.Need("VDrw").Data);
@@ -331,7 +332,7 @@ public class DomeAvfxBuilderTests
         var data = new TheoryData<float, float, float, int, bool, bool>();
         foreach (var (r, mode) in new[] { (200f, 0), (20000f, 0), (1f, 1), (100f, 1) })
         foreach (var vs in new[] { 0.25f, 1f, 2f })
-        foreach (var h in new[] { 0.25f, 1.6f, -1f })   // -1: just below the dome's height
+        foreach (var h in new[] { 0f, 0.25f, 1.6f, -1f })   // -1: just below the dome's height; 0: the uncut open bottom
         foreach (var kind in new[] { 0, 1, 2, 3 })
         foreach (var lights in new[] { false, true })
         foreach (var synced in new[] { false, true })
@@ -345,13 +346,15 @@ public class DomeAvfxBuilderTests
     {
         var kind = (DomeMeshKind)kindIndex;
         var height = h < 0 ? r * vs * 0.999f : h;
-        float? floor = kind is DomeMeshKind.ImageFloor or DomeMeshKind.LegacyFloor ? height / (r * vs) : null;
+        // The floor kinds take their floor; the open bottom its cut above the feet (amendment 2), none at the feet.
+        float? floor = kind is DomeMeshKind.ImageFloor or DomeMeshKind.LegacyFloor || kind == DomeMeshKind.OpenBottom && height > 0
+            ? height / (r * vs) : null;
         if (floor is { } f && !(f > 0 && f < 1)) return;   // camera at or above the dome: inactive, built as a sphere
         var p = Params(radius: r, vscale: vs) with
         {
             FloorY = floor, Mesh = kind,
             Lights = lights ? [new DomeLight(new System.Numerics.Vector3(0, 30, 0), System.Numerics.Vector3.One, 1, 50, true, 0.1f, 30)] : null,
-            AttachToOwner = synced, BakedHeight = synced && kind != DomeMeshKind.OpenBottom ? height : 0f,
+            AttachToOwner = synced, BakedHeight = synced ? height : 0f,
         };
         var (vertices, indices, vdrw) = Model(DomeAvfxBuilder.Build(p));
         Assert.True(vertices <= DomeAvfxBuilder.MaxVertices);
@@ -377,7 +380,7 @@ public class DomeAvfxBuilderTests
     public static TheoryData<int, float> BadKindOrFloor() => new()
     {
         { 2, float.NaN }, { 2, 0f }, { 2, 1f }, { 2, -0.1f }, { 1, 1.5f }, { 2, float.PositiveInfinity },
-        { 0, 0.16f }, { 3, 0.16f }, { 7, 0.16f }, { 7, float.NegativeZero },
+        { 0, 0.16f }, { 3, 0f }, { 3, 1f }, { 3, float.NaN }, { 7, 0.16f }, { 7, float.NegativeZero },
     };
 
     [Theory] // [EDGE-half-dome-17] [EDGE-half-dome-21]

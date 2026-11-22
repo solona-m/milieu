@@ -106,6 +106,32 @@ That is the open bottom, so `DomeSettings.RoomDefaults()` now has `Bottom = Open
 - AC-half-dome-11: new configs, v5 files and v6 room sets get the open bottom for the room dome; the sky dome keeps the
   image floor; a v7 room image floor stays.
 
+## Amendment 2 (2026-11-21): the open bottom uses the camera height
+
+Tested in game, the open bottom with its horizon at the feet put half the room's picture below eye level. The owner asked
+for the camera height back, so the open bottom now uses it:
+
+- The open bottom is the reference sphere centred at the camera height h and cut where it meets the floor. Its unit cut is
+  f = h / (R·vs). It keeps the reference rows above elevation −asin(f), then adds one exact rim ring at −asin(f)
+  (v = asin(f)/π), so the rim lies on the floor and the game's floor shows below. The image's horizon sits at eye level.
+  The room default (h 1.6, R 10) has 28 rows, 2,716 vertices; at most 49 rows, 4,753 vertices, under the image floor's cap.
+- At or below the feet (h ≤ 0, including the old −0.15 entries v7 turned open), the mesh is the uncut upper half centred
+  at the feet, byte-identical to before. At or above the dome's top (h ≥ R·vs) projection shows as inactive and the plain
+  sphere is drawn, like the image floor.
+- The camera-height slider is enabled with the open bottom and goes down to 0. A height change rebuilds the file (a new
+  cut), like the image floor. The kill switch is unchanged: off, an open entry builds the legacy floor.
+- Lights: the image is undrawn below v = asin(f)/π (`DomeView.CutV`), and the wall bounding the VFX lights is the
+  ellipsoid centred at h (`DomeBounds.CentreHeight`); the image floor's wall stays centred at the feet. Synced domes bake
+  h as their height, like the image floor.
+- No config migration: v7 open entries keep their camera height, which now places the horizon. The room default's 1.6 is
+  eye level.
+- This amendment supersedes, for Open: D1's Open bullet (centred at the feet), D5's "With Open the slider is disabled",
+  D7's wall centre (the ellipsoid is centred at h), D9's "0 for Open" (h > 0 is baked), and D10's floor rule (the builder
+  accepts an Open floor value, the cut, only in (0, 1)).
+- AC-half-dome-12: the open bottom's horizon sits at camera height, its rim on the floor, the slider enabled.
+- EDGE-half-dome-23: an open camera height at or below the feet builds the uncut upper half; at or above the dome's top it
+  builds the inactive sphere; a cut on a reference row replaces that row.
+
 ## Release gate
 
 No testing or stable tag ships with `HalfDomeAvailable()` true until the worst-case half dome (Sky, vertical scale 2,
@@ -115,10 +141,11 @@ before tagging.
 
 ## Consequences
 
-- Room backdrops draw the open bottom by default (amendment): the picture on the hemisphere, the game's floor in place;
+- Room backdrops draw the open bottom by default (amendments): the picture on the dome cut at the floor, its horizon at
+  camera height, the game's floor in place;
   the image floor (a flat floor at the feet; the lodge's camera height migrates to 1.6) is one click away.
 - The −0.15 room entries (projection on, v6 image floor) become open half domes at the feet through v7 (amendment): the
-  look they approximated. Sky sets at −0.15 stay full spheres.
+  look they approximated. Raising their camera height lifts the horizon (amendment 2). Sky sets at −0.15 stay full spheres.
 - Building the dome stays on the framework thread, as before, but is up to about 2.5× the work: measured at about 4 ms a
   build on average and about 12 ms for the largest half dome (including the tests' own parse-back), so at most a one-frame
   hitch when a slider is released. Moving `DomeAvfxBuilder.Build` off the framework thread is the lever if it shows.
@@ -128,7 +155,8 @@ before tagging.
 
 1. The worst-case mesh (release gate), locally and for a PSync pair.
 2. The lodge floor reads flat after the migration; no streaks near the horizon.
-3. Open reads as a dome standing on the ground, the game's floor visible below.
+3. Open reads as a dome standing on the ground, the game's floor visible below; with camera height 1.6 the picture's
+   horizon is at eye level and its rim meets the floor (amendment 2).
 4. The game's own sky visible below the rim where there is no ground (hills, void edges), including with Sun off and Night
    while shown.
 5. The Sky dome's horizon band looks right.

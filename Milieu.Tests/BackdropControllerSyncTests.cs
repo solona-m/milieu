@@ -1042,8 +1042,19 @@ public sealed class BackdropControllerSyncTests : IDisposable
         var dome = pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"];
         var root = Avfx(dome);
         var pos = root.Need("Ptcl").Need("Pos").Child("Y");
-        if (open) Assert.Null(pos);   // centre at the feet: no baked height
-        else Assert.Equal(1.6f, pos!.CurveValue());
-        Assert.Equal(open ? 2425 : 9894, root.Need("Modl").Need("VDrw").Data.Length / 36);
+        Assert.Equal(1.6f, pos!.CurveValue());   // both centred at the camera height [AC-half-dome-12]
+        Assert.Equal(open ? 28 * 97 : 9894, root.Need("Modl").Need("VDrw").Data.Length / 36);
+    }
+
+    [Fact] // [AC-half-dome-6]
+    public void Synced_OpenAtTheFeet_NoBakedHeight()
+    {
+        config.Mode = DomeMode.Room;
+        config.Room.Bottom = DomeBottom.Open;
+        config.Room.HeightOffset = 0f;
+        ShowSynced();
+        var root = Avfx(pen.SyncSets[^1].Paths["chara/accessory/a0028/vfx/eff/va0001.avfx"]);
+        Assert.Null(root.Need("Ptcl").Need("Pos").Child("Y"));   // centre at the feet: no baked height
+        Assert.Equal(2425, root.Need("Modl").Need("VDrw").Data.Length / 36);
     }
 }

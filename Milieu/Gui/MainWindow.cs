@@ -184,15 +184,12 @@ public sealed class MainWindow : Window, IDisposable
         var d = config.Current;
         var (rMin, rMax) = DomeSettings.RadiusRange(config.Mode);
         var (_, hMax) = DomeSettings.HeightRange(config.Mode);
-        var hMin = d.HeightMin(config.Mode);
+        var hMin = d.HeightMin(config.Mode, controller.HalfDomeAvailable);
         Slider("Radius", "Radius", d.Radius, rMin, rMax, v => d.Radius = v, "%.1f");
         Slider("Vertical scale", "VerticalScale", d.VerticalScale, DomeSettings.VerticalScaleRange.Min, DomeSettings.VerticalScaleRange.Max, v => d.VerticalScale = v);
-        var heightDisabled = d.CameraHeightDisabled(controller.HalfDomeAvailable);
-        ImGui.BeginDisabled(heightDisabled);
         Slider(d.GroundProjection ? "Camera height" : "Height", "Height", d.HeightOffset, hMin, hMax, v => d.HeightOffset = v);
-        ImGui.EndDisabled();
-        if (d.GroundProjection && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip(heightDisabled ? DomeSettings.CameraHeightDisabledTooltip : DomeSettings.HeightTooltip(controller.HalfDomeAvailable));
+        if (d.GroundProjection && ImGui.IsItemHovered())
+            ImGui.SetTooltip(DomeSettings.HeightTooltip(controller.HalfDomeAvailable));
         Slider("Yaw", "Yaw", d.YawDegrees, DomeSettings.YawRange.Min, DomeSettings.YawRange.Max, v => d.YawDegrees = v, "%.0f°");
         var projection = d.GroundProjection;
         if (ImGui.Checkbox("Ground projection", ref projection))
