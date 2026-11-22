@@ -103,6 +103,19 @@ public class DomeShapeTests
         Assert.All(rim, v => Assert.Equal(-f, (double)v.Y, 2));   // world y = h − R·vs·f = 0
         Assert.All(rim, v => Assert.Equal(Math.Asin(f) / Math.PI, (double)v.V, 3));
         Assert.True(rim[0].V > open.Vertices[^98].V);   // v strictly increasing to the rim
+        for (var c = 0; c <= 96; c++)   // the rim's normals and tangents follow the reference's formulas
+        {
+            var el = -Math.Asin(f);
+            var az = (90.0 + 360.0 * c / 96) * Math.PI / 180.0;
+            var dx = Math.Cos(el) * Math.Cos(az); var dz = Math.Cos(el) * Math.Sin(az);
+            Assert.InRange(rim[c].NormalX - SphereMesh.EncodeBiased(-dx), -1, 1);
+            Assert.InRange(rim[c].NormalY - SphereMesh.EncodeBiased(f), -1, 1);
+            Assert.InRange(rim[c].NormalZ - SphereMesh.EncodeBiased(-dz), -1, 1);
+            Assert.InRange(rim[c].TangentX - SphereMesh.EncodeBiased(-Math.Sin(az)), -1, 1);
+            Assert.Equal(SphereMesh.EncodeBiased(0), rim[c].TangentY);
+            Assert.InRange(rim[c].TangentZ - SphereMesh.EncodeBiased(Math.Cos(az)), -1, 1);
+            Assert.InRange((double)rim[c].U - (-0.5 + c / 96.0), -1e-3, 1e-3);
+        }
         Assert.True(open.Vertices.Length <= DomeAvfxBuilder.MaxVertices);
     }
 

@@ -125,6 +125,9 @@ for the camera height back, so the open bottom now uses it:
   h as their height, like the image floor.
 - No config migration: v7 open entries keep their camera height, which now places the horizon. The room default's 1.6 is
   eye level.
+- This amendment supersedes, for Open: D1's Open bullet (centred at the feet), D5's "With Open the slider is disabled",
+  D7's wall centre (the ellipsoid is centred at h), D9's "0 for Open" (h > 0 is baked), and D10's floor rule (the builder
+  accepts an Open floor value, the cut, only in (0, 1)).
 - AC-half-dome-12: the open bottom's horizon sits at camera height, its rim on the floor, the slider enabled.
 - EDGE-half-dome-23: an open camera height at or below the feet builds the uncut upper half; at or above the dome's top it
   builds the inactive sphere; a cut on a reference row replaces that row.

@@ -600,8 +600,9 @@ public sealed class BackdropController : Gui.IGridController
     }
 
     /// <summary>
-    /// Height changed. With ground projection the floor is baked into the mesh, so a new floor (or mesh) means a rebuild; if
-    /// the shape is unchanged (projection off, or an open bottom) the same VFX is respawned. Exactly one swap.
+    /// Height changed. With ground projection the floor (or the open bottom's cut) is baked into the mesh, so a new floor, cut
+    /// or mesh means a rebuild; if the shape is unchanged (projection off, or an uncut open bottom at or below the feet) the
+    /// same VFX is respawned. Exactly one swap.
     /// </summary>
     public void ApplyHeight()
     {

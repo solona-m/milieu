@@ -93,8 +93,9 @@ internal static class DomeShape
     }
 
     /// <summary>
-    /// How far a ray from <paramref name="from"/> (feet frame, world units) along unit <paramref name="dir"/> travels before
-    /// it leaves the ellipsoid (x² + z²)/R² + y²/(R·vs)² = 1 centred at the feet: the half dome's wall, continued below the
+    /// How far a ray from <paramref name="from"/> (world units, relative to the ellipsoid's centre: the feet for the image floor,
+    /// the camera height for an open bottom) along unit <paramref name="dir"/> travels before it leaves the ellipsoid
+    /// (x² + z²)/R² + y²/(R·vs)² = 1: the half dome's wall, continued below the
     /// floor (no floor plane, so below-horizon lights keep about their old distance). 0 when <paramref name="from"/> is not inside.
     /// </summary>
     public static float ExitDistance(Vector3 from, Vector3 dir, float radius, float verticalScale)
