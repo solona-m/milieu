@@ -30,7 +30,7 @@ Only you see the backdrop; other players see the normal game world.
 The window shows a grid of scenes. **Click a scene to show it**; there is no Show button.
 
 - **None** turns the backdrop off.
-- **Bundled scenes** (Forest, Galaxy, Living Room, Living Room 2, Lodge, Moon, Sunset, Warehouse) come pre-converted.
+- **Bundled scenes** (Autumn, Christmas Studio, Christmas Studio 2, Forest, Galaxy, Living Room, Living Room 2, Lodge, Moon, Snow, Sunset, Warehouse) come pre-converted.
   A scene downloads (about 43 MB) the first time you click it, then shows within a second or two. **Download all**
   fetches the rest.
 - **Add more…** adds your own `.hdr`, `.png` or `.jpg` as a tile and shows it. Your images are converted on your PC
