@@ -261,7 +261,22 @@ public sealed class ConfigurationPerBackdropTests
         Assert.Equal(2, c.Backdrops.Count);
     }
 
-    [Fact] // [EDGE-per-backdrop-settings-8]
+    [Fact] // [EDGE-more-bundled-scenes-8]
+    public void ExistingStore_KeepsNewBundledEntry_AndSelectionOfNewScene()
+    {
+        var xmas = BackdropPins.IdOf("christmasstudio");
+        var c = new Configuration { UserImages = [A], ImagePath = xmas };
+        c.Backdrops[A] = Distinct(1);
+        c.Backdrops[xmas] = Distinct(2);
+        c.Clamp();
+        Assert.Equal(xmas, c.ImagePath);
+        Assert.True(c.Backdrops.ContainsKey(xmas));   // a pinned id: kept (its values become the working copy, ADR 0014)
+        Assert.True(c.Backdrops.ContainsKey(A));
+        Assert.Equal(2, c.Backdrops.Count);
+        Assert.False(c.Backdrops.ContainsKey(BackdropPins.IdOf("snow")));   // not re-seeded: a new scene starts on first use
+    }
+
+    [Fact] // [EDGE-per-backdrop-settings-8] [EDGE-more-bundled-scenes-9]
     public void Clamp_PrunesUnpinnedBundledEntry()
     {
         var c = new Configuration { ImagePath = "bundled:retired" };

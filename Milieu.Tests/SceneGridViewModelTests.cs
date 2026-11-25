@@ -29,23 +29,25 @@ public sealed class SceneGridViewModelTests
 
     private Tile T(string id) => vm.Tiles.Single(t => t.Id == id);
 
-    [Fact] // [AC-hdri-backdrop-11]
-    public void BundledTiles_EightWithDisplayNamesAndEmbeddedThumbKeys()
+    [Fact] // [AC-hdri-backdrop-11] [AC-more-bundled-scenes-1] [EDGE-more-bundled-scenes-11]
+    public void BundledTiles_TwelveWithDisplayNamesAndEmbeddedThumbKeys()
     {
         var bundled = vm.Tiles.Where(t => t.Kind == TileKind.Bundled).ToList();
-        Assert.Equal(new[] { "Forest", "Galaxy", "Living Room", "Living Room 2", "Lodge", "Moon", "Sunset", "Warehouse" }, bundled.Select(t => t.Label));
-        Assert.Equal(8, BackdropPins.Count);
+        Assert.Equal(new[] { "Autumn", "Christmas Studio", "Christmas Studio 2", "Forest", "Galaxy", "Living Room", "Living Room 2",
+                             "Lodge", "Moon", "Snow", "Sunset", "Warehouse" }, bundled.Select(t => t.Label));
+        Assert.Equal(12, BackdropPins.Count);
         Assert.Equal("Milieu.Resources.Thumbs.moon.jpg", bundled.Single(t => t.Label == "Moon").ThumbKey);
+        Assert.Equal("Milieu.Resources.Thumbs.christmasstudio.jpg", bundled.Single(t => t.Label == "Christmas Studio").ThumbKey);
         Assert.All(bundled, t => Assert.Equal(TileState.NotDownloaded, t.State));
     }
 
-    [Fact] // [AC-hdri-backdrop-11] [EDGE-hdri-backdrop-59]
+    [Fact] // [AC-hdri-backdrop-11] [EDGE-hdri-backdrop-59] [AC-more-bundled-scenes-2]
     public void Header_DerivedFromPins()
     {
-        Assert.Equal(357_914_496L, BackdropPins.TotalBytes);
+        Assert.Equal(536_871_744L, BackdropPins.TotalBytes);
         var mb = (BackdropPins.TotalBytes / 1048576.0).ToString("0.0", CultureInfo.InvariantCulture);
         Assert.Equal($"Scenes ({BackdropPins.Count} bundled · {mb} MB to download)", SceneGridViewModel.Header);
-        Assert.Equal("Scenes (8 bundled · 341.3 MB to download)", SceneGridViewModel.Header);
+        Assert.Equal("Scenes (12 bundled · 512.0 MB to download)", SceneGridViewModel.Header);
     }
 
     [Fact] // [AC-hdri-backdrop-11] [EDGE-hdri-backdrop-48]
@@ -57,15 +59,16 @@ public sealed class SceneGridViewModelTests
         Assert.Empty(downloads.Requests);
     }
 
-    [Fact] // [AC-hdri-backdrop-14]
+    [Fact] // [AC-hdri-backdrop-14] [AC-more-bundled-scenes-1] [EDGE-more-bundled-scenes-11]
     public void TileOrder_NoneThenBundledThenUserImagesInAddedOrder()
     {
         config.UserImages = [@"C:\b.jpg", @"C:\a.png"];
         var kinds = vm.Tiles.Select(t => t.Kind).ToList();
         Assert.Equal(TileKind.None, kinds[0]);
-        Assert.All(kinds.Skip(1).Take(8), k => Assert.Equal(TileKind.Bundled, k));
-        Assert.Equal(new[] { @"C:\b.jpg", @"C:\a.png" }, vm.Tiles.Skip(9).Select(t => t.Id));
-        Assert.True(vm.Tiles.Skip(9).All(t => t.CanRemove));
+        Assert.Equal(12, kinds.Count(k => k == TileKind.Bundled));
+        Assert.All(kinds.Skip(1).Take(BackdropPins.Count), k => Assert.Equal(TileKind.Bundled, k));
+        Assert.Equal(new[] { @"C:\b.jpg", @"C:\a.png" }, vm.Tiles.Skip(1 + BackdropPins.Count).Select(t => t.Id));
+        Assert.True(vm.Tiles.Skip(1 + BackdropPins.Count).All(t => t.CanRemove));
     }
 
     [Fact] // [AC-hdri-backdrop-1] [AC-hdri-backdrop-14]
@@ -323,13 +326,34 @@ public sealed class SceneGridViewModelTests
         Assert.Equal(@"C:\pics\My Room.hdr", t.ThumbKey);   // ThumbnailCache falls back to the label when no thumbnail exists
     }
 
-    [Fact] // [EDGE-hdri-backdrop-44] [EDGE-hdri-backdrop-59]
+    [Fact] // [EDGE-hdri-backdrop-44] [EDGE-hdri-backdrop-59] [AC-more-bundled-scenes-7]
     public void CreditsLink_HiddenWhileUnpublished()
     {
         Assert.True(vm.ShowCreditsLink);
         downloads.Unpublished = true;
         Assert.False(vm.ShowCreditsLink);
-        Assert.Equal("https://github.com/solona-m/milieu/blob/backdrops-v2/Milieu/DefaultBackdrops/CREDITS.md", BackdropPins.CreditsUrl);
+        Assert.Equal("https://github.com/solona-m/milieu/blob/backdrops-v3/Milieu/DefaultBackdrops/CREDITS.md", BackdropPins.CreditsUrl);
+    }
+
+    [Fact] // [AC-more-bundled-scenes-8]
+    public void UnpublishedNewScene_TileShowsNotPublishedYet()
+    {
+        downloads.Status["snow"] = new EntryStatus(EntryState.Unpublished, 0, "");
+        var t = T("bundled:snow");
+        Assert.Equal(TileState.Unpublished, t.State);
+        Assert.Equal("Not published yet", t.Overlay);
+        Assert.Equal(TileState.NotDownloaded, T("bundled:forest").State);
+    }
+
+    [Fact] // [EDGE-more-bundled-scenes-10]
+    public void UserImageOfSameFile_StaysSeparateTile()
+    {
+        config.UserImages = [@"E:\hdri\snow.jpeg"];
+        var bundled = T("bundled:snow");
+        Assert.Equal((TileKind.Bundled, "Snow", false), (bundled.Kind, bundled.Label, bundled.CanRemove));
+        var user = T(@"E:\hdri\snow.jpeg");
+        Assert.True(user.CanRemove);
+        Assert.NotEqual(TileKind.Bundled, user.Kind);
     }
 
     [Fact] // [EDGE-hdri-backdrop-92]

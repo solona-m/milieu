@@ -26,7 +26,7 @@ public class BundledAtexTests
     {
         var problems = BackdropPins.Verify(ReferenceFiles.Path(AtexDirVar), BackdropPins.Tag);
         Assert.Empty(problems);
-        Assert.Equal(8, Directory.GetFiles(ReferenceFiles.Path(AtexDirVar), "*.atex").Length);
+        Assert.Equal(BackdropPins.Count, Directory.GetFiles(ReferenceFiles.Path(AtexDirVar), "*.atex").Length);
     }
 
     [Fact, Trait("Speed", "Slow")] // [EDGE-hdri-backdrop-68]
