@@ -49,7 +49,7 @@ public class BundledAtexTests
     /// The bundled textures are pinned to the reference encoder's bytes (docs/adr/0005, 0016): the tool's <c>atex</c> must
     /// keep building <c>new Bc7()</c> and never use the in-repo OpaqueBc7.
     /// </summary>
-    [Fact] // [AC-fast-bc7-6] [AC-more-bundled-scenes-3]
+    [Fact] // [AC-fast-bc7-6] [AC-more-bundled-scenes-3] [EDGE-more-bundled-scenes-19]
     public void PrepareBackdropsAtex_UsesReferenceEncoder()
     {
         var src = File.ReadAllText(Path.Combine(RepoPaths.Root(), "tools", "PrepareBackdrops", "Program.cs"));

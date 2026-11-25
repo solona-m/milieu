@@ -21,16 +21,17 @@ public sealed class OpaqueBc7 : IBlockEncoder
     }
 
     /// <summary>Bump whenever this encoder's output bytes change (it is part of the texture cache key).</summary>
-    public string CacheId => "opaque-bc7-1";
+    public string CacheId => "opaque-bc7-2";
 
     /// <summary>Mode 6's block SSE above which mode 1 is tried (tuned by Bc7QualityTests, docs/adr/0016).</summary>
     internal int Mode1Threshold { get; init; } = DefaultMode1Threshold;
 
-    /// <summary>How many of the best-ranked two-subset partitions mode 1 tries.</summary>
+    /// <summary>How many of the best-ranked two-subset partitions mode 1 tries (3 since opaque-bc7-2: at 2 the worst blocks of
+    /// dense foliage missed the quality gate, docs/adr/0016 amendment 2026-11-24).</summary>
     internal int Mode1Partitions { get; init; } = DefaultMode1Partitions;
 
     internal const int DefaultMode1Threshold = 0;
-    internal const int DefaultMode1Partitions = 2;
+    internal const int DefaultMode1Partitions = 3;
 
     /// <summary>Test seams: a block row starts / finishes (argument: the row).</summary>
     internal Action<int>? RowStarted { get; init; }

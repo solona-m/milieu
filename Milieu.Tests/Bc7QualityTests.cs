@@ -36,7 +36,7 @@ public class Bc7QualityTests(ITestOutputHelper output)
         Assert.True(newP <= 1.5 * refP + 1, $"{name}: p99.9 block MSE {newP:0.00} > 1.5 x {refP:0.00} + 1");
     }
 
-    [Theory] // [AC-fast-bc7-2] [EDGE-fast-bc7-13]
+    [Theory] // [AC-fast-bc7-2] [EDGE-fast-bc7-13] [AC-more-bundled-scenes-9]
     [InlineData("sky")]
     [InlineData("night")]
     [InlineData("foliage")]
@@ -49,7 +49,7 @@ public class Bc7QualityTests(ITestOutputHelper output)
         foreach (var f in Directory.GetFiles(RepoPaths.DefaultBackdrops(), "*.jpeg")) yield return [Path.GetFileName(f)];
     }
 
-    [Theory, Trait("Speed", "Slow")] // [AC-fast-bc7-2]
+    [Theory, Trait("Speed", "Slow")] // [AC-fast-bc7-2] [AC-more-bundled-scenes-9] [EDGE-more-bundled-scenes-18]
     [MemberData(nameof(BundledJpegs))]
     public async Task Quality_BundledJpegTiles_WithinGate(string file)
     {
@@ -74,7 +74,7 @@ public class Bc7QualityTests(ITestOutputHelper output)
         await AssertWithinGate(file, rgba, 3 * t, t);
     }
 
-    [Theory, Trait("Speed", "Slow")] // [AC-fast-bc7-1] [EDGE-fast-bc7-10]
+    [Theory, Trait("Speed", "Slow")] // [AC-fast-bc7-1] [EDGE-fast-bc7-10] [AC-more-bundled-scenes-9] [EDGE-more-bundled-scenes-18]
     [InlineData("foliage")]
     [InlineData("noise")]
     public async Task Speed_TenTimesReference(string kind)
@@ -94,7 +94,7 @@ public class Bc7QualityTests(ITestOutputHelper output)
         Assert.True(ratio >= 10, $"{kind}: only {ratio:0.0}x faster");
     }
 
-    [Fact, Trait("Speed", "Slow")] // [AC-fast-bc7-1]
+    [Fact, Trait("Speed", "Slow")] // [AC-fast-bc7-1] [AC-more-bundled-scenes-9] [EDGE-more-bundled-scenes-18]
     public async Task Speed_Full8kForestShowPath_WithinBudget()
     {
         using var dir = new TempDir();

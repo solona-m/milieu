@@ -212,12 +212,12 @@ public sealed class PluginWiringTests : IDisposable
         Assert.Equal(0.35f, persisted);
     }
 
-    [Fact] // [AC-fast-bc7-8] [EDGE-fast-bc7-12]
+    [Fact] // [AC-fast-bc7-8] [EDGE-fast-bc7-12] [AC-more-bundled-scenes-9] [EDGE-more-bundled-scenes-16] [EDGE-more-bundled-scenes-17]
     public void CreateBlockEncoder_KillSwitch()
     {
         var fast = Plugin.CreateBlockEncoder(true);
         Assert.IsType<Milieu.Imaging.OpaqueBc7>(fast);
-        Assert.Equal("opaque-bc7-1", fast.CacheId);
+        Assert.Equal("opaque-bc7-2", fast.CacheId);
         var reference = Plugin.CreateBlockEncoder(false);
         Assert.IsType<Milieu.Imaging.Bc7>(reference);
         Assert.Equal("bcnenc-fast", reference.CacheId);
