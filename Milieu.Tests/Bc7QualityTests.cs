@@ -74,7 +74,7 @@ public class Bc7QualityTests(ITestOutputHelper output)
         await AssertWithinGate(file, rgba, 3 * t, t);
     }
 
-    [Theory, Trait("Speed", "Slow")] // [AC-fast-bc7-1] [EDGE-fast-bc7-10] [AC-more-bundled-scenes-9] [EDGE-more-bundled-scenes-18]
+    [Theory, Trait("Speed", "Slow")] // [AC-fast-bc7-1] [EDGE-fast-bc7-10] [AC-more-bundled-scenes-9] [EDGE-more-bundled-scenes-18] [EDGE-more-bundled-scenes-20]
     [InlineData("foliage")]
     [InlineData("noise")]
     public async Task Speed_TenTimesReference(string kind)
@@ -94,7 +94,7 @@ public class Bc7QualityTests(ITestOutputHelper output)
         Assert.True(ratio >= 10, $"{kind}: only {ratio:0.0}x faster");
     }
 
-    [Fact, Trait("Speed", "Slow")] // [AC-fast-bc7-1] [AC-more-bundled-scenes-9] [EDGE-more-bundled-scenes-18]
+    [Fact, Trait("Speed", "Slow")] // [AC-fast-bc7-1] [AC-more-bundled-scenes-9] [EDGE-more-bundled-scenes-18] [EDGE-more-bundled-scenes-20]
     public async Task Speed_Full8kForestShowPath_WithinBudget()
     {
         using var dir = new TempDir();
