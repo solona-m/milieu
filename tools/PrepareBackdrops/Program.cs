@@ -16,7 +16,8 @@ namespace PrepareBackdrops;
 /// Offline tool for the bundled backdrops. It links Milieu's own imaging and conversion code, so what it produces is
 /// exactly what the plugin would. Commands (each reads only its input directory and writes only its output directory):
 /// <list type="bullet">
-/// <item><c>&lt;srcDir&gt; &lt;dstDir&gt;</c>: source panoramas → the committed 8192x4096 JPEGs (Equirect fit, or the Sunset strip).</item>
+/// <item><c>&lt;srcDir&gt; &lt;dstDir&gt;</c>: source panoramas → the committed 8192x4096 JPEGs (Equirect fit, or the Sunset strip).
+/// A Radiance <c>.hdr</c> source is tone-mapped with the plugin's default exposure and operator first, never copied.</item>
 /// <item><c>atex &lt;jpegDir&gt; &lt;outDir&gt;</c>: committed JPEGs → pre-converted 8192x4096 BC7 .atex; prints the pin lines.</item>
 /// <item><c>verify &lt;atexDir&gt; --tag &lt;tag&gt;</c>: checks the .atex set against <see cref="BackdropPins"/>.</item>
 /// <item><c>thumbs &lt;jpegDir&gt; &lt;outDir&gt;</c>: 256x128 JPEG previews embedded in the plugin.</item>
@@ -28,22 +29,37 @@ internal static class Program
 {
     private enum Mode { Equirect, Strip }
 
-    private sealed record Plan(string File, Mode Mode, double HorizonFraction = 0);
+    /// <summary><paramref name="File"/> is the committed JPEG; <paramref name="Source"/> the file read from the source
+    /// directory when it differs (only <c>Prepare</c> reads it).</summary>
+    private sealed record Plan(string File, Mode Mode, double HorizonFraction = 0, string? Source = null)
+    {
+        public string SourceFile => Source ?? File;
+        public bool IsHdr => Path.GetExtension(SourceFile).Equals(".hdr", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static readonly Plan[] Plans =
     [
+        new("autumn.jpeg", Mode.Equirect),
+        new("christmasstudio.jpeg", Mode.Equirect, Source: "Christmas Studio.hdr"),
+        new("christmasstudio2.jpeg", Mode.Equirect, Source: "Christmas Studio 2.hdr"),
         new("forest.jpeg", Mode.Equirect),
         new("galaxy.jpeg", Mode.Equirect),
         new("livingroom.jpeg", Mode.Equirect),
         new("livingroom2.jpeg", Mode.Equirect),
         new("lodge.jpeg", Mode.Equirect),
         new("moon.jpeg", Mode.Equirect),
+        new("snow.jpeg", Mode.Equirect),
         new("sunset.jpeg", Mode.Strip, 0.9),
         new("warehouse.jpeg", Mode.Equirect),
     ];
 
     private const int Quality = 92;
     private const int ThumbQuality = 85;
+
+    // The plugin's defaults for an HDR image (BackdropSettings.ExposureEv and ToneMap), so an HDR-sourced bundled scene
+    // looks like that .hdr added as a user image with untouched settings.
+    private const float HdrExposureEv = 0f;
+    private const ToneMapOperator HdrToneMap = ToneMapOperator.Aces;
 
     private static async Task<int> Main(string[] args)
     {
@@ -84,6 +100,16 @@ internal static class Program
         return ImageResult.FromStream(s, StbImageSharp.ColorComponents.RedGreenBlue);
     }
 
+    /// <summary>A source panorama as 8-bit RGB: LDR decoded as-is; Radiance HDR decoded to float (as ImageLoader does)
+    /// and tone-mapped at the plugin defaults.</summary>
+    private static (byte[] Rgb, int Width, int Height) LoadSourceRgb(string path, bool hdr)
+    {
+        if (!hdr) { var img = LoadRgb(path); return (img.Data, img.Width, img.Height); }
+        using var s = File.OpenRead(path);
+        var f = ImageResultFloat.FromStream(s, StbImageSharp.ColorComponents.RedGreenBlue);
+        return (ToneMapper.ToSrgb8(f.Data, f.Width, f.Height, HdrExposureEv, HdrToneMap), f.Width, f.Height);
+    }
+
     private static byte[] RgbaToRgb(byte[] rgba)
     {
         var rgb = new byte[rgba.Length / 4 * 3];
@@ -98,38 +124,41 @@ internal static class Program
         var failed = 0;
         foreach (var plan in Plans)
         {
-            var input = Path.Combine(src, plan.File);
+            var input = Path.Combine(src, plan.SourceFile);
             var output = Path.Combine(dst, plan.File);
-            if (!File.Exists(input)) { Console.Error.WriteLine($"missing: {plan.File}"); failed++; continue; }
-            var img = LoadRgb(input);
-            byte[] rgba; int w, h;
+            if (!File.Exists(input)) { Console.Error.WriteLine($"missing: {plan.SourceFile}"); failed++; continue; }
+            var (data, iw, ih) = LoadSourceRgb(input, plan.IsHdr);
+            byte[] pixels; int w, h, channels;
             if (plan.Mode == Mode.Equirect)
             {
-                var (tw, th, copy) = BackdropSizing.TargetSize(img.Width, img.Height);
-                if (copy)
+                var (tw, th, copy) = BackdropSizing.TargetSize(iw, ih);
+                if (copy && !plan.IsHdr)
                 {
-                    if (SeamDetector.Measure(img.Data, img.Width, img.Height).NoWrap) { Console.Error.WriteLine($"{plan.File}: does not wrap"); failed++; continue; }
+                    if (SeamDetector.Measure(data, iw, ih).NoWrap) { Console.Error.WriteLine($"{plan.File}: does not wrap"); failed++; continue; }
                     File.Copy(input, output, overwrite: true);
-                    Console.WriteLine($"{plan.File}: copied {img.Width}x{img.Height}");
+                    Console.WriteLine($"{plan.File}: copied {iw}x{ih}");
                     continue;
                 }
-                rgba = EquirectResampler.Resample(img.Data, img.Width, img.Height, tw, th);
-                (w, h) = (tw, th);
+                // An HDR source already at the target size is encoded from its tone-mapped pixels, never byte-copied.
+                if (copy) (pixels, w, h, channels) = (data, iw, ih, 3);
+                else (pixels, w, h, channels) = (EquirectResampler.Resample(data, iw, ih, tw, th), tw, th, 4);
             }
             else
             {
-                var p = BackdropSizing.PlanStrip(img.Width, img.Height, plan.HorizonFraction);
-                var scaled = EquirectResampler.Resample(img.Data, img.Width, img.Height, p.ScaledWidth, p.ScaledHeight);
+                var p = BackdropSizing.PlanStrip(iw, ih, plan.HorizonFraction);
+                var scaled = EquirectResampler.Resample(data, iw, ih, p.ScaledWidth, p.ScaledHeight);
                 var tiled = BackdropSizing.MirrorTile(scaled, p.ScaledWidth, p.ScaledHeight, 4);
-                rgba = new byte[(long)p.OutWidth * p.OutHeight * 4];
-                Buffer.BlockCopy(tiled, 0, rgba, p.Top * p.OutWidth * 4, tiled.Length);
-                BandFill.Fill(rgba, p.OutWidth, p.OutHeight, 4, p.Top, p.ScaledHeight, 512);
-                (w, h) = (p.OutWidth, p.OutHeight);
+                pixels = new byte[(long)p.OutWidth * p.OutHeight * 4];
+                Buffer.BlockCopy(tiled, 0, pixels, p.Top * p.OutWidth * 4, tiled.Length);
+                BandFill.Fill(pixels, p.OutWidth, p.OutHeight, 4, p.Top, p.ScaledHeight, 512);
+                (w, h, channels) = (p.OutWidth, p.OutHeight, 4);
             }
-            var m = SeamDetector.Measure(rgba, w, h, 4);
+            var m = SeamDetector.Measure(pixels, w, h, channels);
             if (m.NoWrap) { Console.Error.WriteLine($"{plan.File}: output does not wrap (seam {m.Seam:0.0} vs {m.Adjacent:0.0}); not written"); failed++; continue; }
-            using (var o = File.Create(output)) new ImageWriter().WriteJpg(RgbaToRgb(rgba), w, h, StbImageWriteSharp.ColorComponents.RedGreenBlue, o, Quality);
-            Console.WriteLine($"{plan.File}: {img.Width}x{img.Height} -> {w}x{h} ({plan.Mode}), seam {m.Seam:0.0} vs {m.Adjacent:0.0}");
+            var rgb = channels == 4 ? RgbaToRgb(pixels) : pixels;
+            using (var o = File.Create(output)) new ImageWriter().WriteJpg(rgb, w, h, StbImageWriteSharp.ColorComponents.RedGreenBlue, o, Quality);
+            var how = plan.IsHdr ? $"{plan.Mode}, HDR tone-mapped {HdrToneMap} EV {HdrExposureEv:0}" : plan.Mode.ToString();
+            Console.WriteLine($"{plan.SourceFile}: {iw}x{ih} -> {plan.File} {w}x{h} ({how}), seam {m.Seam:0.0} vs {m.Adjacent:0.0}");
         }
         return failed == 0 ? 0 : 1;
     }

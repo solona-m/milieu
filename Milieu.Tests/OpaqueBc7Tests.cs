@@ -23,6 +23,17 @@ public class OpaqueBc7Tests
         for (var i = 3; i < decoded.Length; i += 4) Assert.Equal(255, decoded[i]);
     }
 
+    /// <summary>A change to either value changes every user texture: re-run Bc7QualityTests (Slow) and OpaqueBc7Tests and
+    /// amend docs/adr/0016.</summary>
+    [Fact] // [AC-more-bundled-scenes-9]
+    public void Defaults_ThreeMode1Partitions_CacheIdV2()
+    {
+        Assert.Equal(3, OpaqueBc7.DefaultMode1Partitions);
+        var encoder = new OpaqueBc7();
+        Assert.Equal(3, encoder.Mode1Partitions);
+        Assert.Equal("opaque-bc7-2", encoder.CacheId);
+    }
+
     [Fact] // [AC-fast-bc7-3]
     public async Task EncodesExpectedBlockCount()
     {

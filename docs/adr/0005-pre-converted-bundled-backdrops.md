@@ -45,6 +45,16 @@ the reference encoder (`new Bc7()`, BCnEncoder), so the published textures and p
 "Exactly what the plugin would produce" now means the same pipeline (resample, band fill, mips, writer) with the block
 encoder chosen by the caller (`BundledAtexTests.PrepareBackdropsAtex_UsesReferenceEncoder`).
 
+Amendment (2026-11-24, `backdrops-v3`): four scenes added (autumn, christmasstudio, christmasstudio2, snow), so 12
+scenes, 536,871,744 bytes (512.0 MiB) per set. Two have Radiance `.hdr` sources: `PrepareBackdrops` decodes them as the
+plugin does and tone-maps them at the plugin defaults (ACES, EV 0) into the committed JPEG, so they are LDR scenes like
+the rest (estimated lighting, ADR 0010). Determinism: the same-machine `atex` run of 2026-11-24 reproduced all 8
+`backdrops-v2` pins byte for byte, so the v3 set is one run and the opt-in
+`BundledAtexTests.RegeneratedFromCommittedJpegs_MatchesPins` holds for all 12. The old 8 keep their pins, so players who
+downloaded them under v2 keep their files. Release gate: `backdrops-v3` must be tagged and published by the owner
+(`publish-backdrops.ps1`) before any plugin tag that pins it ships; until then every scene not already on disk shows
+"Not published yet".
+
 ## Consequences
 
 Easier: a bundled scene shows within a couple of seconds of downloading; players never wait for BC7.

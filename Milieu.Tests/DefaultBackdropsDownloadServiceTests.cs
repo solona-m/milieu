@@ -49,7 +49,7 @@ public sealed class DefaultBackdropsDownloadServiceTests : IDisposable
         Assert.All(BackdropPins.All, p => Assert.Equal(EntryState.NotDownloaded, s.StatusOf(p.Stem).State));
     }
 
-    [Fact] // [AC-hdri-backdrop-11]
+    [Fact] // [AC-hdri-backdrop-11] [AC-more-bundled-scenes-3]
     public void Request_fetches_only_that_entry_with_pinned_size_and_sha()
     {
         using var s = Service(Recording());
@@ -60,13 +60,13 @@ public sealed class DefaultBackdropsDownloadServiceTests : IDisposable
         Assert.Equal("moon.atex", c.Name);
         Assert.Equal(pin.Bytes, c.Bytes);
         Assert.Equal(pin.Sha256, c.Sha);
-        Assert.EndsWith("/backdrops-v2/", c.Urls[^1]);
+        Assert.EndsWith("/backdrops-v3/", c.Urls[^1]);
         Assert.True(s.IsDownloaded("moon"));
         Assert.Equal(EntryState.Downloaded, s.StatusOf("moon").State);
         Assert.False(s.IsDownloaded("forest"));
     }
 
-    [Fact] // [AC-hdri-backdrop-11]
+    [Fact] // [AC-hdri-backdrop-11] [AC-more-bundled-scenes-3]
     public void RequestAll_downloads_missing_one_at_a_time_in_table_order()
     {
         Directory.CreateDirectory(Folder);
@@ -121,6 +121,32 @@ public sealed class DefaultBackdropsDownloadServiceTests : IDisposable
         s.Request("forest");
         WaitIdle(s);
         Assert.True(s.PackUnpublished);
+    }
+
+    [Fact] // [AC-more-bundled-scenes-8] [EDGE-more-bundled-scenes-5]
+    public void NewScene_404_ShowsUnpublished_OthersUnaffected()
+    {
+        using var s = Service(Recording(n => n == "christmasstudio.atex" ? Http(404) : null));
+        s.RequestAll();
+        WaitIdle(s);
+        Assert.Equal(EntryState.Unpublished, s.StatusOf("christmasstudio").State);
+        Assert.All(BackdropPins.All.Where(p => p.Stem != "christmasstudio"), p => Assert.True(s.IsDownloaded(p.Stem), p.Stem));
+        Assert.False(s.PackUnpublished);
+    }
+
+    [Fact] // [AC-more-bundled-scenes-4] [EDGE-more-bundled-scenes-6]
+    public void OldScene_AlreadyOnDiskAtPinnedSize_CountsDownloaded_NoFetch()
+    {
+        Directory.CreateDirectory(Folder);
+        using (var fs = File.Create(Path.Combine(Folder, "forest.atex"))) fs.SetLength(BackdropPins.Find("forest")!.Bytes);
+        using var s = Service(Recording());
+        Assert.Equal(0, s.CleanupStale());
+        Assert.True(s.IsDownloaded("forest"));
+        Assert.Equal(EntryState.Downloaded, s.StatusOf("forest").State);
+        s.Request("forest");
+        Thread.Sleep(30);
+        WaitIdle(s);
+        Assert.Empty(calls);
     }
 
     [Fact] // [EDGE-hdri-backdrop-45]

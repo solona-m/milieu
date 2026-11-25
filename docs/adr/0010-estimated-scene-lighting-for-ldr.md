@@ -7,7 +7,7 @@ in-game look are UNVERIFIED until the in-game checks are done.
 
 ## Context
 
-Scene lighting (ADR 0009) reads real radiance from HDR images. JPG/PNG images and the 8 bundled scenes, which are
+Scene lighting (ADR 0009) reads real radiance from HDR images. JPG/PNG images and the bundled scenes (8 then; 12 since `backdrops-v3`), which are
 JPEG-derived and shipped as pre-converted `.atex` (ADR 0005), showed a note and got no lights. Users asked for lights
 there too, including from lamps in interior scenes. An 8-bit image clips every bright source at 255, so the real energy
 is lost. The direction can still be recovered from where the clipped pixels sit, and the colour from the unclipped glow
@@ -86,6 +86,13 @@ around them. The brightness has to be assumed.
     its key. Synced delivery gives it a stand-in key (ADR 0011).
   - **Forest:** the sun behind the trunks isn't clipped, so bright fog gaps near the horizon become the key and lamps.
   - **Warehouse:** one false lamp on a sunlit wall patch.
+- Scenes added in `backdrops-v3` (2026-11-24), as estimated:
+  - **Christmas Studio and Christmas Studio 2** come from `.hdr` sources, but the bundled scene is the tone-mapped JPEG,
+    so they get this estimate, not ADR 0009's HDR lighting (a follow-up would need an HDR rig table). Christmas Studio:
+    a warm key and 3 lamps; Christmas Studio 2: a key high overhead and 1 lamp.
+  - **Autumn:** the sky gaps in the canopy become the key and 3 lamps. **Snow:** a key from the sun side, no lamps; its fill
+    regions are strongly blue (total about (3.8, 5.0, 9.1), against about 2.5 blue for the other scenes), so the character
+    is lit blue: a candidate for the hand-tuned override follow-up.
 - Follow-up: hand-tuned rig overrides for Sunset and Forest.
 
 ## Consequences

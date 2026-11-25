@@ -19,19 +19,23 @@ public sealed record BackdropPin(string Stem, string DisplayName, long Bytes, st
 /// </summary>
 public static class BackdropPins
 {
-    public const string Tag = "backdrops-v2";
+    public const string Tag = "backdrops-v3";
     public const string IdPrefix = "bundled:";
     public const int Width = 8192;
     public const int Height = 4096;
 
     public static readonly IReadOnlyList<BackdropPin> All =
     [
+        new("autumn", "Autumn", 44739312L, "773cd24ea51ed5c3b4cd2c436468144319e50b223ced8372715a58d655683867"),
+        new("christmasstudio", "Christmas Studio", 44739312L, "4293c1b1443c56e76baf02d0d2e916d79023ff238dfb87e25a6fea39fc32efa8"),
+        new("christmasstudio2", "Christmas Studio 2", 44739312L, "8691fd79da21b0db1896acc5f19c4520d505054456c2325608af65e652b4ce23"),
         new("forest", "Forest", 44739312L, "80b81b010da5c49db392db65b0837d94d952c69419d54f794424a8f33e0eaa29"),
         new("galaxy", "Galaxy", 44739312L, "5212832130fcb3916f4a05420b9a5f4c002896b52c9ecfc300759976ab50ec4b"),
         new("livingroom", "Living Room", 44739312L, "708926c13a82ecc5c5ebd8a4c8c89a753d760798ff2f6f17e15ae55037226b31"),
         new("livingroom2", "Living Room 2", 44739312L, "8727593be0652bf33c7b0827b79374613cac7322b9e81c26448e7a4fde90708d"),
         new("lodge", "Lodge", 44739312L, "ec19e94f6a4964e9d752678d5f995988b9d175571e3c060c50b16fe13ff59572"),
         new("moon", "Moon", 44739312L, "74d3deb3519573150760287fd876eed2fa88f8735778e11456515a353bd64f5f"),
+        new("snow", "Snow", 44739312L, "caf8858f779caae7304c984ed74cb131f201a00b8e13ee496be9b116804d4aae"),
         new("sunset", "Sunset", 44739312L, "f646b04d1a92e8436a3857991b60f3ff865acd5883832e61ba6f6670028372bb"),
         new("warehouse", "Warehouse", 44739312L, "6644700b04f9237f0c1ca07b21e66388075c26a9b827d75092e6c72fac7f2c92"),
     ];

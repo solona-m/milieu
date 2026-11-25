@@ -8,7 +8,7 @@ namespace Milieu.Tests;
 
 public class BundledThumbsTests
 {
-    [Fact] // [AC-hdri-backdrop-14]
+    [Fact] // [AC-hdri-backdrop-14] [AC-more-bundled-scenes-1] [EDGE-more-bundled-scenes-12]
     public void EveryPinnedStemHasEmbedded256x128Thumb()
     {
         var asm = typeof(Plugin).Assembly;

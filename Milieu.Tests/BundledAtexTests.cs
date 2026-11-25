@@ -21,12 +21,12 @@ public class BundledAtexTests
     public const string AtexDirVar = "MILIEU_BACKDROP_ATEX_DIR";
     public const string VerifyVar = "MILIEU_VERIFY_ATEX";
 
-    [ReferenceFileFact(AtexDirVar)] // [AC-hdri-backdrop-11]
+    [ReferenceFileFact(AtexDirVar)] // [AC-hdri-backdrop-11] [AC-more-bundled-scenes-3] [AC-more-bundled-scenes-4] [EDGE-more-bundled-scenes-4] [EDGE-more-bundled-scenes-14]
     public void Reference_PinnedAtexMatchesArtifacts()
     {
         var problems = BackdropPins.Verify(ReferenceFiles.Path(AtexDirVar), BackdropPins.Tag);
         Assert.Empty(problems);
-        Assert.Equal(8, Directory.GetFiles(ReferenceFiles.Path(AtexDirVar), "*.atex").Length);
+        Assert.Equal(BackdropPins.Count, Directory.GetFiles(ReferenceFiles.Path(AtexDirVar), "*.atex").Length);
     }
 
     [Fact, Trait("Speed", "Slow")] // [EDGE-hdri-backdrop-68]
@@ -49,7 +49,7 @@ public class BundledAtexTests
     /// The bundled textures are pinned to the reference encoder's bytes (docs/adr/0005, 0016): the tool's <c>atex</c> must
     /// keep building <c>new Bc7()</c> and never use the in-repo OpaqueBc7.
     /// </summary>
-    [Fact] // [AC-fast-bc7-6]
+    [Fact] // [AC-fast-bc7-6] [AC-more-bundled-scenes-3] [EDGE-more-bundled-scenes-19]
     public void PrepareBackdropsAtex_UsesReferenceEncoder()
     {
         var src = File.ReadAllText(Path.Combine(RepoPaths.Root(), "tools", "PrepareBackdrops", "Program.cs"));
