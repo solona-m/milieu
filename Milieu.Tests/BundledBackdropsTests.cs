@@ -19,7 +19,7 @@ public class BundledBackdropsTests(ITestOutputHelper output)
 {
     private static readonly string[] NewStems = ["autumn", "christmasstudio", "christmasstudio2", "snow"];
 
-    [Fact] // [AC-hdri-backdrop-11]
+    [Fact] // [AC-hdri-backdrop-11] [AC-more-bundled-scenes-6] [EDGE-more-bundled-scenes-1]
     public void CommittedImages_ObeyLimitsAndShapes()
     {
         foreach (var pin in BackdropPins.All)
@@ -34,7 +34,7 @@ public class BundledBackdropsTests(ITestOutputHelper output)
         }
     }
 
-    [Fact, Trait("Speed", "Slow")] // [AC-hdri-backdrop-11] [EDGE-hdri-backdrop-60]
+    [Fact, Trait("Speed", "Slow")] // [AC-hdri-backdrop-11] [EDGE-hdri-backdrop-60] [AC-more-bundled-scenes-6] [EDGE-more-bundled-scenes-13]
     public void CommittedImages_WrapAround()
     {
         foreach (var pin in BackdropPins.All)
@@ -45,14 +45,14 @@ public class BundledBackdropsTests(ITestOutputHelper output)
         }
     }
 
-    [Fact] // [AC-hdri-backdrop-11]
+    [Fact] // [AC-hdri-backdrop-11] [AC-more-bundled-scenes-7] [EDGE-more-bundled-scenes-15]
     public void Credits_ListsEveryPinnedStem()
     {
         var credits = File.ReadAllText(Path.Combine(RepoPaths.DefaultBackdrops(), "CREDITS.md"));
         foreach (var pin in BackdropPins.All) Assert.Contains(pin.Stem + ".jpeg", credits);
     }
 
-    [Fact] // [AC-hdri-backdrop-11]
+    [Fact] // [AC-hdri-backdrop-11] [AC-more-bundled-scenes-1] [EDGE-more-bundled-scenes-12]
     public void Csproj_DoesNotShipDefaultBackdrops()
     {
         var csproj = File.ReadAllText(Path.Combine(RepoPaths.Root(), "Milieu", "Milieu.csproj"));

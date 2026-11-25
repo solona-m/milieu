@@ -21,7 +21,7 @@ public class BundledLightRigsTests
 
     private static BundledRigEntry Entry(string stem) => BundledLightRigs.All.Single(e => e.Stem == stem);
 
-    [Fact] // [AC-ldr-light-estimate-2]
+    [Fact] // [AC-ldr-light-estimate-2] [AC-more-bundled-scenes-5] [EDGE-more-bundled-scenes-7]
     public void EveryPinHasValidCurrentRig()
     {
         Assert.Equal(BackdropPins.All.Select(p => p.Stem).Order(), BundledLightRigs.All.Select(e => e.Stem).Order());
@@ -35,7 +35,7 @@ public class BundledLightRigsTests
         }
     }
 
-    [Fact] // [AC-ldr-light-estimate-2] [EDGE-ldr-light-estimate-35]
+    [Fact] // [AC-ldr-light-estimate-2] [EDGE-ldr-light-estimate-35] [AC-more-bundled-scenes-4] [EDGE-more-bundled-scenes-4]
     public void CommittedJpegsMatchEntryHashes()
     {
         foreach (var pin in BackdropPins.All)

@@ -90,7 +90,9 @@ around them. The brightness has to be assumed.
   - **Christmas Studio and Christmas Studio 2** come from `.hdr` sources, but the bundled scene is the tone-mapped JPEG,
     so they get this estimate, not ADR 0009's HDR lighting (a follow-up would need an HDR rig table). Christmas Studio:
     a warm key and 3 lamps; Christmas Studio 2: a key high overhead and 1 lamp.
-  - **Autumn:** the sky gaps in the canopy become the key and 3 lamps. **Snow:** a key from the sun side, no lamps.
+  - **Autumn:** the sky gaps in the canopy become the key and 3 lamps. **Snow:** a key from the sun side, no lamps; its fill
+    regions are strongly blue (total about (3.8, 5.0, 9.1), against about 2.5 blue for the other scenes), so the character
+    is lit blue: a candidate for the hand-tuned override follow-up.
 - Follow-up: hand-tuned rig overrides for Sunset and Forest.
 
 ## Consequences
